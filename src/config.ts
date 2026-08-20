@@ -1,0 +1,147 @@
+import { z } from "zod";
+
+const positiveInt = (minimum: number, maximum: number) =>
+  z.coerce.number().int().min(minimum).max(maximum);
+
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+const environmentSchema = z.object({
+  PORT: positiveInt(1, 65_535).default(8080),
+  GROUNDLANE_AUTH_TOKEN: z.string().min(32),
+  SEARCH_PROVIDER_ORDER: z.string().default("tavily,exa,parallel,browserbase,brave,firecrawl,serpapi"),
+  SEARCH_MONTHLY_REQUEST_BUDGETS: z
+    .string()
+    .default("tavily:1000,exa:1000,parallel:5000,browserbase:1000,brave:1000,firecrawl:500,serpapi:250"),
+  TAVILY_API_KEY: optionalSecret,
+  EXA_API_KEY: optionalSecret,
+  BRAVE_API_KEY: optionalSecret,
+  FIRECRAWL_API_KEY: optionalSecret,
+  SERPAPI_API_KEY: optionalSecret,
+  BROWSERBASE_API_KEY: optionalSecret,
+  PARALLEL_API_KEY: optionalSecret,
+  READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
+  BROWSER_BACKEND: z.enum(["disabled", "local", "browserless"]).default("disabled"),
+  BROWSERLESS_TOKEN: optionalSecret,
+  BROWSERLESS_REGION: z.enum(["sfo", "lon", "ams"]).default("sfo"),
+  REQUEST_TIMEOUT_MS: positiveInt(1_000, 120_000).default(30_000),
+  MAX_RESPONSE_BYTES: positiveInt(1_024, 20_000_000).default(2_000_000),
+  MAX_OUTPUT_CHARS: positiveInt(1_000, 500_000).default(100_000),
+  MAX_CONCURRENCY: positiveInt(1, 100).default(4),
+  MAX_QUEUE: positiveInt(0, 1_000).default(16),
+});
+
+export type SearchProviderId =
+  | "tavily"
+  | "exa"
+  | "parallel"
+  | "browserbase"
+  | "brave"
+  | "firecrawl"
+  | "serpapi";
+
+export interface GroundlaneConfig {
+  port: number;
+  authToken: string;
+  searchProviderOrder: SearchProviderId[];
+  searchMonthlyRequestBudgets: Partial<Record<SearchProviderId, number>>;
+  providerKeys: Partial<Record<SearchProviderId, string>>;
+  readerBackend: "disabled" | "jina";
+  browserBackend: "disabled" | "local" | "browserless";
+  browserlessToken?: string;
+  browserlessRegion: "sfo" | "lon" | "ams";
+  requestTimeoutMs: number;
+  maxResponseBytes: number;
+  maxOutputChars: number;
+  maxConcurrency: number;
+  maxQueue: number;
+}
+
+const providerIds = new Set<SearchProviderId>([
+  "tavily",
+  "exa",
+  "firecrawl",
+  "serpapi",
+  "brave",
+  "browserbase",
+  "parallel",
+]);
+
+export function parseSearchMonthlyRequestBudgets(
+  value: string,
+): Partial<Record<SearchProviderId, number>> {
+  const budgets: Partial<Record<SearchProviderId, number>> = {};
+  for (const entry of value.split(",").map((item) => item.trim()).filter(Boolean)) {
+    const [id, rawBudget, ...extra] = entry.split(":");
+    const budget = Number(rawBudget);
+    if (
+      extra.length > 0 ||
+      id === undefined ||
+      !providerIds.has(id as SearchProviderId) ||
+      rawBudget === undefined ||
+      !/^\d+$/u.test(rawBudget) ||
+      !Number.isSafeInteger(budget)
+    ) {
+      throw new Error(`Invalid SEARCH_MONTHLY_REQUEST_BUDGETS entry: ${entry}`);
+    }
+    if (id in budgets) {
+      throw new Error(`Duplicate SEARCH_MONTHLY_REQUEST_BUDGETS provider: ${id}`);
+    }
+    budgets[id as SearchProviderId] = budget;
+  }
+  return budgets;
+}
+
+export function parseConfig(
+  environment: Readonly<Record<string, string | undefined>>,
+): GroundlaneConfig {
+  const parsed = environmentSchema.parse(environment);
+  const order = parsed.SEARCH_PROVIDER_ORDER.split(",")
+    .map((value) => value.trim())
+    .filter((value): value is SearchProviderId => providerIds.has(value as SearchProviderId));
+
+  if (order.length === 0) {
+    throw new Error(
+      "SEARCH_PROVIDER_ORDER must contain a supported monthly-free provider",
+    );
+  }
+
+  const providerKeys: Partial<Record<SearchProviderId, string>> = {};
+  if (parsed.TAVILY_API_KEY !== undefined) providerKeys.tavily = parsed.TAVILY_API_KEY;
+  if (parsed.EXA_API_KEY !== undefined) providerKeys.exa = parsed.EXA_API_KEY;
+  if (parsed.BRAVE_API_KEY !== undefined) providerKeys.brave = parsed.BRAVE_API_KEY;
+  if (parsed.FIRECRAWL_API_KEY !== undefined) {
+    providerKeys.firecrawl = parsed.FIRECRAWL_API_KEY;
+  }
+  if (parsed.SERPAPI_API_KEY !== undefined) providerKeys.serpapi = parsed.SERPAPI_API_KEY;
+  if (parsed.BROWSERBASE_API_KEY !== undefined) {
+    providerKeys.browserbase = parsed.BROWSERBASE_API_KEY;
+  }
+  if (parsed.PARALLEL_API_KEY !== undefined) providerKeys.parallel = parsed.PARALLEL_API_KEY;
+  if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {
+    throw new Error("BROWSERLESS_TOKEN is required when BROWSER_BACKEND=browserless");
+  }
+
+  return {
+    port: parsed.PORT,
+    authToken: parsed.GROUNDLANE_AUTH_TOKEN,
+    searchProviderOrder: [...new Set(order)],
+    searchMonthlyRequestBudgets: parseSearchMonthlyRequestBudgets(
+      parsed.SEARCH_MONTHLY_REQUEST_BUDGETS,
+    ),
+    providerKeys,
+    readerBackend: parsed.READER_BACKEND,
+    browserBackend: parsed.BROWSER_BACKEND,
+    ...(parsed.BROWSERLESS_TOKEN === undefined
+      ? {}
+      : { browserlessToken: parsed.BROWSERLESS_TOKEN }),
+    browserlessRegion: parsed.BROWSERLESS_REGION,
+    requestTimeoutMs: parsed.REQUEST_TIMEOUT_MS,
+    maxResponseBytes: parsed.MAX_RESPONSE_BYTES,
+    maxOutputChars: parsed.MAX_OUTPUT_CHARS,
+    maxConcurrency: parsed.MAX_CONCURRENCY,
+    maxQueue: parsed.MAX_QUEUE,
+  };
+}
