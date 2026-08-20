@@ -6,12 +6,31 @@ import {
   browserlessContentEndpoint,
   selectRenderedHtml,
 } from "../../src/adapters/browser/browserless.js";
+import { mapLocalBrowserError } from "../../src/adapters/browser/local-playwright.js";
 import { JinaReaderBackend } from "../../src/adapters/reader/jina.js";
+import { GroundlaneError } from "../../src/core/errors.js";
 import { Deadline } from "../../src/core/limits.js";
 import type { DnsLookup } from "../../src/core/url-policy.js";
 
 const publicLookup: DnsLookup = () =>
   Promise.resolve([{ address: "93.184.216.34", family: 4 }]);
+
+void test("local browser errors retain their stage without exposing runtime details", () => {
+  const raw = new Error("browserContext.newPage: Target crashed at /secret/path");
+  const mapped = mapLocalBrowserError(raw, "browser");
+  assert.equal(mapped.code, "UPSTREAM_ERROR");
+  assert.equal(mapped.stage, "browser");
+  assert.equal(mapped.retryable, true);
+  assert.doesNotMatch(mapped.message, /Target crashed|secret/u);
+  assert.equal(mapped.cause, raw);
+
+  const policyError = new GroundlaneError(
+    "URL_BLOCKED",
+    "browser-request",
+    "Blocked by URL policy",
+  );
+  assert.equal(mapLocalBrowserError(policyError, "browser"), policyError);
+});
 
 void test("Jina Reader validates the target and returns bounded Markdown provenance", async () => {
   let requestedUrl = "";

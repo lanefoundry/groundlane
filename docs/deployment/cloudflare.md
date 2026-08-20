@@ -86,6 +86,13 @@ BROWSER_BACKEND=local
 
 The Container image must install a Playwright-compatible Chromium build and the required Linux libraries. Keep browser process startup, crash recovery, request cleanup, and Container lifecycle inside the browser adapter/Container boundary.
 
+The checked-in deployment uses one `basic` Container instance (1/4 vCPU and
+1 GiB memory). Cloudflare's `lite` instance can start Chromium but was observed
+to crash while creating a page under the platform VM overhead. Because the
+Worker currently routes every request to the single named `groundlane-mcp`
+instance, raising `max_instances` alone does not add request sharding; change
+the routing and quota-ledger design before increasing it.
+
 To consume Browserless's renewable hosted allowance instead, configure the non-secret vars and add its secret token:
 
 ```text

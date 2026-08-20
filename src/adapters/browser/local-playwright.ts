@@ -10,6 +10,20 @@ import { createSafeProxy, type SafeProxy } from "./safe-proxy.js";
 
 chromium.use(StealthPlugin());
 
+export function mapLocalBrowserError(
+  error: unknown,
+  stage: "browser" | "browser-launch",
+): GroundlaneError {
+  if (error instanceof GroundlaneError) return error;
+  return new GroundlaneError(
+    "UPSTREAM_ERROR",
+    stage,
+    "The local browser operation failed",
+    true,
+    { cause: error },
+  );
+}
+
 export interface LocalPlaywrightOptions { lookup?: DnsLookup; socketTimeoutMs?: number; maxResponseBytes: number; allowedPorts?: ReadonlySet<number> }
 
 export class LocalPlaywrightBrowserBackend implements BrowserBackend {
@@ -27,7 +41,11 @@ export class LocalPlaywrightBrowserBackend implements BrowserBackend {
         const browser = await chromium.launch({ headless: true, proxy: { server: proxy.url, bypass: "<-loopback>" }, args: ["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] });
         if (this.shuttingDown) { await browser.close(); await proxy.close(); throw new GroundlaneError("PROVIDER_UNAVAILABLE", "browser", "Browser backend is shutting down"); }
         this.browser = browser; browser.once("disconnected", () => { if (this.browser === browser) this.browser = undefined; if (this.proxy === proxy) this.proxy = undefined; void proxy.close(); }); return browser;
-      } catch (error) { if (this.proxy === proxy) this.proxy = undefined; await proxy.close(); throw error; }
+      } catch (error) {
+        if (this.proxy === proxy) this.proxy = undefined;
+        await proxy.close();
+        throw mapLocalBrowserError(error, "browser-launch");
+      }
     }).finally(() => { this.launchPromise = undefined; });
     return this.launchPromise;
   }
@@ -74,6 +92,8 @@ export class LocalPlaywrightBrowserBackend implements BrowserBackend {
       const body = new TextEncoder().encode(html);
       if (body.byteLength > request.maxBytes) throw new GroundlaneError("OUTPUT_LIMIT", "browser-content", "Rendered document exceeds the byte limit");
       return { requestedUrl: request.url, finalUrl: page.url(), status: response?.status() ?? 200, headers: response?.headers() ?? {}, contentType: "text/html; charset=utf-8", body, engine: "browser", backend: "local", blockedSubrequests: blocked };
+    } catch (error) {
+      throw mapLocalBrowserError(error, "browser");
     } finally { if (context) void context.close().catch(() => undefined); }
   }
 
