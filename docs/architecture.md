@@ -12,6 +12,8 @@ Groundlane is a vendor-neutral web access control plane for AI agents. Its publi
 
 Groundlane is not a crawler fleet, search index, residential proxy network, research agent, or persistent browser-session service in the MVP.
 
+Groundlane does use mature open-source crawler and browser projects as architectural references without treating their hosted services as open-source infrastructure. See [Open-source foundations](open-source-foundations.md) for the Crawlee adoption gate and the separation between crawl orchestration and managed anti-bot providers.
+
 ## Runtime topology
 
 ```text
@@ -144,3 +146,5 @@ The absence of every search provider should make search unready, not disable fet
 ## Design evolution
 
 The architecture intentionally leaves ports for cache backends, new search providers, alternate browser execution, and future semantic extraction. Crawl queues, research synthesis, and stateful sessions require separate designs rather than expanding the three MVP handlers indefinitely.
+
+For a future bounded crawl primitive, Crawlee is the first TypeScript implementation candidate. It must remain behind Groundlane's existing URL, deadline, byte, output, concurrency, queue, and cancellation policies rather than becoming a parallel security boundary.

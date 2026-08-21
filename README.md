@@ -129,6 +129,8 @@ Core policies and contracts do not depend on a provider or browser runtime. Adap
 
 Read [Architecture](docs/architecture.md) for component boundaries, request flow, and design decisions.
 
+Groundlane learns from open-source projects including Crawlee, Crawl4AI, Scrapy, Playwright MCP, and Steel while keeping hosted proxy and anti-bot services behind explicit adapters. Read [Open-source foundations](docs/open-source-foundations.md) for the adoption boundaries and future crawl plan.
+
 ## Security
 
 Web retrieval is an SSRF-sensitive capability. Groundlane treats user URLs, redirects, browser subresources, and search-provider URLs as untrusted. Deployments should keep authentication enabled, use an outbound network policy, and retain the default resource limits.
@@ -156,6 +158,7 @@ The roadmap is directional, not a release commitment. See the [research archive]
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Open-source foundations](docs/open-source-foundations.md)
 - [MVP product requirements](docs/product/prd.md)
 - [Cloudflare deployment](docs/deployment/cloudflare.md)
 - [Security policy](SECURITY.md)

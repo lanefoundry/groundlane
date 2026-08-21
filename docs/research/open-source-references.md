@@ -1,6 +1,6 @@
 # Groundlane 可參考的開源專案
 
-研究日期：2026-08-21。來源為專案官方 GitHub 頁與官方 README，使用 `stealth_fetch` 擷取。GitHub stars 會持續變動，僅作活躍度訊號，不作技術選型依據。
+更新日期：2026-08-22。來源為專案官方 GitHub repository metadata 與官方 README。GitHub stars 會持續變動，僅作活躍度訊號，不作技術選型依據。
 
 ## 結論
 
@@ -10,7 +10,21 @@
 - MCP transport 與 browser tool schema：Playwright MCP
 - agent-friendly extract/action：Stagehand
 - crawl queue / retry / proxy sessions：Crawlee（第二階段）
+- LLM-friendly Markdown / extraction UX：Crawl4AI（借鏡契約，不引入 Python runtime）
+- downloader middleware / throttle / crawl statistics：Scrapy（借鏡成熟模式）
 - Docker browser operations：Browserless（只參考架構，先處理授權）
+
+## 先分清楚：開源核心與託管服務
+
+這份研究同時涵蓋能自行部署的開源核心、開源 client/SDK，以及商業託管能力。三者不能因為同一家公司或品牌而視為等價：
+
+| 類型 | 專案／服務 | Groundlane 的使用方式 |
+|---|---|---|
+| 開源核心 | [Crawlee](https://github.com/apify/crawlee)、[Crawl4AI](https://github.com/unclecode/crawl4ai)、[Scrapy](https://github.com/scrapy/scrapy)、[Selenium](https://github.com/SeleniumHQ/selenium) | 可讀原始碼、依授權採用依賴或借鏡架構；仍需逐一檢查 LICENSE、NOTICE 與 transitive dependencies |
+| 開源 SDK／client | [Apify SDK for Python](https://github.com/apify/apify-sdk-python) 等 | SDK 開源不代表其呼叫的雲端執行、代理網路或資料服務也是開源 |
+| 商業託管能力 | Apify Platform、Bright Data、Zyte 等 | 透過可替換 adapter 使用；住宅代理、CAPTCHA 與 managed anti-bot 不應被描述成 Groundlane 可自行部署的開源能力 |
+
+開源 crawler 可以解決 queue、retry、session、extraction 與 observability，但不會憑空提供住宅 IP、CAPTCHA 解題或持續更新的 managed fingerprint。Groundlane 因此把「crawl orchestration」與「anti-bot provider」維持為兩個不同邊界。
 
 ## 優先級
 
@@ -30,6 +44,9 @@
 | [Browser Use](https://github.com/browser-use/browser-use) | 自主 browser agent、task loop、tools、memory、Docker | Python 且偏 agent reasoning；Groundlane 現在是 execution layer |
 | [HyperAgent](https://github.com/hyperbrowserai/HyperAgent) | `perform` / `ai` / `extract`、action cache、Playwright fallback | AGPL，且偏 AI automation SDK；適合看 API，不宜直接併入封閉服務 |
 | [Firecrawl](https://github.com/firecrawl/firecrawl) | Markdown/JSON extraction、crawl/batch API、MCP、queue/orchestration | AGPL、系統很重，核心是 web context platform，不是單純 remote browser |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | LLM-friendly Markdown、structured extraction、crawl strategy 與 adaptive waiting | Apache-2.0，但主要為 Python；適合借鏡 tool contract 和 extraction UX，不為 Groundlane 增加第二套 runtime |
+| [Scrapy](https://github.com/scrapy/scrapy) | scheduler、downloader middleware、retry、AutoThrottle、duplicate filtering 與統計 | BSD-3-Clause，但主要為 Python；適合借鏡 pipeline hooks 與運維語意 |
+| [Selenium](https://github.com/SeleniumHQ/selenium) | 跨瀏覽器 WebDriver automation 與 Grid | Apache-2.0；Groundlane 已以 Playwright 作 Chromium backend，且 Selenium 本身不是 anti-bot service，沒有引入的必要 |
 
 ## 各專案可直接借鏡的設計
 
@@ -59,6 +76,13 @@ Groundlane 可採相同產品分層：MVP 的 `web_fetch` 保持小而有界；`
 - request queue、retry、session pool、proxy rotation、autoscaling 都已成熟。
 - 若 Groundlane 新增 `crawl_site` 或 async batch，再評估嵌入；現在直接引入會讓容器、狀態和依賴複雜許多。
 
+### Crawl4AI、Scrapy 與 Selenium
+
+- Crawl4AI 的 Markdown、schema extraction 與 crawl-result UX 很接近 agent 的需求；Groundlane 可採用相同的「輸出先正規化、再交給模型」思路，但維持 TypeScript 單一 runtime。
+- Scrapy 的 downloader middleware、重試分類、AutoThrottle、去重與 stats 是未來 crawl worker 的成熟參考；這些概念必須服從 Groundlane 現有的 URL policy、單一 deadline 與 byte/output budgets。
+- Selenium 是 browser automation framework，不等於 Cloudflare/CAPTCHA bypass。Groundlane 已使用 Playwright，新增 Selenium 只會造成雙重 driver 與測試矩陣。
+- Apify 品牌下的 Crawlee 與 SDK 是開源專案；Apify Platform、Proxy 與託管 Actor execution 則是另一個商業服務層。
+
 ### Browserless
 
 - queue/concurrency、browser crash recovery、session persistence、debug viewer 與 Docker packaging 都很成熟。
@@ -75,8 +99,9 @@ Groundlane 可採相同產品分層：MVP 的 `web_fetch` 保持小而有界；`
 2. 參照 Steel 將 session lifecycle 抽成獨立 service，避免全域 browser/proxy 狀態。
 3. 參照 Playwright MCP 設計 Streamable HTTP、session isolation 與 accessibility snapshot，但繼續使用自己的 SSRF 防線。
 4. 用 Stagehand 或自製 Zod pipeline 增加 optional structured extraction。
-5. 只有要做 crawl/batch 時才引入 Crawlee。
-6. Browserless、Lightpanda、HyperAgent、Firecrawl 在授權確認前只作設計參考。
+5. 只有要做 crawl/batch 時才引入 Crawlee；採用前需證明它能沿用 Groundlane 的 SSRF、deadline、bytes、concurrency 與 cancellation 邊界。
+6. Crawl4AI 與 Scrapy 先借鏡契約和 orchestration，不新增 Python sidecar；Selenium 不列入 runtime 候選。
+7. Browserless、Lightpanda、HyperAgent、Firecrawl 在授權確認前只作設計參考。
 
 ## 授權風險摘要
 

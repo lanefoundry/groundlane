@@ -129,6 +129,8 @@ tool registry
 
 元件邊界、request flow 與設計決策請看[架構文件](docs/architecture.md)。
 
+Groundlane 會借鏡 Crawlee、Crawl4AI、Scrapy、Playwright MCP 與 Steel 等開源專案，但把託管 proxy／anti-bot 服務維持為明確的 adapter。採用邊界與後續 crawl 規劃請看[開源技術基礎](docs/open-source-foundations.zh-TW.md)。
+
 ## 安全
 
 Web retrieval 具備 SSRF 風險。Groundlane 會將使用者 URL、redirect、browser subresource 與搜尋 provider 回傳的 URL 全部視為不可信輸入。正式部署時應維持 authentication、使用 outbound network policy，並保留預設資源限制。
@@ -156,6 +158,7 @@ Roadmap 只代表方向，不是版本承諾。現有範圍背後的依據請看
 ## 文件
 
 - [架構](docs/architecture.md)
+- [開源技術基礎](docs/open-source-foundations.zh-TW.md)
 - [MVP 產品需求](docs/product/prd.md)
 - [Cloudflare 部署](docs/deployment/cloudflare.md)
 - [安全政策](SECURITY.md)
