@@ -21,6 +21,67 @@ void test("normalizeDocument applies selectors and reports invalid/unmatched sel
   assert.throws(() => normalizeDocument(raw, "text", 100, ".missing"), { code: "INVALID_INPUT" });
 });
 
+void test("normalizeDocument reads the primary article and excludes page chrome", () => {
+  const page = `<!doctype html>
+    <html>
+      <head>
+        <title>Fallback title</title>
+        <meta property="og:title" content="Reader title">
+        <meta name="description" content="A useful summary">
+        <meta name="author" content="Groundlane Team">
+        <meta property="article:published_time" content="2026-08-22T08:00:00Z">
+      </head>
+      <body>
+        <nav>Products Pricing Login</nav>
+        <main>
+          <article>
+            <h1>Reader title</h1>
+            <p>This is the primary article body with enough useful text to be selected.</p>
+            <p>It includes a <a href="/docs/reader">reader guide</a> for agents.</p>
+            <aside>Related promotion</aside>
+          </article>
+        </main>
+        <footer>Copyright and footer links</footer>
+      </body>
+    </html>`;
+  const result = normalizeDocument(
+    { ...raw, finalUrl: "https://example.com/posts/reader", body: new TextEncoder().encode(page) },
+    "markdown",
+    2_000,
+  );
+
+  assert.equal(result.title, "Reader title");
+  assert.equal(result.description, "A useful summary");
+  assert.equal(result.author, "Groundlane Team");
+  assert.equal(result.publishedAt, "2026-08-22T08:00:00Z");
+  assert.match(result.content, /primary article body/u);
+  assert.match(result.content, /https:\/\/example\.com\/docs\/reader/u);
+  assert.doesNotMatch(result.content, /Products Pricing Login|Related promotion|Copyright/u);
+});
+
+void test("normalizeDocument falls back to body content and preserves selector semantics", () => {
+  const page = "<html><body><nav>Selected navigation</nav><div>Short but useful body copy.</div></body></html>";
+  const pageRaw = { ...raw, body: new TextEncoder().encode(page) };
+
+  assert.match(normalizeDocument(pageRaw, "text", 1_000).content, /Short but useful body copy/u);
+  assert.equal(
+    normalizeDocument(pageRaw, "text", 1_000, "nav").content,
+    "Selected navigation",
+  );
+});
+
+void test("normalizeDocument bounds article metadata without splitting Unicode", () => {
+  const page = `<html><head><meta name="description" content="${"😀".repeat(1_001)}"></head><body><main>Readable body</main></body></html>`;
+  const result = normalizeDocument(
+    { ...raw, body: new TextEncoder().encode(page) },
+    "text",
+    1_000,
+  );
+
+  assert.equal(Array.from(result.description ?? "").length, 1_000);
+  assert.match(result.description ?? "", /^😀+$/u);
+});
+
 void test("extractFields deterministically extracts text, HTML, attributes and arrays", () => {
   const result = extractFields(html, [
     { name: "heading", selector: "h1", value: "text" },

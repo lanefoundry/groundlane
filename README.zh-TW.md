@@ -4,7 +4,7 @@
 
 **AI agent 值得信賴的 Web 存取層。**
 
-Groundlane 是開源、供應商中立的遠端 MCP server，讓 AI agent 能在受控條件下存取公開 Web。它以一套穩定介面統一搜尋、內容擷取與確定性結構化抽取；搜尋服務可替換，難讀的 Markdown 頁面可先走選用的 Jina Reader，再升級到隔離的 local 或 Browserless 瀏覽器。
+Groundlane 是開源、供應商中立的遠端 MCP server，讓 AI agent 能在受控條件下存取公開 Web。它以一套穩定介面統一搜尋、內容擷取與確定性結構化抽取；搜尋服務可替換，抓到的頁面先由內建 Groundlane Reader 清理，難讀的 Markdown 頁面再走選用的 Jina Reader，最後升級到隔離的 local 或 Browserless 瀏覽器。
 
 > [!IMPORTANT]
 > Groundlane 目前是早期預覽版，工具契約與部署模型仍可能調整。它不是現成的託管服務，也不保證繞過所有反爬機制。
@@ -22,7 +22,7 @@ Groundlane 是開源、供應商中立的遠端 MCP server，讓 AI agent 能在
 
 | 工具 | 用途 | 目前範圍 |
 | --- | --- | --- |
-| `web_fetch` | 將 URL 讀成 Markdown、純文字或 HTML | bounded HTTP、選用 Jina Reader，再使用 browser fallback |
+| `web_fetch` | 將 URL 讀成 Markdown、純文字或 HTML | bounded HTTP、內建正文抽取、選用 Jina Reader，再使用 browser fallback |
 | `web_search` | 透過已設定的 provider 搜尋 | 指定或自動路由到七個 provider |
 | `web_extract` | 從頁面抽取具名欄位 | CSS selector；支援 text、HTML 或 attribute value |
 
@@ -121,11 +121,13 @@ Cloudflare Worker / Node HTTP edge
     v
 tool registry
     |-- web_search  -> 每月免費 provider router（7 個 adapters）
-    |-- web_fetch   -> safe HTTP -> 選用 Jina Reader -> browser fallback
+    |-- web_fetch   -> safe HTTP -> Groundlane Reader -> 選用 Jina/browser fallback
     `-- web_extract -> fetch pipeline -> deterministic DOM extraction
 ```
 
 核心政策與契約不依賴特定 provider 或 browser runtime。Browser backend 可選 Container-local Playwright 或 Browserless `/content`；輸出的 `engine` 與 `backend` 會揭露實際執行路徑，但公開 MCP 工具不變。Hosted backend 會收到請求的公開 URL，因此必須由 operator 主動啟用。
+
+HTML 頁面的 Markdown 與 text response 會經過自架的 **Groundlane Reader**：選出主要文章區域、移除常見 navigation、footer、廣告與相關內容、把相對連結轉成絕對連結，並在頁面提供時回傳有界的 `title`、`description`、`author`、`publishedAt` metadata。Raw HTML 與明確 CSS selector 仍維持 deterministic page／selector semantics。Reader 清理不會改寫 retrieval provenance；`engine` 與 `backend` 仍會說明文件是由 HTTP、Jina 或 browser 取得。
 
 元件邊界、request flow 與設計決策請看[架構文件](docs/architecture.md)。
 

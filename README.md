@@ -4,7 +4,7 @@
 
 **The trusted web access layer for AI agents.**
 
-Groundlane is an open-source, vendor-neutral remote MCP server for giving AI agents controlled access to the public web. It presents one stable interface for search, retrieval, and deterministic extraction, routes search to replaceable providers, and escalates difficult Markdown reads through an optional Jina Reader before using an isolated local or Browserless browser.
+Groundlane is an open-source, vendor-neutral remote MCP server for giving AI agents controlled access to the public web. It presents one stable interface for search, retrieval, and deterministic extraction, routes search to replaceable providers, cleans fetched pages through its built-in Groundlane Reader, and escalates difficult Markdown reads through an optional Jina Reader before using an isolated local or Browserless browser.
 
 > [!IMPORTANT]
 > Groundlane is an early preview. Its tool contracts and deployment model are still evolving; do not treat the current release as a hosted service or a universal anti-bot bypass.
@@ -22,7 +22,7 @@ Groundlane is an open-source, vendor-neutral remote MCP server for giving AI age
 
 | Tool | Purpose | Current scope |
 | --- | --- | --- |
-| `web_fetch` | Retrieve a URL as Markdown, text, or HTML | Bounded HTTP, optional Jina Reader, then browser fallback |
+| `web_fetch` | Retrieve a URL as Markdown, text, or HTML | Bounded HTTP, built-in readable-content extraction, optional Jina Reader, then browser fallback |
 | `web_search` | Search through a configured provider | Explicit or automatic routing across seven providers |
 | `web_extract` | Extract named fields from a page | CSS selectors; text, HTML, or attribute values |
 
@@ -121,11 +121,13 @@ Cloudflare Worker / Node HTTP edge
     v
 tool registry
     |-- web_search  -> monthly-free provider router (7 adapters)
-    |-- web_fetch   -> safe HTTP -> optional Jina Reader -> browser fallback
+    |-- web_fetch   -> safe HTTP -> Groundlane Reader -> optional Jina/browser fallback
     `-- web_extract -> fetch pipeline -> deterministic DOM extraction
 ```
 
 Core policies and contracts do not depend on a provider or browser runtime. Adapters sit behind narrow interfaces. The browser backend can be Container-local Playwright or Browserless `/content`; `engine` and `backend` output fields disclose which path produced a result without changing the public MCP tools. Hosted backends receive the requested public URL, so they are opt-in rather than silent defaults.
+
+For HTML pages, Markdown and text responses run through the self-hosted **Groundlane Reader**. It selects the primary article region, removes common navigation, footer, advertising, and related-content chrome, resolves relative links, and returns bounded `title`, `description`, `author`, and `publishedAt` metadata when present. Raw HTML and explicit CSS selectors preserve deterministic page/selector semantics. Reader cleaning does not change retrieval provenance: `engine` and `backend` still report whether HTTP, Jina, or a browser obtained the document.
 
 Read [Architecture](docs/architecture.md) for component boundaries, request flow, and design decisions.
 

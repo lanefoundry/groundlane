@@ -26,6 +26,9 @@ const fetchDataSchema = z.object({
   status: z.number().int(),
   contentType: z.string(),
   title: z.string().optional(),
+  description: z.string().optional(),
+  author: z.string().optional(),
+  publishedAt: z.string().optional(),
   content: z.string(),
   format: z.enum(["markdown", "text", "html"]),
   engine: z.enum(["http", "reader", "browser"]),
@@ -55,7 +58,7 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
         "web_fetch",
         {
           description:
-            "Fetch a public HTTP(S) page as bounded Markdown, text, or HTML. Uses safe HTTP first, then configured Reader/browser fallbacks only when eligible and needed.",
+            "Fetch a public HTTP(S) page as bounded Markdown, text, or HTML. Markdown and text use the built-in Groundlane Reader to remove page chrome and return article metadata; configured hosted Reader/browser fallbacks are used only when eligible and needed.",
           inputSchema,
           outputSchema: resultEnvelopeSchema(fetchDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
@@ -93,6 +96,13 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
               status: result.raw.status,
               contentType: result.raw.contentType,
               ...(result.title === undefined ? {} : { title: result.title }),
+              ...(result.description === undefined
+                ? {}
+                : { description: result.description }),
+              ...(result.author === undefined ? {} : { author: result.author }),
+              ...(result.publishedAt === undefined
+                ? {}
+                : { publishedAt: result.publishedAt }),
               content: result.content,
               format: result.format,
               engine: result.raw.engine,

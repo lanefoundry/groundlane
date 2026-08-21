@@ -23,7 +23,7 @@ import { createWebExtractModule } from "../../src/tools/web-extract.js";
 import { createWebFetchModule } from "../../src/tools/web-fetch.js";
 import { createWebSearchModule } from "../../src/tools/web-search.js";
 
-const html = `<!doctype html><html><head><title>Groundlane</title></head><body><main><h1>Hello</h1><a href="/docs">Docs</a></main></body></html>`;
+const html = `<!doctype html><html><head><title>Groundlane</title><meta name="description" content="Trusted web access"><meta name="author" content="Groundlane Team"></head><body><main><h1>Hello</h1><p>Groundlane provides readable web content for AI agents.</p><a href="/docs">Docs</a></main></body></html>`;
 
 const httpFetcher: HttpFetcher = {
   fetch(request): Promise<RawDocument> {
@@ -122,7 +122,20 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       arguments: { url: "https://example.com", format: "markdown", render: "never" },
     });
     assert.equal(fetchResult.isError, undefined);
-    assert.equal((fetchResult.structuredContent as { ok?: boolean }).ok, true);
+    const fetchEnvelope = fetchResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        title?: string;
+        description?: string;
+        author?: string;
+        content?: string;
+      };
+    };
+    assert.equal(fetchEnvelope.ok, true);
+    assert.equal(fetchEnvelope.data?.title, "Groundlane");
+    assert.equal(fetchEnvelope.data?.description, "Trusted web access");
+    assert.equal(fetchEnvelope.data?.author, "Groundlane Team");
+    assert.doesNotMatch(fetchEnvelope.data?.content ?? "", /<html|<head/iu);
 
     const searchResult = await client.callTool({
       name: "web_search",

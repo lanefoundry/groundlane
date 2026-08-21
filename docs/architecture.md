@@ -51,6 +51,8 @@ The Worker is the public control plane in a Cloudflare deployment. It forwards M
 
 Jina Reader and Browserless are opt-in hosted retrieval backends rather than additional public tools. Jina is eligible only for automatic Markdown fallback; HTML, selectors, `waitFor`, and `render=always` require a browser. Groundlane requests an uncached Jina read because shared snapshots can be stale. Every result reports both an execution category (`engine=http|reader|browser`) and concrete `backend` provenance (`direct`, `jina`, `local`, or `browserless`). Cloudflare Browser Run and Firecrawl Scrape remain future adapters.
 
+The built-in **Groundlane Reader** is a deterministic normalization stage, not another network backend. For Markdown and text without an explicit selector, it selects the primary article region, removes common page chrome, resolves relative HTTP(S) links, and extracts bounded article metadata. HTML and selector-based requests retain their existing deterministic DOM semantics. Because this stage does not retrieve the page, it does not change `engine` or `backend` provenance.
+
 ## Component boundaries
 
 | Area | Responsibility | Must not own |
@@ -71,7 +73,7 @@ Concrete adapters are wired in one composition layer. Dependencies point inward:
 2. Normalize the URL and enforce network policy.
 3. Perform a bounded HTTP fetch through a DNS-safe connection path.
 4. Follow only validated redirects within the original budget.
-5. Normalize the document to the requested format.
+5. Normalize the document to the requested format; Markdown/text use the built-in Groundlane Reader unless an explicit selector is supplied.
 6. For an eligible Markdown request, optionally try Jina Reader after a retryable HTTP failure or supported fallback signal.
 7. If Reader is ineligible, unavailable, or rate-limited—or if `render=always`—call the configured Groundlane Browser with the remaining budget.
 8. Return content plus final URL, status, engine, backend provenance, truncation, timing, and warnings metadata. The current compatibility field `cached` is always `false`; response caching is deferred.

@@ -60,6 +60,9 @@ export interface DocumentCache {
 
 export interface NormalizedDocument {
   title?: string;
+  description?: string;
+  author?: string;
+  publishedAt?: string;
   content: string;
   format: FetchFormat;
   truncated: boolean;
@@ -73,6 +76,9 @@ export interface WebFetchResult {
   status: number;
   contentType: string;
   title?: string;
+  description?: string;
+  author?: string;
+  publishedAt?: string;
   content: string;
   engine: Engine;
   backend: string;

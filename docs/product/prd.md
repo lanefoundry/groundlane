@@ -75,7 +75,7 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 預期 output：
 
 ```text
-requestedUrl, finalUrl, status, contentType, title?, content, format,
+requestedUrl, finalUrl, status, contentType, title?, description?, author?, publishedAt?, content, format,
 engine(http|reader|browser), backend, cached, truncated, bytes, durationMs,
 warnings[], fallbackReason?
 ```
@@ -91,6 +91,7 @@ warnings[], fallbackReason?
 - output 的 `backend` 必須揭露 `direct | jina | local | browserless` 等實際來源。
 - 一般 4xx 不因狀態碼本身自動使用 browser retry。
 - output 超過字數上限時安全截斷並標示 `truncated=true`。
+- 無 selector 的 HTML Markdown/text 由內建 Groundlane Reader 選擇正文、移除常見 page chrome、解析相對 HTTP(S) 連結，並擷取有界的文章 metadata；此 deterministic normalization 不改變 retrieval provenance。
 
 ### 5.3 `web_search`
 
