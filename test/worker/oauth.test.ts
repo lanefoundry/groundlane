@@ -27,7 +27,31 @@ const subtle: TimingSafeSubtleCrypto = {
 };
 
 const OWNER_PASSPHRASE = "owner-passphrase-0123456789abcdef";
+const GROUNDLANE_AUTH_TOKEN = "container-shared-secret-0123456789abcdef";
 const ctx = createFakeExecutionContext();
+
+/**
+ * Mirrors the real Container's independent bearer check
+ * (src/container/app.ts) — it only understands GROUNDLANE_AUTH_TOKEN, not
+ * OAuth access tokens. Using a container fake that ignores auth entirely
+ * would hide exactly the bug where the Worker forwarded a client's OAuth
+ * token downstream unchanged instead of substituting the shared secret.
+ */
+function containerRequiringSharedSecret(
+  onAuthenticated: (request: Request) => Promise<Response>,
+): (request: Request) => Promise<Response> {
+  return (request) => {
+    if (request.headers.get("authorization") !== `Bearer ${GROUNDLANE_AUTH_TOKEN}`) {
+      return Promise.resolve(
+        Response.json(
+          { error: { code: "unauthorized", message: "A valid bearer token is required" } },
+          { status: 401, headers: { "www-authenticate": 'Bearer realm="groundlane"' } },
+        ),
+      );
+    }
+    return onAuthenticated(request);
+  };
+}
 
 function base64UrlEncode(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
@@ -48,12 +72,12 @@ function makeEnv(containerFetch: (request: Request) => Promise<Response>): {
 } {
   return {
     env: {
-      GROUNDLANE_AUTH_TOKEN: "unused-in-oauth-path",
+      GROUNDLANE_AUTH_TOKEN,
       OAUTH_KV: createFakeKvNamespace(),
       OAUTH_OWNER_PASSPHRASE: OWNER_PASSPHRASE,
       GROUNDLANE_CONTAINER: {
         getByName() {
-          return { fetch: containerFetch };
+          return { fetch: containerRequiringSharedSecret(containerFetch) };
         },
       },
     },
@@ -61,9 +85,11 @@ function makeEnv(containerFetch: (request: Request) => Promise<Response>): {
 }
 
 void test("DCR register -> authorize (passphrase) -> token -> authenticated /mcp round trip", async () => {
-  const { env } = makeEnv(() =>
-    Promise.resolve(Response.json({ ok: true, via: "container" }, { status: 200 })),
-  );
+  let authorizationSeenByContainer: string | null = null;
+  const { env } = makeEnv((request) => {
+    authorizationSeenByContainer = request.headers.get("authorization");
+    return Promise.resolve(Response.json({ ok: true, via: "container" }, { status: 200 }));
+  });
   const provider = buildOAuthProvider(subtle);
   const redirectUri = "https://client.example/callback";
 
@@ -150,6 +176,11 @@ void test("DCR register -> authorize (passphrase) -> token -> authenticated /mcp
   const mcpBody = await mcpResponse.text();
   assert.equal(mcpResponse.status, 200, mcpBody);
   assert.deepEqual(JSON.parse(mcpBody), { ok: true, via: "container" });
+
+  // The Container only understands GROUNDLANE_AUTH_TOKEN — the Worker must
+  // substitute it, not forward the client's OAuth access token verbatim.
+  assert.equal(authorizationSeenByContainer, `Bearer ${GROUNDLANE_AUTH_TOKEN}`);
+  assert.notEqual(authorizationSeenByContainer, `Bearer ${token.access_token}`);
 });
 
 void test("unauthenticated /mcp is rejected by the provider without reaching the container", async () => {

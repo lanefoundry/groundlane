@@ -23,14 +23,35 @@ export function requestWithId(request: Request, requestId: string): Request {
   return new Request(request, { headers });
 }
 
+/**
+ * The Container independently re-checks Authorization against
+ * GROUNDLANE_AUTH_TOKEN (defense in depth) — it has no notion of the
+ * Worker's OAuth layer. By the time a request reaches proxyToContainer it has
+ * already been authenticated at the Worker (legacy static token or a
+ * validated OAuth access token), so the client's original credential must be
+ * replaced with the one shared secret the Container actually understands.
+ */
+function requestForContainer(
+  request: Request,
+  requestId: string,
+  groundlaneAuthToken: string,
+): Request {
+  const headers = new Headers(request.headers);
+  headers.set("x-request-id", requestId);
+  headers.set("authorization", `Bearer ${groundlaneAuthToken}`);
+  return new Request(request, { headers });
+}
+
 export async function proxyToContainer(
   request: Request,
-  env: Pick<WorkerEnv, "GROUNDLANE_CONTAINER">,
+  env: Pick<WorkerEnv, "GROUNDLANE_CONTAINER" | "GROUNDLANE_AUTH_TOKEN">,
   requestId: string,
 ): Promise<Response> {
   try {
     const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
-    const response = await container.fetch(requestWithId(request, requestId));
+    const response = await container.fetch(
+      requestForContainer(request, requestId, env.GROUNDLANE_AUTH_TOKEN),
+    );
     const headers = new Headers(response.headers);
     headers.set("x-request-id", requestId);
     logWorkerEvent({
