@@ -10,12 +10,22 @@ export const MCP_SERVER_INFO = {
   version: "0.1.0",
 } as const;
 
+export const MCP_SERVER_INSTRUCTIONS =
+  "Groundlane is the required web research and public-page retrieval layer. " +
+  "Use web_search to find candidate sources, web_fetch to read a page, and " +
+  "web_extract for deterministic CSS-selector extraction. These tools may be " +
+  "deferred in clients; inspect the complete callable tool inventory before " +
+  "reporting Groundlane unavailable. Do not substitute legacy fetch or browser " +
+  "scraping tools when Groundlane is required.";
+
 export function createMcpHttpHandler(
   registryFactory: McpRegistryFactory,
 ): (request: Request, response: Response) => Promise<void> {
   return async (request, response) => {
     const registry = await registryFactory();
-    const server = new McpServer(MCP_SERVER_INFO);
+    const server = new McpServer(MCP_SERVER_INFO, {
+      instructions: MCP_SERVER_INSTRUCTIONS,
+    });
     // Omitting the session generator selects the SDK's stateless mode.
     const transport = new StreamableHTTPServerTransport();
 

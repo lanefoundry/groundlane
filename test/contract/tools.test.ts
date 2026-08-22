@@ -19,6 +19,7 @@ import { ConcurrencyLimiter } from "../../src/core/limits.js";
 import { SearchRouter } from "../../src/core/search-router.js";
 import { createContainerApp } from "../../src/container/app.js";
 import { createMcpRegistry } from "../../src/mcp/registry.js";
+import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createWebExtractModule } from "../../src/tools/web-extract.js";
 import { createWebFetchModule } from "../../src/tools/web-fetch.js";
 import { createWebSearchModule } from "../../src/tools/web-search.js";
@@ -111,6 +112,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     // SDK 1.29's optional callback declarations conflict under
     // exactOptionalPropertyTypes, though this class implements Transport.
     await client.connect(transport as Transport);
+    assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
     const tools = await client.listTools();
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
