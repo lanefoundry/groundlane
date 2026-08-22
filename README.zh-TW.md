@@ -87,6 +87,10 @@ pnpm secrets:setup -- --from-file .cloudflare-secrets.env
 部署後請依照 [Cloudflare 部署指南](docs/deployment/cloudflare.md)驗證 health、
 readiness、authentication 與 MCP 行為。
 
+push 到 `main` 後，GitHub Actions 會在 CI quality job 成功後自動部署。Repo
+必須設定 `CLOUDFLARE_ACCOUNT_ID` 與 `CLOUDFLARE_API_TOKEN` Actions secrets；
+詳見[GitHub 持續部署](docs/deployment/cloudflare.md#continuous-deployment-from-github)。
+
 ## 連接 MCP client
 
 在啟動 client 的 shell 匯出同一組 token：

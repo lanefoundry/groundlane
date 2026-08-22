@@ -61,6 +61,20 @@ void test("Cloudflare onboarding invokes the deploy package script unambiguously
   }
 });
 
+void test("Cloudflare CD deploys main only after the quality gate", () => {
+  const workflow = readFileSync(
+    join(process.cwd(), ".github/workflows/ci.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /deploy:\n\s+if: .*refs\/heads\/main/u);
+  assert.match(workflow, /needs: quality/u);
+  assert.match(workflow, /environment: production/u);
+  assert.match(workflow, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/u);
+  assert.match(workflow, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/u);
+  assert.match(workflow, /run: pnpm run deploy/u);
+  assert.doesNotMatch(workflow, /wrangler deploy[^\n]*--(?:api-token|account-id)/u);
+});
+
 void test("bulk payload includes only known non-blank updates", () => {
   assert.deepEqual(
     buildSecretBulkPayload({

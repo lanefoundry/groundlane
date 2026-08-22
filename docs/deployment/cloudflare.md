@@ -174,6 +174,41 @@ If you configured a named environment, deploy with the same target, for example
 
 Treat deployment as incomplete until the public route and Container binding are both verified.
 
+## Continuous deployment from GitHub
+
+The checked-in [CI workflow](../../.github/workflows/ci.yml) runs the existing
+quality job for pull requests and pushes. On `main` pushes (or a manual run on
+`main`), its `deploy` job starts only after quality succeeds, installs the locked
+dependencies, and runs `pnpm run deploy`. Deployments use a non-cancelling
+`groundlane-production` concurrency group so a newer push cannot interrupt an
+in-progress Container rollout.
+
+Create a Cloudflare API token from the account-level API Tokens page using the
+**Edit Cloudflare Workers** template, then restrict it to only the account that
+hosts Groundlane. Add these two GitHub Actions secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+
+Use interactive stdin so the token does not appear in shell history:
+
+```bash
+gh secret set CLOUDFLARE_ACCOUNT_ID
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret list --app actions
+```
+
+The workflow validates that both names are present before deployment and never
+passes their values as command-line arguments. These credentials authorize code
+and Container deployment only. Existing `GROUNDLANE_AUTH_TOKEN` and provider
+keys remain Cloudflare Worker secrets and are not copied into GitHub Actions.
+
+The deploy job uses the GitHub `production` environment. Repository owners can
+add environment reviewers or branch protection in GitHub without changing the
+workflow. Until both Actions secrets exist, CI quality still runs but the deploy
+job fails with the missing secret name instead of attempting an unauthenticated
+deployment.
+
 ## Verify
 
 Run checks from a network outside the deployment account:

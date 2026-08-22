@@ -89,6 +89,10 @@ values. Delete the populated file after setup if you do not need it locally.
 Then follow the [Cloudflare deployment guide](docs/deployment/cloudflare.md)
 to verify health, readiness, authentication, and MCP behavior.
 
+Pushes to `main` automatically deploy after the CI quality job succeeds. The
+repository must have `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` GitHub
+Actions secrets; see [Continuous deployment](docs/deployment/cloudflare.md#continuous-deployment-from-github).
+
 ## Connect an MCP client
 
 Export the same token in the shell that starts your client:
