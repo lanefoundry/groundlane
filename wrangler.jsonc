@@ -5,8 +5,8 @@
   "compatibility_date": "2026-08-20",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "SEARCH_PROVIDER_ORDER": "tavily,exa,parallel,browserbase,brave,firecrawl,serpapi",
-    "SEARCH_MONTHLY_REQUEST_BUDGETS": "tavily:1000,exa:1000,parallel:5000,browserbase:1000,brave:1000,firecrawl:500,serpapi:250",
+    "SEARCH_PROVIDER_ORDER": "tavily,exa,linkup,parallel,browserbase,brave,firecrawl,serpapi",
+    "SEARCH_MONTHLY_REQUEST_BUDGETS": "tavily:1000,exa:1000,linkup:100,parallel:1000,browserbase:1000,brave:1000,firecrawl:500,serpapi:250,serper:0,you:0",
     "READER_BACKEND": "disabled",
     "BROWSER_BACKEND": "local",
     "BROWSERLESS_REGION": "sfo",

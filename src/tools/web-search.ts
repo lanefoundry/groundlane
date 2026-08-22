@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { SearchResult } from "../core/contracts.js";
 import { GroundlaneError } from "../core/errors.js";
+import { SEARCH_PROVIDER_IDS } from "../core/search-provider-catalog.js";
 import type { SearchRouter } from "../core/search-router.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
@@ -10,25 +11,24 @@ import { structuredToolResult } from "../mcp/results.js";
 import { resultEnvelopeSchema, toolError, withConcurrency } from "./common.js";
 
 const domainSchema = z.string().trim().min(3).max(253);
-const inputSchema = z.object({
+export const webSearchInputSchema = z.object({
   query: z.string().trim().min(1).max(2_000),
   maxResults: z.number().int().min(1).max(20).default(5),
   domains: z.array(domainSchema).max(50).optional(),
   excludeDomains: z.array(domainSchema).max(50).optional(),
   timeRange: z.enum(["day", "week", "month", "year"]).optional(),
-  provider: z
-    .enum([
-      "auto",
-      "tavily",
-      "exa",
-      "parallel",
-      "browserbase",
-      "brave",
-      "firecrawl",
-      "serpapi",
-    ])
-    .default("auto"),
+  provider: z.enum(["auto", ...SEARCH_PROVIDER_IDS]).default("auto"),
+  providers: z.array(z.enum(SEARCH_PROVIDER_IDS)).min(1).max(SEARCH_PROVIDER_IDS.length).optional(),
+  strategy: z.enum(["fallback", "balanced", "deep"]).default("balanced"),
   timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
+}).superRefine((value, context) => {
+  if (value.provider !== "auto" && value.providers !== undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "provider and providers cannot be used together",
+      path: ["providers"],
+    });
+  }
 });
 
 const searchDataSchema = z.object({
@@ -42,10 +42,20 @@ const searchDataSchema = z.object({
       publishedAt: z.string().optional(),
       score: z.number().optional(),
       provider: z.string(),
+      fusionScore: z.number().optional(),
+      sources: z.array(z.object({
+        provider: z.string(),
+        rank: z.number().int().positive(),
+        rawScore: z.number().optional(),
+      })).optional(),
     }),
   ),
   durationMs: z.number().int().nonnegative(),
   warnings: z.array(z.string()),
+  strategy: z.enum(["fallback", "balanced", "deep"]).optional(),
+  providersSelected: z.array(z.string()).optional(),
+  providersAttempted: z.array(z.string()).optional(),
+  providersSucceeded: z.array(z.string()).optional(),
 });
 
 export interface WebSearchModuleOptions {
@@ -69,8 +79,8 @@ export function createWebSearchModule(options: WebSearchModuleOptions): McpModul
         "web_search",
         {
           description:
-            "Search the public web through a configured provider and return normalized, attributed results.",
-          inputSchema,
+            "Search the public web through configured providers. Auto searches use bounded two-provider fusion by default; explicit providers stay single-source.",
+          inputSchema: webSearchInputSchema,
           outputSchema: resultEnvelopeSchema(searchDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
@@ -89,6 +99,8 @@ export function createWebSearchModule(options: WebSearchModuleOptions): McpModul
                         query: input.query,
                         maxResults: input.maxResults,
                         provider: input.provider,
+                        strategy: input.strategy,
+                        ...(input.providers === undefined ? {} : { providers: input.providers }),
                         ...(input.domains === undefined ? {} : { domains: input.domains }),
                         ...(input.excludeDomains === undefined
                           ? {}

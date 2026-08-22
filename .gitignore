@@ -3,6 +3,7 @@ dist/
 .wrangler/
 .dev.vars
 .env
+.cloudflare-secrets.env
 playwright-report/
 test-results/
 coverage/

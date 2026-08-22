@@ -1,6 +1,6 @@
 # Web access providers with renewable or ongoing free usage
 
-Verified: 2026-08-21. All figures below come from provider-owned pricing or product pages fetched with `stealth_fetch`. Pricing changes frequently; verify again before making routing or budget decisions.
+Verified: 2026-08-22. All figures below come from provider-owned pricing or product pages. Pricing changes frequently; verify again with Groundlane before making routing or budget decisions.
 
 ## Recurring or ongoing free allowance
 
@@ -11,8 +11,9 @@ Verified: 2026-08-21. All figures below come from provider-owned pricing or prod
 | [Brave Search API](https://brave.com/search/api/) | $5 credits/month | Independent-index search | Search is $5/1,000 requests, so the credit covers about 1,000 basic searches; signup flow requires a card |
 | [Firecrawl](https://www.firecrawl.dev/pricing) | 1,000 credits/month; no card | Search, scrape, crawl | Search costs 2 credits/10 results; scrape/crawl/map cost 1 credit/page |
 | [SerpApi](https://serpapi.com/pricing) | 250 searches/month | Google organic SERP and later vertical engines | 50 throughput/hour; no ZeroTrace or legal shield on Free |
-| [Parallel](https://parallel.ai/pricing) | Up to 5,000 requests/month free; also advertises $5 monthly credits | Search, extract, cited responses | Endpoint cost varies; confirm which requests qualify for the free request count |
+| [Parallel](https://parallel.ai/pricing) | Eligible organizations receive $5 credits/month | Search, extract, cited responses | Requires a card; credits expire monthly and overage is charged, so Groundlane uses a conservative attempt cap |
 | [Browserbase](https://docs.browserbase.com/account/billing/plans) | 1,000 Search calls/month, 1,000 Fetch calls/month, and one browser hour | Search now; managed fetch/browser later | Different products have separate allowances and contracts |
+| [Linkup](https://www.linkup.so/pricing) | Eligible accounts are topped back up to a $20 balance each month | Search, fetch, research | This is a balance refill, not $20 added each month; eligibility and exact top-up date are not fully public |
 | [Apify](https://apify.com/pricing) | $5 platform/Actor spend each month; no card | Specialized Actors, crawling, proxy-backed jobs | Usage depends on Actor price, compute, proxy, storage, and transfer |
 | [Cloudflare Browser Run](https://developers.cloudflare.com/browser-rendering/pricing/) | Workers Free: 10 browser minutes/day; Workers Paid: 10 browser hours/month included | Browser, Markdown, scrape, JSON, crawl | Paid overage is $0.09/browser-hour; session concurrency is billed separately after included capacity |
 | [Browserless](https://www.browserless.io/pricing) | 1,000 units/month; no card | Managed browser fallback | Two concurrent browsers; one-minute maximum session; a unit covers up to 30 seconds, with proxy/CAPTCHA surcharges |
@@ -34,21 +35,24 @@ an eligible Groundlane public-web provider today:
 
 ## Eligible `web_search` providers
 
-Groundlane exposes exactly these recurring-monthly-free search providers:
+At the time of this pricing snapshot, Groundlane's default automatic order exposed exactly these recurring-monthly-free search providers:
 
 1. Tavily
 2. Exa
-3. Parallel
-4. Browserbase Search (1,000 Search calls/month on its Free plan)
-5. Brave Search API
-6. Firecrawl Search
-7. SerpApi
+3. Linkup (eligible accounts; conservative local cap)
+4. Parallel
+5. Browserbase Search (1,000 Search calls/month on its Free plan)
+6. Brave Search API
+7. Firecrawl Search
+8. SerpApi
 
 Apify, Cloudflare Browser Run, Browserless, and ZenRows may also have recurring
 allowances, but they are Actor, browser, or retrieval services rather than a
 compatible general-search provider. Browserless is therefore implemented as a
 browser backend; the others belong behind future backend adapters, not in the
-public `web_search.provider` enum.
+default automatic order. The implementation also exposes Serper and You.com as
+opt-in provider values, but their REST allowances remain finite trials rather
+than recurring capacity.
 
 ## Signup or finite trial pools
 
@@ -57,10 +61,10 @@ These pages advertise free usage but do not state that it resets every month. Tr
 | Service | Free pool | Best Groundlane role |
 | --- | --- | --- |
 | [Serper](https://serper.dev/) | 2,500 queries; no card | Low-cost Google SERP provider |
-| [Linkup](https://www.linkup.so/pricing) | 4,000 queries | Search, fetch, research |
 | [SearchAPI.io](https://www.searchapi.io/pricing) | 100 requests; no card | Google and vertical SERP provider |
 | [ScrapingBee](https://www.scrapingbee.com/pricing/) | 1,000 API credits; no card | Proxy/browser-backed page retrieval |
 | [Jina Search](https://jina.ai/reader/) | Each new key includes 10 million non-commercial tokens; no monthly refill is stated | Search trial only; `s.jina.ai` does not allow keyless requests |
+| [You.com REST API](https://you.com/api) | $100 complimentary API credits; no card | Search and contents trial; separate from the keyless Search MCP |
 
 ## Do not choose for a new integration
 
@@ -72,17 +76,21 @@ For a low-cost development deployment, Groundlane defaults to:
 
 1. Tavily
 2. Exa
-3. Parallel
-4. Browserbase
-5. Brave
-6. Firecrawl
-7. SerpApi
+3. Linkup
+4. Parallel
+5. Browserbase
+6. Brave
+7. Firecrawl
+8. SerpApi
 
-The current router uses ordered fallback plus an instance-local monthly attempt
-budget for each provider. Counters reset at the start of each UTC month and skip
-providers whose configured budget is exhausted. They are guardrails rather than
+Automatic searches select at most two complementary providers from the ordered
+candidate pool and merge exact canonical-URL matches with RRF. Callers can still
+pin one provider or request sequential fallback. Every attempted provider uses
+its own instance-local monthly budget; counters reset at the start of each UTC
+month and skip exhausted providers. These counters are guardrails rather than
 billing records: restarts reset them and multiple instances do not share state,
-so provider dashboards remain authoritative. Finite trial pools such as Serper
-and Linkup are intentionally not exposed as providers.
+so provider dashboards remain authoritative. Linkup is attempted only when a
+key is configured and has a conservative default cap of 100 attempts. Finite
+pools such as Serper and You.com REST remain opt-in and default to a zero cap.
 
 For retrieval, prefer Groundlane's bounded HTTP path first. Operators can then opt into Jina Reader for eligible Markdown fallback and choose either Container-local Playwright or Browserless for rendering. Cloudflare Browser Run, Firecrawl Scrape, and other hosted retrieval paths remain future adapters.

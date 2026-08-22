@@ -5,6 +5,7 @@ import { resolvePublicUrl } from "../../core/url-policy.js";
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 export type UrlValidator = (url: string) => Promise<void>;
 const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000;
+const MAX_PROVIDER_RESULT_CANDIDATES = 100;
 
 async function readProviderBody(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
@@ -63,7 +64,7 @@ export function cleanDomains(domains: readonly string[] | undefined): string[] |
 
 export async function validateItems(items: readonly SearchResultItem[], validator: UrlValidator): Promise<SearchResultItem[]> {
   const valid: SearchResultItem[] = [];
-  for (const item of items) {
+  for (const item of items.slice(0, MAX_PROVIDER_RESULT_CANDIDATES)) {
     try { await validator(item.url); valid.push(item); } catch { /* untrusted provider URL is dropped */ }
   }
   return valid;

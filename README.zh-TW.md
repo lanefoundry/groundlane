@@ -24,10 +24,10 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | 工具 | 功能 | 目前執行路徑 |
 | --- | --- | --- |
 | `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
-| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 自動或明確指定七個 provider |
+| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十個 provider 的有界雙來源自動融合、明確單一來源、fallback 或 deep routing |
 | `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute；不暗中呼叫 LLM |
 
-Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl` 等 retrieval provenance；search 結果則標示 provider。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
+Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl` 等 retrieval provenance。自動搜尋預設最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留各 provider 的排名 provenance；明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 ## 快速開始
 
@@ -51,6 +51,41 @@ pnpm dev
 ```
 
 Groundlane 現在會在 `http://localhost:8080/mcp` 提供需要驗證的 Streamable HTTP MCP endpoint。Search key 是選填，只需設定想啟用的 provider。
+
+### 部署到 Cloudflare
+
+第一次部署到 Cloudflare 時，先登入 Wrangler、檢查目標環境已設定的
+secret 名稱，再輸入必要的 bearer token 與選用的 provider keys，最後部署：
+
+```bash
+pnpm exec wrangler login
+pnpm exec wrangler whoami
+pnpm secrets:status
+pnpm secrets:setup
+pnpm run deploy
+```
+
+這兩個 secret 指令只會操作 Cloudflare，不會讀取或修改本機 `.env`。
+未指定 `--env` 時，Wrangler 會操作 `wrangler.jsonc` 的 top-level target；
+若選用 named environment，status、setup 與 deploy 必須使用相同的 `--env`。
+請產生並妥善保存至少 32 字元的 bearer token（例如執行
+`openssl rand -hex 32`），再貼入 setup；MCP client 與 smoke test 也要使用
+同一個 token。Search provider keys 全部選填。執行
+`pnpm secrets:setup -- --help` 可查看安全的互動設定流程。Setup 會先顯示
+一份編號清單；輸入例如 `2,4-6` 即可複選，接著只詢問選中的值，最後一次
+bulk 更新。若想一次貼完，可將
+[`cloudflare-secrets.example.env`](cloudflare-secrets.example.env) 複製成已被
+git 忽略的 `.cloudflare-secrets.env`，填入需要的值後執行：
+
+```bash
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env --dry-run
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env
+```
+
+匯入支援 `.env` 或 JSON，會拒絕未知名稱，也不會印出 secret 值。不需要
+在本機保留時，設定完成後請刪除填過值的檔案。
+部署後請依照 [Cloudflare 部署指南](docs/deployment/cloudflare.md)驗證 health、
+readiness、authentication 與 MCP 行為。
 
 ## 連接 MCP client
 
@@ -122,13 +157,13 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | --- | --- | --- |
 | Local Node | 開發與評估 | [快速開始](#快速開始) |
 | Docker | 獨立 Node／Chromium container | `docker build -t groundlane .`，再執行 `docker run --rm -p 8080:8080 --env-file .env groundlane` |
-| Cloudflare Worker + Container | 預期的 production topology | [Cloudflare 部署指南](docs/deployment/cloudflare.md) |
+| Cloudflare Worker + Container | 預期的 production topology | [部署到 Cloudflare](#部署到-cloudflare) |
 
 ## 支援的 adapters
 
 | 能力 | Adapters |
 | --- | --- |
-| Search | Tavily、Exa、Parallel、Browserbase、Brave、Firecrawl、SerpApi |
+| Search | Tavily、Exa、Parallel、Browserbase、Brave、Firecrawl、SerpApi、Linkup、Serper、You.com |
 | Hosted Reader fallback | Jina Reader（opt-in） |
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
 
@@ -161,7 +196,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：三個 remote MCP tools、七個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
+- 已完成：三個 remote MCP tools、十個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
 - 下一步：compatibility fixtures、cache／health-aware routing、營運 telemetry 與 opt-in bounded crawl primitives。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。

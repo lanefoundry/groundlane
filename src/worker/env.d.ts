@@ -8,6 +8,9 @@ declare namespace Cloudflare {
     SERPAPI_API_KEY?: string;
     BROWSERBASE_API_KEY?: string;
     PARALLEL_API_KEY?: string;
+    LINKUP_API_KEY?: string;
+    SERPER_API_KEY?: string;
+    YOU_API_KEY?: string;
     BROWSERLESS_TOKEN?: string;
   }
 }

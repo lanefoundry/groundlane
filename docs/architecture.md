@@ -38,7 +38,8 @@ Groundlane does use mature open-source crawler and browser projects as architect
                       |          +----------+
               provider ports     |
                       |          safe HTTP
- Tavily/Exa/Parallel/Browserbase/Brave/Firecrawl/SerpApi |
+  Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi |
+                    Serper/You.com (opt-in)                    |
                                       |
                          optional Jina Reader
                                       |
@@ -82,14 +83,15 @@ A generic upstream 4xx does not automatically receive an expensive browser retry
 
 ### `web_search`
 
-1. Validate the query, domains, time range, and bounded result count.
-2. Filter configured providers by requested capabilities.
-3. Honor an explicitly selected provider, or use configured automatic order.
-4. Atomically consume one instance-local monthly attempt from the candidate's configured budget; skip exhausted candidates.
-5. Fall back only on retryable failures such as timeout, rate limit, provider 5xx, or malformed response.
-6. Normalize results while retaining provider attribution.
+1. Validate the query, domains, time range, strategy, provider allowlist, and bounded result count.
+2. Filter configured providers by requested capabilities, health, and remaining local attempt budget.
+3. An explicit provider stays single-source. Automatic searches default to `balanced`, which deterministically selects at most two complementary provider families; `deep` selects at most three and `fallback` retains sequential first-success routing.
+4. Atomically consume one instance-local monthly attempt immediately before each selected provider call.
+5. Run federated calls concurrently under the original shared abort signal and deadline. One successful provider is a partial success; all-provider failure returns a stable sanitized error.
+6. Canonicalize public HTTP(S) result URLs, remove conservative tracking parameters, merge exact duplicates, and combine ranks with equal-weight Reciprocal Rank Fusion. Raw provider scores remain provenance and are never added together.
+7. Apply a bounded hostname-diversity policy and return selected, attempted, successful, and per-result provider attribution.
 
-Groundlane does not silently merge rankings from multiple providers in the MVP.
+Automatic fusion is deliberately bounded rather than query-all: `balanced` makes at most two attempts and `deep` at most three. Callers that prioritize a single attempt can use `strategy=fallback` or pin `provider` explicitly.
 Monthly counters reset on a UTC month boundary and are intentionally conservative. They are not durable or shared across Container instances, so provider-side quotas and spend limits remain authoritative. A durable multi-instance ledger requires a later storage/control-plane design.
 
 ### `web_extract`

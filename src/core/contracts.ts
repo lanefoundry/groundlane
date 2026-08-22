@@ -1,4 +1,5 @@
 import type { Deadline } from "./limits.js";
+import type { KnownSearchProviderId } from "./search-provider-catalog.js";
 
 export type FetchFormat = "html" | "text" | "markdown";
 export type RenderMode = "auto" | "never" | "always";
@@ -89,16 +90,9 @@ export interface WebFetchResult {
   warnings: string[];
 }
 
-export type SearchProviderId =
-  | "tavily"
-  | "exa"
-  | "firecrawl"
-  | "serpapi"
-  | "brave"
-  | "browserbase"
-  | "parallel"
-  | (string & {});
+export type SearchProviderId = KnownSearchProviderId | (string & {});
 export type SearchTimeRange = "day" | "week" | "month" | "year";
+export type SearchStrategy = "fallback" | "balanced" | "deep";
 
 export interface SearchRequest {
   query: string;
@@ -107,6 +101,14 @@ export interface SearchRequest {
   excludeDomains?: readonly string[];
   timeRange?: SearchTimeRange;
   provider?: "auto" | SearchProviderId;
+  providers?: readonly SearchProviderId[];
+  strategy?: SearchStrategy;
+}
+
+export interface SearchResultSource {
+  provider: SearchProviderId;
+  rank: number;
+  rawScore?: number;
 }
 
 export interface SearchResultItem {
@@ -116,6 +118,8 @@ export interface SearchResultItem {
   publishedAt?: string;
   score?: number;
   provider: SearchProviderId;
+  fusionScore?: number;
+  sources?: readonly SearchResultSource[];
 }
 
 export interface SearchResult {
@@ -124,6 +128,10 @@ export interface SearchResult {
   results: SearchResultItem[];
   durationMs: number;
   warnings: string[];
+  strategy?: SearchStrategy;
+  providersSelected?: readonly SearchProviderId[];
+  providersAttempted?: readonly SearchProviderId[];
+  providersSucceeded?: readonly SearchProviderId[];
 }
 
 export interface SearchProvider {

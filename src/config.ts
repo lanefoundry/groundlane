@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE,
+  DEFAULT_SEARCH_PROVIDER_ORDER_VALUE,
+  SEARCH_PROVIDER_IDS,
+  type KnownSearchProviderId,
+} from "./core/search-provider-catalog.js";
+
 const positiveInt = (minimum: number, maximum: number) =>
   z.coerce.number().int().min(minimum).max(maximum);
 
@@ -11,10 +18,10 @@ const optionalSecret = z.preprocess(
 const environmentSchema = z.object({
   PORT: positiveInt(1, 65_535).default(8080),
   GROUNDLANE_AUTH_TOKEN: z.string().min(32),
-  SEARCH_PROVIDER_ORDER: z.string().default("tavily,exa,parallel,browserbase,brave,firecrawl,serpapi"),
+  SEARCH_PROVIDER_ORDER: z.string().default(DEFAULT_SEARCH_PROVIDER_ORDER_VALUE),
   SEARCH_MONTHLY_REQUEST_BUDGETS: z
     .string()
-    .default("tavily:1000,exa:1000,parallel:5000,browserbase:1000,brave:1000,firecrawl:500,serpapi:250"),
+    .default(DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE),
   TAVILY_API_KEY: optionalSecret,
   EXA_API_KEY: optionalSecret,
   BRAVE_API_KEY: optionalSecret,
@@ -22,6 +29,9 @@ const environmentSchema = z.object({
   SERPAPI_API_KEY: optionalSecret,
   BROWSERBASE_API_KEY: optionalSecret,
   PARALLEL_API_KEY: optionalSecret,
+  LINKUP_API_KEY: optionalSecret,
+  SERPER_API_KEY: optionalSecret,
+  YOU_API_KEY: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
   BROWSER_BACKEND: z.enum(["disabled", "local", "browserless"]).default("disabled"),
   BROWSERLESS_TOKEN: optionalSecret,
@@ -33,14 +43,7 @@ const environmentSchema = z.object({
   MAX_QUEUE: positiveInt(0, 1_000).default(16),
 });
 
-export type SearchProviderId =
-  | "tavily"
-  | "exa"
-  | "parallel"
-  | "browserbase"
-  | "brave"
-  | "firecrawl"
-  | "serpapi";
+export type SearchProviderId = KnownSearchProviderId;
 
 export interface GroundlaneConfig {
   port: number;
@@ -59,15 +62,7 @@ export interface GroundlaneConfig {
   maxQueue: number;
 }
 
-const providerIds = new Set<SearchProviderId>([
-  "tavily",
-  "exa",
-  "firecrawl",
-  "serpapi",
-  "brave",
-  "browserbase",
-  "parallel",
-]);
+const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
 
 export function parseSearchMonthlyRequestBudgets(
   value: string,
@@ -104,7 +99,7 @@ export function parseConfig(
 
   if (order.length === 0) {
     throw new Error(
-      "SEARCH_PROVIDER_ORDER must contain a supported monthly-free provider",
+      "SEARCH_PROVIDER_ORDER must contain a supported provider",
     );
   }
 
@@ -120,6 +115,9 @@ export function parseConfig(
     providerKeys.browserbase = parsed.BROWSERBASE_API_KEY;
   }
   if (parsed.PARALLEL_API_KEY !== undefined) providerKeys.parallel = parsed.PARALLEL_API_KEY;
+  if (parsed.LINKUP_API_KEY !== undefined) providerKeys.linkup = parsed.LINKUP_API_KEY;
+  if (parsed.SERPER_API_KEY !== undefined) providerKeys.serper = parsed.SERPER_API_KEY;
+  if (parsed.YOU_API_KEY !== undefined) providerKeys.you = parsed.YOU_API_KEY;
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {
     throw new Error("BROWSERLESS_TOKEN is required when BROWSER_BACKEND=browserless");
   }

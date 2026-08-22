@@ -56,21 +56,70 @@ Use separate Cloudflare environments for development and production. Do not use 
 
 ## Configure secrets
 
-Store credentials with Wrangler or the Cloudflare dashboard, never in `wrangler.jsonc`, `.dev.vars`, `.env`, an image layer, or source control.
+Store credentials with Wrangler or the Cloudflare dashboard, never in `wrangler.jsonc`, an image layer, or source control. Authenticate Wrangler first with `pnpm exec wrangler login` or an appropriately scoped `CLOUDFLARE_API_TOKEN` supplied by the execution environment.
 
 ```bash
-pnpm exec wrangler secret put GROUNDLANE_AUTH_TOKEN
-pnpm exec wrangler secret put TAVILY_API_KEY
-pnpm exec wrangler secret put EXA_API_KEY
-pnpm exec wrangler secret put FIRECRAWL_API_KEY
-pnpm exec wrangler secret put SERPAPI_API_KEY
-pnpm exec wrangler secret put BROWSERBASE_API_KEY
-pnpm exec wrangler secret put PARALLEL_API_KEY
-pnpm exec wrangler secret put BRAVE_API_KEY
-pnpm exec wrangler secret put BROWSERLESS_TOKEN
+pnpm exec wrangler login
+pnpm exec wrangler whoami
+pnpm secrets:status
+pnpm secrets:setup
 ```
 
-Only add provider secrets that are actually used. `BROWSERLESS_TOKEN` is needed only when `BROWSER_BACKEND=browserless`. `GroundlaneContainer.envVars` forwards the authentication token, available provider keys, search order/budgets, selected Reader/browser backends, Browserless region, and documented runtime limits into the Container. Keep that explicit allowlist synchronized with `src/config.ts` when adding configuration.
+`secrets:status` compares the checked-in name-only manifest with Cloudflare's secret names. Cloudflare does not return secret values, so this proves presence only—not that a stored value is current or correct. `secrets:setup` shows one numbered list with current name-only status; select multiple entries with numbers/ranges such as `2,4-6` or select `all`. It then prompts with hidden input only for the selected secrets, previews only their names, and sends one JSON payload through `wrangler secret bulk` stdin. A blank selection cancels without prompting or writing. It does not write values to disk or deploy code. Neither command reads or updates the local `.env`.
+
+Inspect the available options without authenticating or contacting Cloudflare:
+
+```bash
+pnpm secrets:status -- --help
+pnpm secrets:setup -- --help
+```
+
+For a one-paste setup, use the checked-in name-only template:
+
+```bash
+cp cloudflare-secrets.example.env .cloudflare-secrets.env
+# Fill only the values you use, then validate names and values locally:
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env --dry-run
+# Review the name-only preview, then apply one bulk update:
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env
+```
+
+`.cloudflare-secrets.env` is ignored by Git. The importer also accepts a JSON
+object, rejects unknown names and non-string JSON values, caps the input at 64
+KiB, and never prints secret values. File-based dry-run performs no Cloudflare
+request and needs no TTY. A non-interactive write must add `--yes`. Remove the
+populated file when it is no longer needed.
+
+The numbered `secrets:setup` menu requires an interactive TTY. Its `--dry-run` still authenticates,
+lists existing secret names, and prompts for input, but stops before the bulk
+write. Use `--yes` to skip the final confirmation. For non-interactive
+automation, use the Wrangler bulk path described below.
+
+Without `--env`, the commands use the top-level target in `wrangler.jsonc`.
+Before using a named environment, define it in `wrangler.jsonc`; then use the
+same environment for status, setup, and deploy:
+
+```bash
+pnpm secrets:status -- --env staging
+pnpm secrets:setup -- --env staging
+pnpm run deploy -- --env staging
+```
+
+For CI or password-manager automation, Wrangler also accepts JSON or `.env` through `pnpm exec wrangler secret bulk [file]`, and accepts JSON directly on stdin when the file is omitted. Do not pass secret values as command arguments.
+
+Generate a bearer token with at least 32 characters, save it in a password
+manager, and paste it into setup. For example, `openssl rand -hex 32` produces a
+64-character token. Groundlane cannot recover this value from Cloudflare; the
+same token is needed later by MCP clients and smoke tests.
+
+Only add provider secrets that are actually used; all search-provider keys are
+optional. See [Configuration](../configuration.md) before choosing providers.
+`BROWSERLESS_TOKEN` is needed only when `BROWSER_BACKEND=browserless`.
+`GroundlaneContainer.envVars` forwards the authentication token, available
+provider keys, search order/budgets, selected Reader/browser backends,
+Browserless region, and documented runtime limits into the Container. Keep that
+explicit allowlist, `src/config.ts`, and `CLOUDFLARE_SECRET_DEFINITIONS`
+synchronized when adding configuration.
 
 `SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables automatic and explicit use for that provider. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
 
@@ -117,8 +166,11 @@ If browser mode is disabled, `web_fetch` and `web_extract` must report the capab
 After reviewing the generated plan and target account:
 
 ```bash
-pnpm deploy
+pnpm run deploy
 ```
+
+If you configured a named environment, deploy with the same target, for example
+`pnpm run deploy -- --env staging`.
 
 Treat deployment as incomplete until the public route and Container binding are both verified.
 

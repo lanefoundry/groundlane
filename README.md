@@ -24,10 +24,10 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | Tool | What it does | Current execution paths |
 | --- | --- | --- |
 | `web_fetch` | Reads a public URL as Markdown, text, or HTML | Bounded HTTP, local readable normalization, and eligible optional Jina/browser fallbacks |
-| `web_search` | Searches the public web with normalized results | Automatic or explicit routing across seven providers |
+| `web_search` | Searches the public web with normalized results | Bounded two-provider auto fusion, explicit single-provider, fallback, or deep routing across ten providers |
 | `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes; no implicit LLM step |
 
-Fetch/extract results report retrieval provenance such as `engine`, `backend`, and `finalUrl`; search results identify their provider. `web_fetch` and `web_extract` work without a search-provider key.
+Fetch/extract results report retrieval provenance such as `engine`, `backend`, and `finalUrl`. Automatic search defaults to at most two complementary providers, canonical-URL deduplication, and RRF while retaining per-provider rank provenance; pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
 
 ## Quick start
 
@@ -51,6 +51,43 @@ pnpm dev
 ```
 
 Groundlane now exposes an authenticated Streamable HTTP MCP endpoint at `http://localhost:8080/mcp`. Search keys are optional; add them only for the providers you want to enable.
+
+### Deploy to Cloudflare
+
+For a fresh Cloudflare deployment, authenticate Wrangler, inspect the target's
+configured secret names, enter the required bearer token and any optional
+provider keys, then deploy:
+
+```bash
+pnpm exec wrangler login
+pnpm exec wrangler whoami
+pnpm secrets:status
+pnpm secrets:setup
+pnpm run deploy
+```
+
+These secret commands affect Cloudflare only; they do not read or update the
+local `.env`. Without `--env`, Wrangler uses the top-level target in
+`wrangler.jsonc`; if you select a named environment, use that same `--env` for
+status, setup, and deploy. Generate and retain a bearer token with at least 32
+characters (for example, `openssl rand -hex 32`), then paste it into setup—the
+same value authenticates MCP clients and smoke tests. Search-provider keys are
+optional. Use `pnpm secrets:setup -- --help` to inspect the safe interactive
+flow. Setup first presents one numbered list: select multiple secrets with an
+entry such as `2,4-6`, then it prompts only for those values and sends one bulk
+update. To paste everything once, copy
+[`cloudflare-secrets.example.env`](cloudflare-secrets.example.env) to the ignored
+`.cloudflare-secrets.env`, fill the values you use, then run:
+
+```bash
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env --dry-run
+pnpm secrets:setup -- --from-file .cloudflare-secrets.env
+```
+
+The import accepts `.env` or JSON, rejects unknown names, and never prints
+values. Delete the populated file after setup if you do not need it locally.
+Then follow the [Cloudflare deployment guide](docs/deployment/cloudflare.md)
+to verify health, readiness, authentication, and MCP behavior.
 
 ## Connect an MCP client
 
@@ -122,13 +159,13 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | --- | --- | --- |
 | Local Node | Development and evaluation | [Quick start](#quick-start) |
 | Docker | Standalone Node/Chromium container | `docker build -t groundlane .` then `docker run --rm -p 8080:8080 --env-file .env groundlane` |
-| Cloudflare Worker + Container | Intended production topology | [Cloudflare deployment guide](docs/deployment/cloudflare.md) |
+| Cloudflare Worker + Container | Intended production topology | [Deploy to Cloudflare](#deploy-to-cloudflare) |
 
 ## Supported adapters
 
 | Capability | Adapters |
 | --- | --- |
-| Search | Tavily, Exa, Parallel, Browserbase, Brave, Firecrawl, SerpApi |
+| Search | Tavily, Exa, Parallel, Browserbase, Brave, Firecrawl, SerpApi, Linkup, Serper, You.com |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
 
@@ -161,7 +198,7 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 ## Project status
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: three remote MCP tools, seven search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
+- Implemented: three remote MCP tools, ten search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
 - Next: compatibility fixtures, cache/health-aware routing, operational telemetry, and opt-in bounded crawl primitives.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).

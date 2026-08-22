@@ -7,9 +7,12 @@ import { BraveSearchProvider } from "./adapters/search/brave.js";
 import { BrowserbaseSearchProvider } from "./adapters/search/browserbase.js";
 import { ExaSearchProvider } from "./adapters/search/exa.js";
 import { FirecrawlSearchProvider } from "./adapters/search/firecrawl.js";
+import { LinkupSearchProvider } from "./adapters/search/linkup.js";
 import { ParallelSearchProvider } from "./adapters/search/parallel.js";
+import { SerperSearchProvider } from "./adapters/search/serper.js";
 import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
 import { TavilySearchProvider } from "./adapters/search/tavily.js";
+import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
 import type { BrowserBackend, SearchProvider } from "./core/contracts.js";
 import { FetchPipeline } from "./core/fetch-pipeline.js";
@@ -26,6 +29,41 @@ export interface GroundlaneServices {
   close(): Promise<void>;
 }
 
+export function createSearchProviders(config: GroundlaneConfig): SearchProvider[] {
+  const providers: SearchProvider[] = [];
+  if (config.providerKeys.tavily !== undefined) {
+    providers.push(new TavilySearchProvider({ apiKey: config.providerKeys.tavily }));
+  }
+  if (config.providerKeys.exa !== undefined) {
+    providers.push(new ExaSearchProvider({ apiKey: config.providerKeys.exa }));
+  }
+  if (config.providerKeys.brave !== undefined) {
+    providers.push(new BraveSearchProvider({ apiKey: config.providerKeys.brave }));
+  }
+  if (config.providerKeys.firecrawl !== undefined) {
+    providers.push(new FirecrawlSearchProvider({ apiKey: config.providerKeys.firecrawl }));
+  }
+  if (config.providerKeys.serpapi !== undefined) {
+    providers.push(new SerpApiSearchProvider({ apiKey: config.providerKeys.serpapi }));
+  }
+  if (config.providerKeys.browserbase !== undefined) {
+    providers.push(new BrowserbaseSearchProvider({ apiKey: config.providerKeys.browserbase }));
+  }
+  if (config.providerKeys.parallel !== undefined) {
+    providers.push(new ParallelSearchProvider({ apiKey: config.providerKeys.parallel }));
+  }
+  if (config.providerKeys.linkup !== undefined) {
+    providers.push(new LinkupSearchProvider({ apiKey: config.providerKeys.linkup }));
+  }
+  if (config.providerKeys.serper !== undefined) {
+    providers.push(new SerperSearchProvider({ apiKey: config.providerKeys.serper }));
+  }
+  if (config.providerKeys.you !== undefined) {
+    providers.push(new YouSearchProvider({ apiKey: config.providerKeys.you }));
+  }
+  return providers;
+}
+
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {
   const browser: BrowserBackend =
     config.browserBackend === "local"
@@ -39,32 +77,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const reader =
     config.readerBackend === "jina" ? new JinaReaderBackend() : undefined;
   const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader);
-  const providers: SearchProvider[] = [];
-  if (config.providerKeys.tavily !== undefined) {
-    providers.push(new TavilySearchProvider({ apiKey: config.providerKeys.tavily }));
-  }
-  if (config.providerKeys.exa !== undefined) {
-    providers.push(new ExaSearchProvider({ apiKey: config.providerKeys.exa }));
-  }
-  if (config.providerKeys.brave !== undefined) {
-    providers.push(new BraveSearchProvider({ apiKey: config.providerKeys.brave }));
-  }
-  if (config.providerKeys.firecrawl !== undefined) {
-    providers.push(
-      new FirecrawlSearchProvider({ apiKey: config.providerKeys.firecrawl }),
-    );
-  }
-  if (config.providerKeys.serpapi !== undefined) {
-    providers.push(new SerpApiSearchProvider({ apiKey: config.providerKeys.serpapi }));
-  }
-  if (config.providerKeys.browserbase !== undefined) {
-    providers.push(
-      new BrowserbaseSearchProvider({ apiKey: config.providerKeys.browserbase }),
-    );
-  }
-  if (config.providerKeys.parallel !== undefined) {
-    providers.push(new ParallelSearchProvider({ apiKey: config.providerKeys.parallel }));
-  }
+  const providers = createSearchProviders(config);
   const searchRouter = new SearchRouter(
     providers,
     config.searchProviderOrder,

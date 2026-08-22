@@ -143,7 +143,23 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       name: "web_search",
       arguments: { query: "groundlane", provider: "auto" },
     });
-    assert.equal((searchResult.structuredContent as { ok?: boolean }).ok, true);
+    const searchEnvelope = searchResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        strategy?: string;
+        providersSelected?: string[];
+        providersAttempted?: string[];
+        providersSucceeded?: string[];
+        results?: Array<{ fusionScore?: number; sources?: Array<{ provider?: string }> }>;
+      };
+    };
+    assert.equal(searchEnvelope.ok, true);
+    assert.equal(searchEnvelope.data?.strategy, "balanced");
+    assert.deepEqual(searchEnvelope.data?.providersSelected, ["test"]);
+    assert.deepEqual(searchEnvelope.data?.providersAttempted, ["test"]);
+    assert.deepEqual(searchEnvelope.data?.providersSucceeded, ["test"]);
+    assert.equal(typeof searchEnvelope.data?.results?.[0]?.fusionScore, "number");
+    assert.equal(searchEnvelope.data?.results?.[0]?.sources?.[0]?.provider, "test");
 
     const extractResult = await client.callTool({
       name: "web_extract",

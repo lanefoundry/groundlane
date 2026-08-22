@@ -101,23 +101,29 @@ warnings[], fallbackReason?
 - `maxResults`：有 deployment 上限的結果數。
 - `domains`、`excludeDomains`、`timeRange`：選填 filter。
 - `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
-- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi`。
+- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi | linkup | serper | you`。
+- `providers`：選填、有界且有順序的 provider candidate allowlist；不可與 explicit `provider` 同時使用。
+- `strategy`：`fallback | balanced | deep`；`auto` 預設為 `balanced`。
 
 預期 output：
 
 ```text
-query, provider, results[{title,url,snippet,publishedAt?,score?,provider}],
+query, provider, strategy,
+providersSelected[], providersAttempted[], providersSucceeded[],
+results[{title,url,snippet,publishedAt?,score?,provider,fusionScore?,sources?}],
 durationMs, warnings[]
 ```
 
 行為：
 
-- `auto` 先過濾能支援請求 features 且具 credential 的 providers，再依設定順序與健康狀態選擇。
+- `auto` 先過濾能支援請求 features、具 credential、健康且尚有本機 budget 的 providers。
+- `balanced` 預設選擇最多兩個互補 provider family；`deep` 最多三個；`fallback` 依序嘗試直到第一個成功。
 - 每次 provider attempt 先原子消耗該 instance 的月度 request budget；到頂後跳過並回報 warning。
 - explicit provider 不可被靜默換成另一家。
-- 只有 timeout、rate limit、provider 5xx 或 malformed response 可以 fallback。
-- auth/input/政策類錯誤不得 fallback。
-- MVP 不混合多家 ranking；每份 response 必須清楚標出使用的 provider。
+- `fallback` 只有 timeout、rate limit、provider 5xx 或 malformed response 才能換下一家；auth/input/政策類錯誤不得 fallback。
+- federated strategy 共用同一個 deadline，至少一家成功即可回傳 partial success；全部失敗才回 `PROVIDER_UNAVAILABLE`。
+- 多家結果先做保守 canonical URL 去重，再以 equal-weight RRF 融合；不得直接相加不同 provider 的 raw score。
+- response 必須清楚標出 selected、attempted、successful providers，以及每筆 fused result 的 rank provenance。
 - provider 回傳 URL 仍屬不可信資料，後續 fetch 必須重新套用 URL policy。
 
 ### 5.4 `web_extract`
@@ -280,8 +286,9 @@ MVP 明確不包含：
 
 - 完成三 tools、remote MCP、authentication、health/readiness。
 - 完成 URL policy、bounded HTTP、browser fallback、deterministic extraction。
-- 完成 Tavily/Exa/Parallel/Browserbase/Brave/Firecrawl/SerpApi adapters 與
-  fake-based contract tests；公開 provider 僅保留已確認有每月循環免費額度的服務。
+- 完成 Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi adapters，並提供
+  Serper/You.com opt-in adapters 與 fake-based contract tests；預設 auto order
+  僅消耗已確認適合持續路由的服務。
 
 ### Phase 2：Production hardening
 

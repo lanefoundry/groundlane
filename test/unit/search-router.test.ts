@@ -12,11 +12,164 @@ function provider(id: string, behavior: "ok" | "retry" | "fatal", supports = tru
     return Promise.resolve({ query: request.query, provider: id, results: [{ title: "A", url: "https://example.com", snippet: "S", provider: "wrong" }, { title: "B", url: "https://example.org", snippet: "S", provider: "wrong" }], durationMs: 1, warnings: [] });
   } };
 }
-const request: SearchRequest = { query: "test", maxResults: 1, provider: "auto" };
+const request: SearchRequest = {
+  query: "test",
+  maxResults: 1,
+  provider: "auto",
+  strategy: "fallback",
+};
 
 void test("SearchRouter uses configured order, fallback and attribution", async () => {
   const result = await new SearchRouter([provider("a", "retry"), provider("b", "ok")], ["a", "b"]).search(request, new AbortController().signal);
   assert.equal(result.provider, "b"); assert.equal(result.results.length, 1); assert.equal(result.results[0]?.provider, "b"); assert.deepEqual(result.warnings, ["a unavailable"]);
+});
+
+void test("SearchRouter defaults auto searches to balanced federation", async () => {
+  const calls: string[] = [];
+  const makeProvider = (id: string, url: string): SearchProvider => ({
+    id,
+    supports: () => true,
+    search(searchRequest): Promise<SearchResult> {
+      calls.push(id);
+      return Promise.resolve({
+        query: searchRequest.query,
+        provider: id,
+        results: [{ title: id, url, snippet: id, provider: id }],
+        durationMs: 1,
+        warnings: [],
+      });
+    },
+  });
+  const router = new SearchRouter(
+    [
+      makeProvider("tavily", "https://example.com/a"),
+      makeProvider("linkup", "https://example.com/b"),
+      makeProvider("exa", "https://example.com/a?utm_source=exa"),
+    ],
+    ["tavily", "linkup", "exa"],
+  );
+
+  const result = await router.search(
+    { query: "test", maxResults: 5, provider: "auto" },
+    new AbortController().signal,
+  );
+
+  assert.deepEqual(calls.sort(), ["exa", "tavily"]);
+  assert.equal(result.strategy, "balanced");
+  assert.equal(result.provider, "federated");
+  assert.deepEqual(result.providersSelected, ["tavily", "exa"]);
+  assert.deepEqual(result.providersSucceeded, ["tavily", "exa"]);
+  assert.equal(result.results.length, 1);
+  assert.deepEqual(result.results[0]?.sources?.map((source) => source.provider), [
+    "tavily",
+    "exa",
+  ]);
+});
+
+void test("balanced search returns partial success with sanitized provider warnings", async () => {
+  const router = new SearchRouter(
+    [provider("tavily", "ok"), provider("exa", "fatal")],
+    ["tavily", "exa"],
+  );
+  const result = await router.search(
+    { query: "test", maxResults: 2, strategy: "balanced" },
+    new AbortController().signal,
+  );
+
+  assert.deepEqual(result.providersSucceeded, ["tavily"]);
+  assert.deepEqual(result.warnings, ["exa unavailable"]);
+});
+
+void test("SearchRouter rejects conflicting provider selectors", async () => {
+  await assert.rejects(
+    new SearchRouter([provider("tavily", "ok")], ["tavily"]).search(
+      {
+        query: "test",
+        maxResults: 1,
+        provider: "tavily",
+        providers: ["tavily"],
+      },
+      new AbortController().signal,
+    ),
+    { code: "INVALID_INPUT" },
+  );
+});
+
+void test("balanced search counts only selected attempts and skips exhausted providers", async () => {
+  const budget = new MonthlySearchBudget({ tavily: 0, exa: 1, brave: 1, firecrawl: 1 });
+  const router = new SearchRouter(
+    [
+      provider("tavily", "ok"),
+      provider("exa", "ok"),
+      provider("brave", "ok"),
+      provider("firecrawl", "ok"),
+    ],
+    ["tavily", "exa", "brave", "firecrawl"],
+    undefined,
+    budget,
+  );
+
+  const result = await router.search(
+    { query: "test", maxResults: 2, strategy: "balanced" },
+    new AbortController().signal,
+  );
+
+  assert.deepEqual(result.providersSelected, ["exa", "brave"]);
+  assert.deepEqual(result.providersAttempted, ["exa", "brave"]);
+  assert.equal(budget.remaining("tavily"), 0);
+  assert.equal(budget.remaining("exa"), 0);
+  assert.equal(budget.remaining("brave"), 0);
+  assert.equal(budget.remaining("firecrawl"), 1);
+  assert.match(result.warnings.join(" "), /tavily monthly budget exhausted/u);
+});
+
+void test("balanced search propagates cancellation across selected providers", async () => {
+  const waitingProvider = (id: string): SearchProvider => ({
+    id,
+    supports: () => true,
+    search(_searchRequest, signal): Promise<SearchResult> {
+      return new Promise((_resolve, reject) => {
+        const cancel = () => reject(
+          new GroundlaneError("CANCELLED", "search", "The request was cancelled"),
+        );
+        if (signal.aborted) cancel();
+        else signal.addEventListener("abort", cancel, { once: true });
+      });
+    },
+  });
+  const controller = new AbortController();
+  const pending = new SearchRouter(
+    [waitingProvider("tavily"), waitingProvider("exa")],
+    ["tavily", "exa"],
+  ).search(
+    { query: "test", maxResults: 2, strategy: "balanced" },
+    controller.signal,
+  );
+  controller.abort();
+
+  await assert.rejects(pending, { code: "CANCELLED" });
+});
+
+void test("deep search is bounded to three complementary providers", async () => {
+  const router = new SearchRouter(
+    [
+      provider("tavily", "ok"),
+      provider("linkup", "ok"),
+      provider("exa", "ok"),
+      provider("brave", "ok"),
+      provider("firecrawl", "ok"),
+    ],
+    ["tavily", "linkup", "exa", "brave", "firecrawl"],
+  );
+
+  const result = await router.search(
+    { query: "test", maxResults: 2, strategy: "deep" },
+    new AbortController().signal,
+  );
+
+  assert.deepEqual(result.providersSelected, ["tavily", "exa", "brave"]);
+  assert.deepEqual(result.providersAttempted, ["tavily", "exa", "brave"]);
+  assert.deepEqual(result.providersSucceeded, ["tavily", "exa", "brave"]);
 });
 
 void test("SearchRouter does not fall back on non-retryable errors or explicit provider", async () => {
