@@ -17,7 +17,7 @@
     "secrets:setup": "tsx scripts/cloudflare-secrets.mts setup",
     "secrets:status": "tsx scripts/cloudflare-secrets.mts status",
     "smoke": "node scripts/smoke.mjs",
-    "test": "node --test --import tsx 'test/**/*.test.ts'",
+    "test": "node --test --import tsx --import ./test/support/node-test-setup.mjs 'test/**/*.test.ts'",
     "test:coverage": "c8 pnpm test",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@mozilla/readability": "^0.6.0",
     "cheerio": "^1.1.2",

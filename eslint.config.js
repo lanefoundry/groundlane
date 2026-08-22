@@ -5,7 +5,12 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
-    ignores: ["dist/**", "worker-configuration.d.ts", "eslint.config.js"],
+    ignores: [
+      "dist/**",
+      "worker-configuration.d.ts",
+      "eslint.config.js",
+      "test/support/*.mjs",
+    ],
   },
   {
     languageOptions: {

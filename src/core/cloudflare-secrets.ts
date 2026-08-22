@@ -16,6 +16,13 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
     required: true,
     minimumLength: 32,
   },
+  {
+    name: "OAUTH_OWNER_PASSPHRASE",
+    label: "OAuth /authorize owner passphrase",
+    group: "authentication",
+    required: true,
+    minimumLength: 32,
+  },
   { name: "TAVILY_API_KEY", label: "Tavily", group: "search", required: false },
   { name: "EXA_API_KEY", label: "Exa", group: "search", required: false },
   { name: "BRAVE_API_KEY", label: "Brave Search", group: "search", required: false },

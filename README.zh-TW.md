@@ -54,23 +54,42 @@ Groundlane 現在會在 `http://localhost:8080/mcp` 提供需要驗證的 Stream
 
 ### 部署到 Cloudflare
 
-第一次部署到 Cloudflare 時，先登入 Wrangler、檢查目標環境已設定的
-secret 名稱，再輸入必要的 bearer token 與選用的 provider keys，最後部署：
+第一次部署到 Cloudflare 時，先登入 Wrangler、建立 OAuth 用的 KV
+namespace、檢查目標環境已設定的 secret 名稱，再輸入兩組必要的
+authentication secret 與選用的 provider keys，最後部署：
 
 ```bash
 pnpm exec wrangler login
 pnpm exec wrangler whoami
+pnpm exec wrangler kv namespace create OAUTH_KV
+# 把回傳的 id 貼進 wrangler.jsonc 的 kv_namespaces[0].id
 pnpm secrets:status
 pnpm secrets:setup
 pnpm run deploy
 ```
 
-這兩個 secret 指令只會操作 Cloudflare，不會讀取或修改本機 `.env`。
+這幾個 secret 指令只會操作 Cloudflare，不會讀取或修改本機 `.env`。
 未指定 `--env` 時，Wrangler 會操作 `wrangler.jsonc` 的 top-level target；
 若選用 named environment，status、setup 與 deploy 必須使用相同的 `--env`。
-請產生並妥善保存至少 32 字元的 bearer token（例如執行
-`openssl rand -hex 32`），再貼入 setup；MCP client 與 smoke test 也要使用
-同一個 token。Search provider keys 全部選填。執行
+
+有兩組 authentication secret 是必要的，而且**值必須不同**：
+
+- `GROUNDLANE_AUTH_TOKEN`——headless/CLI client（Codex、Claude Code、排程/雲端
+  自動化）呼叫 `/mcp` 時用的 bearer token。
+- `OAUTH_OWNER_PASSPHRASE`——把關互動式雲端連接器（claude.ai、ChatGPT）看到的
+  `/authorize` 同意畫面。跟 bearer token 共用同一個值的話，同意頁一旦被釣魚就會
+  連帶洩漏所有 headless client 在用的那組 token，所以要分開產生。
+
+各自產生至少 32 個隨機字元，例如：
+
+```bash
+openssl rand -hex 32
+```
+
+把兩組都存進密碼管理器。執行 `pnpm secrets:setup`，在編號清單裡這兩個會列在
+`authentication` 分類下（依序是 `GROUNDLANE_AUTH_TOKEN`、
+`OAUTH_OWNER_PASSPHRASE`）——兩個都選，例如輸入 `1,2`，接著依提示分別貼上兩組
+值（輸入時不會顯示字元，也不會回顯）。Search provider keys 全部選填。執行
 `pnpm secrets:setup -- --help` 可查看安全的互動設定流程。Setup 會先顯示
 一份編號清單；輸入例如 `2,4-6` 即可複選，接著只詢問選中的值，最後一次
 bulk 更新。若想一次貼完，可將
@@ -116,6 +135,19 @@ claude mcp add --transport http --scope user groundlane \
 ```
 
 Claude Code 指令會把展開後的 token 寫入 MCP 設定。共用或正式環境應改用 secret-backed header helper，避免明文保存 token。
+
+無人值守的排程／雲端自動化（cron、雲端 routine、workflow runner）也是用這組
+bearer token：只要在該平台把 `GROUNDLANE_AUTH_TOKEN` 設成一次性 secret 即可，
+不需要 OAuth。
+
+### claude.ai / ChatGPT（OAuth）
+
+互動式雲端連接器（claude.ai、ChatGPT 的 Custom Connector）認的是 OAuth，不接受
+直接貼 API key。新增連接器時貼上部署好的 Worker `/mcp` 網址
+（`https://your-worker.example/mcp`），平台會自動完成 client 註冊（透過 CIMD 或
+DCR，細節見[Cloudflare 部署文件](docs/deployment/cloudflare.md)）並跳出同意畫
+面。輸入部署時設定的 `OAUTH_OWNER_PASSPHRASE` 完成授權——這是獨立於
+`GROUNDLANE_AUTH_TOKEN` 的另一組 secret，僅用來把關這個同意畫面。
 
 ### 第一次呼叫
 

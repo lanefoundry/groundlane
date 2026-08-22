@@ -1,22 +1,23 @@
+import { hasValidBearerToken, type TimingSafeSubtleCrypto } from "./auth.js";
+import { jsonError } from "./http.js";
+import { buildOAuthProvider } from "./oauth.js";
 import {
-  hasValidBearerToken,
-  type TimingSafeSubtleCrypto,
-} from "./auth.js";
-import { jsonError, logWorkerEvent } from "./http.js";
+  CONTAINER_INSTANCE_NAME,
+  proxyToContainer,
+  requestWithId,
+  type WorkerEnv,
+} from "./proxy.js";
 
-interface ContainerStub {
-  fetch(request: Request): Promise<Response>;
+export { CONTAINER_INSTANCE_NAME, type WorkerEnv } from "./proxy.js";
+
+const OAUTH_MANAGED_PATH_PREFIXES = ["/authorize", "/token", "/register", "/.well-known/oauth"];
+
+function isOAuthManagedPath(pathname: string): boolean {
+  return (
+    pathname === "/mcp" ||
+    OAUTH_MANAGED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
 }
-
-interface ContainerNamespace {
-  getByName(name: string): ContainerStub;
-}
-
-export type WorkerEnv = Pick<Cloudflare.Env, "GROUNDLANE_AUTH_TOKEN"> & {
-  GROUNDLANE_CONTAINER: ContainerNamespace;
-};
-
-export const CONTAINER_INSTANCE_NAME = "groundlane-mcp";
 
 function healthResponse(requestId: string): Response {
   return Response.json(
@@ -25,16 +26,11 @@ function healthResponse(requestId: string): Response {
   );
 }
 
-function requestWithId(request: Request, requestId: string): Request {
-  const headers = new Headers(request.headers);
-  headers.set("x-request-id", requestId);
-  return new Request(request, { headers });
-}
-
 export async function handleWorkerRequest(
   request: Request,
   env: WorkerEnv,
   subtle: TimingSafeSubtleCrypto,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const requestId = crypto.randomUUID();
   const { pathname } = new URL(request.url);
@@ -57,59 +53,27 @@ export async function handleWorkerRequest(
     }
   }
 
-  if (pathname !== "/mcp") {
-    return jsonError(404, "not_found", "Route not found", requestId);
-  }
-
+  // Headless/CLI clients (Codex, Claude Code, scheduled cloud automation):
+  // unchanged static-token path, checked first so their behavior never
+  // depends on the OAuth layer below.
   if (
-    env.GROUNDLANE_AUTH_TOKEN.length === 0 ||
-    !(await hasValidBearerToken(
+    pathname === "/mcp" &&
+    env.GROUNDLANE_AUTH_TOKEN.length > 0 &&
+    (await hasValidBearerToken(
       request.headers.get("authorization"),
       env.GROUNDLANE_AUTH_TOKEN,
       subtle,
     ))
   ) {
-    logWorkerEvent({
-      level: "info",
-      event: "request_unauthorized",
-      requestId,
-      status: 401,
-    });
-    return jsonError(
-      401,
-      "unauthorized",
-      "A valid bearer token is required",
-      requestId,
-      { "www-authenticate": 'Bearer realm="groundlane"' },
-    );
+    return proxyToContainer(request, env, requestId);
   }
 
-  try {
-    const container = env.GROUNDLANE_CONTAINER.getByName(
-      CONTAINER_INSTANCE_NAME,
-    );
-    const response = await container.fetch(requestWithId(request, requestId));
-    const headers = new Headers(response.headers);
-    headers.set("x-request-id", requestId);
-    logWorkerEvent({
-      level: "info",
-      event: "request_complete",
-      requestId,
-      status: response.status,
-    });
-    return new Response(response.body, { status: response.status, headers });
-  } catch (error: unknown) {
-    logWorkerEvent({
-      level: "error",
-      event: error instanceof Error ? "container_request_failed" : "unknown_failure",
-      requestId,
-      status: 502,
-    });
-    return jsonError(
-      502,
-      "container_unavailable",
-      "The MCP runtime is unavailable",
-      requestId,
-    );
+  // Interactive cloud connectors (claude.ai, ChatGPT): OAuth 2.1. Also
+  // handles /mcp requests that failed the legacy check above, so an
+  // OAuth-issued bearer token still works on the same route.
+  if (isOAuthManagedPath(pathname)) {
+    return buildOAuthProvider(subtle).fetch(requestWithId(request, requestId), env, ctx);
   }
+
+  return jsonError(404, "not_found", "Route not found", requestId);
 }

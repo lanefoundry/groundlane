@@ -8,6 +8,7 @@ import {
   handleWorkerRequest,
   type WorkerEnv,
 } from "../../src/worker/handler.js";
+import { createFakeExecutionContext, createFakeKvNamespace } from "./fakes.js";
 
 const subtle: TimingSafeSubtleCrypto = {
   digest(algorithm, data) {
@@ -28,6 +29,8 @@ const subtle: TimingSafeSubtleCrypto = {
   },
 };
 
+const ctx = createFakeExecutionContext();
+
 function mockEnv(fetchImpl: (request: Request) => Promise<Response>): {
   env: WorkerEnv;
   names: string[];
@@ -37,6 +40,8 @@ function mockEnv(fetchImpl: (request: Request) => Promise<Response>): {
     names,
     env: {
       GROUNDLANE_AUTH_TOKEN: "test-secret",
+      OAUTH_KV: createFakeKvNamespace(),
+      OAUTH_OWNER_PASSPHRASE: "test-owner-passphrase-0123456789ab",
       GROUNDLANE_CONTAINER: {
         getByName(name) {
           names.push(name);
@@ -53,6 +58,7 @@ void test("health endpoint is public and does not wake the container", async () 
     new Request("https://groundlane.test/healthz"),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 200);
@@ -70,6 +76,7 @@ void test("readiness endpoint proxies the container without requiring MCP auth",
     new Request("https://groundlane.test/readyz"),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 200);
@@ -77,26 +84,33 @@ void test("readiness endpoint proxies the container without requiring MCP auth",
   assert.deepEqual(names, [CONTAINER_INSTANCE_NAME]);
 });
 
-void test("MCP endpoint rejects missing credentials", async () => {
+void test("MCP endpoint without any credentials falls through to the OAuth challenge", async () => {
   const { env, names } = mockEnv(() => Promise.resolve(new Response()));
   const response = await handleWorkerRequest(
     new Request("https://groundlane.test/mcp", { method: "POST" }),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 401);
-  assert.equal(response.headers.get("www-authenticate"), 'Bearer realm="groundlane"');
+  const challenge = response.headers.get("www-authenticate") ?? "";
+  assert.match(challenge, /Bearer/u);
+  assert.match(challenge, /resource_metadata=/u);
   assert.equal(names.length, 0);
 });
 
-void test("MCP endpoint fails closed when the Worker secret is missing", async () => {
+void test("MCP endpoint falls through to the OAuth challenge when the legacy secret is unset", async () => {
   const { env, names } = mockEnv(() => Promise.resolve(new Response()));
   env.GROUNDLANE_AUTH_TOKEN = "";
   const response = await handleWorkerRequest(
-    new Request("https://groundlane.test/mcp", { method: "POST" }),
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret" },
+    }),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 401);
@@ -117,6 +131,7 @@ void test("authenticated MCP requests route to the named container", async () =>
     }),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 202);
@@ -138,6 +153,7 @@ void test("container failures return a structured gateway error", async () => {
     }),
     env,
     subtle,
+    ctx,
   );
 
   assert.equal(response.status, 502);
@@ -148,4 +164,21 @@ void test("container failures return a structured gateway error", async () => {
     },
     requestId: response.headers.get("x-request-id"),
   });
+});
+
+void test("unknown routes return a structured 404 without touching OAuth or the container", async () => {
+  const { env, names } = mockEnv(() => Promise.resolve(new Response()));
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/not-a-route"),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), {
+    error: { code: "not_found", message: "Route not found" },
+    requestId: response.headers.get("x-request-id"),
+  });
+  assert.equal(names.length, 0);
 });

@@ -41,7 +41,7 @@ export class GroundlaneContainer extends Container<Cloudflare.Env> {
 }
 
 export default {
-  fetch(request, env) {
-    return handleWorkerRequest(request, env, crypto.subtle);
+  fetch(request, env, ctx) {
+    return handleWorkerRequest(request, env, crypto.subtle, ctx);
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

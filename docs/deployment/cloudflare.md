@@ -8,12 +8,12 @@ This guide describes the intended production topology: a Cloudflare Worker expos
 ## Topology
 
 ```text
-MCP client
-    |
-    | HTTPS + bearer token
-    v
+Headless/CLI client          Interactive cloud connector
+    |                              |
+    | HTTPS + static bearer token  | HTTPS + OAuth 2.1 access token
+    v                              v
 Cloudflare Worker
-    | authentication, request routing, health checks
+    | legacy bearer check first, else OAuth (workers-oauth-provider)
     v
 Cloudflare Container
     | Node MCP server
@@ -22,12 +22,22 @@ Cloudflare Container
 
 The Worker should be the only public ingress. Do not publish an unauthenticated Container endpoint. Groundlane Browser is an internal engine inside the Container, not a separate public service.
 
+The Worker checks the legacy static bearer token on `/mcp` first — this is
+unchanged for headless/CLI clients (Codex, Claude Code) and for
+headless/scheduled cloud automation (cron, cloud routines, workflow runners),
+which should keep using that token directly as a secret in whatever platform
+runs them. Only when that check fails does the request fall through to the
+OAuth 2.1 layer, used by interactive cloud connectors (claude.ai, ChatGPT)
+that don't offer a field to paste a raw API key. See [OAuth for interactive
+cloud connectors](#oauth-for-interactive-cloud-connectors) below.
+
 ## Prerequisites
 
 - A Cloudflare account with Workers and Containers access
 - Node.js 22 or newer and pnpm 10
 - Wrangler authenticated to the target account
-- One strong Groundlane bearer token
+- One strong Groundlane bearer token (headless/CLI clients)
+- One strong, separate OAuth owner passphrase (interactive cloud connectors)
 - Optional credentials for any supported monthly-free search provider
 
 Install dependencies and verify locally first:
@@ -112,6 +122,12 @@ manager, and paste it into setup. For example, `openssl rand -hex 32` produces a
 64-character token. Groundlane cannot recover this value from Cloudflare; the
 same token is needed later by MCP clients and smoke tests.
 
+Generate `OAUTH_OWNER_PASSPHRASE` the same way, as a separate value — never
+reuse the bearer token here. It gates the `/authorize` consent screen for
+interactive cloud connectors; a phished consent page must not also hand over
+the credential every headless client uses. See [OAuth for interactive cloud
+connectors](#oauth-for-interactive-cloud-connectors) below for how it's used.
+
 Only add provider secrets that are actually used; all search-provider keys are
 optional. See [Configuration](../configuration.md) before choosing providers.
 `BROWSERLESS_TOKEN` is needed only when `BROWSER_BACKEND=browserless`.
@@ -124,6 +140,49 @@ synchronized when adding configuration.
 `SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables automatic and explicit use for that provider. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars` and keep the file untracked.
+
+## OAuth for interactive cloud connectors
+
+Headless/CLI clients and headless/scheduled cloud automation keep using the
+static `GROUNDLANE_AUTH_TOKEN` bearer token directly — nothing below applies
+to them. This section is only for interactive cloud connectors such as
+claude.ai's and ChatGPT's Custom Connector UIs, which expect a browser-based
+OAuth 2.1 consent flow and don't offer a field to paste a raw API key.
+
+groundlane implements this with
+[`@cloudflare/workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider).
+The Worker checks the legacy bearer token on `/mcp` first, unchanged; only a
+request that fails that check falls through to this OAuth layer, so enabling
+it never changes behavior for existing static-token clients.
+
+### One-time setup
+
+1. Create the KV namespace the provider uses to store clients, grants, and
+   tokens, then paste the returned id into `wrangler.jsonc`'s `kv_namespaces`
+   binding (`OAUTH_KV`):
+
+   ```bash
+   pnpm exec wrangler kv namespace create OAUTH_KV
+   ```
+
+2. Set `OAUTH_OWNER_PASSPHRASE` through `pnpm secrets:setup` (see above) — a
+   value separate from `GROUNDLANE_AUTH_TOKEN`.
+3. Deploy. The `global_fetch_strictly_public` compatibility flag is already
+   checked in, required for Client ID Metadata Document (CIMD) support.
+
+### Adding a connector
+
+In claude.ai or ChatGPT, add a custom connector using the deployed Worker's
+MCP URL (`https://your-worker.example/mcp`). The platform registers itself
+automatically — via CIMD (preferred) or Dynamic Client Registration
+(compatibility fallback, `POST /register`) — then opens `/authorize`, a
+groundlane-owned consent page. Enter `OAUTH_OWNER_PASSPHRASE` to approve.
+Registration alone (CIMD or DCR) never grants access by itself; only a
+correct passphrase does.
+
+This is single-user by design: `/authorize` gates consent with one shared
+passphrase rather than a real identity provider, matching groundlane's
+single-operator deployment model. It is not intended for multi-tenant use.
 
 ## Browser mode
 
@@ -238,7 +297,7 @@ Do not use arbitrary third-party sites as a production smoke test. Host controll
 
 ## Operations
 
-- Rotate the Groundlane token and provider credentials on a defined schedule and after suspected exposure.
+- Rotate the Groundlane token, the OAuth owner passphrase, and provider credentials on a defined schedule and after suspected exposure. Rotating `OAUTH_OWNER_PASSPHRASE` does not revoke already-issued OAuth access/refresh tokens; use `OAuthHelpers.revokeGrant` (or clear `OAUTH_KV`) if immediate revocation is required.
 - Restrict who can view Worker/Container secrets and deployment logs.
 - Alert on authorization failures, queue saturation, blocked destinations, browser crashes, provider rate limits, and deadline errors.
 - Retain metadata only as long as operationally required; never log response bodies or browser profiles.
@@ -255,7 +314,9 @@ Tool schema changes should be backward compatible whenever possible. If a rollba
 
 | Symptom | Check |
 | --- | --- |
-| `/mcp` returns unauthorized | Bearer header format and `GROUNDLANE_AUTH_TOKEN` secret binding |
+| `/mcp` returns unauthorized (static-token client) | Bearer header format and `GROUNDLANE_AUTH_TOKEN` secret binding |
+| Cloud connector can't complete OAuth | `OAUTH_KV` binding exists and matches a real namespace, `OAUTH_OWNER_PASSPHRASE` is set, `global_fetch_strictly_public` compatibility flag is present |
+| `/authorize` never shows the consent form | Client registration failed upstream — check the connector's client_id/redirect_uri and that `/register` or CIMD succeeded |
 | `/readyz` fails but `/healthz` passes | Provider credentials, browser capability, forwarded Container configuration, and Container readiness |
 | HTTP works but Reader fails | `READER_BACKEND`, Jina rate limit, deadline, hosted-provider availability |
 | HTTP works but render fails | `BROWSER_BACKEND`, Browserless token/region, Container binding, Chromium installation, memory limits |

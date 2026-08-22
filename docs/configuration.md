@@ -16,6 +16,15 @@ Groundlane reads runtime configuration from environment variables. Copy [`.env.e
 
 `GET /healthz` is a public process-liveness check. On the Node service, `GET /readyz` checks required service configuration. Through the Worker, a successful proxied response also confirms that the Container answered. Neither form probes provider health. `POST /mcp` requires the bearer token.
 
+## Worker-only configuration (OAuth)
+
+These variables exist only on the Cloudflare Worker, not in `.env.example` or the Container — they are never forwarded by `GroundlaneContainer.envVars`. They back the OAuth 2.1 layer used by interactive cloud connectors (claude.ai, ChatGPT); headless/CLI clients and headless cloud automation are unaffected and keep using `GROUNDLANE_AUTH_TOKEN` directly. See [OAuth for interactive cloud connectors](deployment/cloudflare.md#oauth-for-interactive-cloud-connectors) for setup.
+
+| Variable | Purpose | Default/example |
+| --- | --- | --- |
+| `OAUTH_KV` | Workers KV binding storing OAuth clients, grants, and tokens | Required; created with `wrangler kv namespace create OAUTH_KV` |
+| `OAUTH_OWNER_PASSPHRASE` | Gates the `/authorize` consent screen | Required; use a long random secret, separate from `GROUNDLANE_AUTH_TOKEN` |
+
 ## Search routing
 
 | Variable | Purpose | Default/example |

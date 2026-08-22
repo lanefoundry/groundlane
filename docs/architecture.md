@@ -19,11 +19,14 @@ Groundlane does use mature open-source crawler and browser projects as architect
 ```text
                          public internet
                                |
-                         POST /mcp
+              POST /mcp (bearer token or OAuth access token)
                                |
                   +------------v-------------+
                   | Cloudflare Worker / edge |
-                  | auth, request id, routing|
+                  | legacy bearer check first,|
+                  | else OAuth 2.1 (workers-  |
+                  | oauth-provider); request  |
+                  | id, routing               |
                   +------------+-------------+
                                |
                  Container binding or Node HTTP
@@ -49,6 +52,8 @@ Groundlane does use mature open-source crawler and browser projects as architect
 ```
 
 The Worker is the public control plane in a Cloudflare deployment. It forwards MCP traffic to a Node service in a Cloudflare Container, which owns protocol handling and orchestration. Chromium can run there through the `local` backend, or an operator can select Browserless `/content`. Both are called **Groundlane Browser** internally; neither changes the public tool surface.
+
+The Worker authenticates `/mcp` two ways, checked in order. Headless/CLI clients and headless/scheduled cloud automation present the legacy static bearer token, checked first with no behavior change from earlier versions. Interactive cloud connectors (claude.ai, ChatGPT) instead complete an OAuth 2.1 authorization-code flow (`@cloudflare/workers-oauth-provider`, Dynamic Client Registration and Client ID Metadata Documents), gated by a dedicated owner passphrase at `/authorize` — deliberately separate from the bearer token so a phished consent page cannot leak the credential every static-token client also uses. Both paths converge on the same container-proxy logic; only the authentication step differs.
 
 Jina Reader and Browserless are opt-in hosted retrieval backends rather than additional public tools. Jina is eligible only for automatic Markdown fallback; HTML, selectors, `waitFor`, and `render=always` require a browser. Groundlane requests an uncached Jina read because shared snapshots can be stale. Every result reports both an execution category (`engine=http|reader|browser`) and concrete `backend` provenance (`direct`, `jina`, `local`, or `browserless`). Cloudflare Browser Run and Firecrawl Scrape remain future adapters.
 

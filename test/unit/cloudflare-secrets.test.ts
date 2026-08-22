@@ -22,6 +22,7 @@ void test("Cloudflare secret manifest contains runtime-forwarded credentials", (
     CLOUDFLARE_SECRET_DEFINITIONS.map((definition) => definition.name),
     [
       "GROUNDLANE_AUTH_TOKEN",
+      "OAUTH_OWNER_PASSPHRASE",
       "TAVILY_API_KEY",
       "EXA_API_KEY",
       "BRAVE_API_KEY",
@@ -95,8 +96,12 @@ void test("bulk payload includes only known non-blank updates", () => {
 });
 
 void test("secret validation enforces authentication token length", () => {
-  const auth = CLOUDFLARE_SECRET_DEFINITIONS[0];
-  const tavily = CLOUDFLARE_SECRET_DEFINITIONS[1];
+  const auth = CLOUDFLARE_SECRET_DEFINITIONS.find(
+    (definition) => definition.name === "GROUNDLANE_AUTH_TOKEN",
+  );
+  const tavily = CLOUDFLARE_SECRET_DEFINITIONS.find(
+    (definition) => definition.name === "TAVILY_API_KEY",
+  );
   assert.ok(auth);
   assert.ok(tavily);
   assert.equal(validateSecretValue(auth, "short"), "must contain at least 32 characters");

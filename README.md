@@ -54,13 +54,15 @@ Groundlane now exposes an authenticated Streamable HTTP MCP endpoint at `http://
 
 ### Deploy to Cloudflare
 
-For a fresh Cloudflare deployment, authenticate Wrangler, inspect the target's
-configured secret names, enter the required bearer token and any optional
-provider keys, then deploy:
+For a fresh Cloudflare deployment, authenticate Wrangler, create the OAuth KV
+namespace, inspect the target's configured secret names, enter the two
+required authentication secrets and any optional provider keys, then deploy:
 
 ```bash
 pnpm exec wrangler login
 pnpm exec wrangler whoami
+pnpm exec wrangler kv namespace create OAUTH_KV
+# paste the returned id into wrangler.jsonc's kv_namespaces[0].id
 pnpm secrets:status
 pnpm secrets:setup
 pnpm run deploy
@@ -69,13 +71,31 @@ pnpm run deploy
 These secret commands affect Cloudflare only; they do not read or update the
 local `.env`. Without `--env`, Wrangler uses the top-level target in
 `wrangler.jsonc`; if you select a named environment, use that same `--env` for
-status, setup, and deploy. Generate and retain a bearer token with at least 32
-characters (for example, `openssl rand -hex 32`), then paste it into setup—the
-same value authenticates MCP clients and smoke tests. Search-provider keys are
-optional. Use `pnpm secrets:setup -- --help` to inspect the safe interactive
-flow. Setup first presents one numbered list: select multiple secrets with an
-entry such as `2,4-6`, then it prompts only for those values and sends one bulk
-update. To paste everything once, copy
+status, setup, and deploy.
+
+Two authentication secrets are required, and must be **different values**:
+
+- `GROUNDLANE_AUTH_TOKEN` — the bearer token headless/CLI clients (Codex,
+  Claude Code, scheduled cloud automation) send to `/mcp`.
+- `OAUTH_OWNER_PASSPHRASE` — gates the `/authorize` consent screen shown to
+  interactive cloud connectors (claude.ai, ChatGPT). Reusing the bearer token
+  here would let a phished consent page leak the same credential every
+  headless client uses, so generate it separately.
+
+Generate each with at least 32 random characters, for example:
+
+```bash
+openssl rand -hex 32
+```
+
+Save both in a password manager. Run `pnpm secrets:setup`; at the numbered
+prompt these two are listed under `authentication` (`GROUNDLANE_AUTH_TOKEN`,
+then `OAUTH_OWNER_PASSPHRASE`) — select both, e.g. `1,2`, then paste each
+value when prompted (input is hidden, nothing is echoed back). Search-provider
+keys are optional. Use `pnpm secrets:setup -- --help` to inspect the safe
+interactive flow. Setup first presents one numbered list: select multiple
+secrets with an entry such as `2,4-6`, then it prompts only for those values
+and sends one bulk update. To paste everything once, copy
 [`cloudflare-secrets.example.env`](cloudflare-secrets.example.env) to the ignored
 `.cloudflare-secrets.env`, fill the values you use, then run:
 
@@ -118,6 +138,21 @@ claude mcp add --transport http --scope user groundlane \
 ```
 
 The Claude Code command expands the token into its MCP configuration. For shared or production machines, use a secret-backed header helper instead of storing a plaintext token.
+
+These bearer-token steps also cover headless and scheduled cloud automation
+(cron jobs, cloud routines, workflow runners): configure
+`GROUNDLANE_AUTH_TOKEN` as a secret in that platform once, no OAuth needed.
+
+### claude.ai / ChatGPT (OAuth)
+
+Interactive cloud connectors expect OAuth, not a pasted API key. Add
+groundlane as a custom connector using your deployed Worker's `/mcp` URL
+(`https://your-worker.example/mcp`); the platform registers itself
+automatically (via CIMD or DCR — see
+[Cloudflare deployment](docs/deployment/cloudflare.md)) and opens a consent
+screen. Enter the `OAUTH_OWNER_PASSPHRASE` you configured during deployment
+to approve — this is a separate secret from `GROUNDLANE_AUTH_TOKEN`, used
+only to gate that consent screen.
 
 ### Make the first call
 
