@@ -26,6 +26,23 @@
 
 開源 crawler 可以解決 queue、retry、session、extraction 與 observability，但不會憑空提供住宅 IP、CAPTCHA 解題或持續更新的 managed fingerprint。Groundlane 因此把「crawl orchestration」與「anti-bot provider」維持為兩個不同邊界。
 
+## 依 Groundlane layer 選參考，不只選一套 framework
+
+| Layer | 首選參考 | 可借鏡的能力 | 是否適合直接整合 |
+|---|---|---|---|
+| Reader 正文抽取 | [Mozilla Readability](https://github.com/mozilla/readability) | Firefox Reader View 使用的 article scoring、metadata、link density、element cap | **高**：JavaScript、Apache-2.0；需搭配不執行 script／不自動抓 remote resource 的 DOM implementation，輸出仍須 sanitizer 與 Groundlane bounds |
+| Reader metadata | [Metascraper](https://github.com/microlinkhq/metascraper) | Open Graph、JSON-LD、HTML meta 與 fallback rules | **中高**：JavaScript、MIT；應只選需要的 rules，避免 dependency/output 膨脹 |
+| Reader 完整 parser | [Postlight Parser](https://github.com/postlight/parser) | 正文、作者、日期、lead image 與 domain-specific extractors | **中**：JavaScript、Apache-2.0；適合 corpus benchmark，不一定要和 Readability 同時依賴 |
+| LLM-ready extraction | [Crawl4AI](https://github.com/unclecode/crawl4ai) | Fit Markdown、BM25 filtering、citations、chunking、CSS/LLM schema extraction、deep crawl recovery | **概念高／dependency 低**：能力完整且 browser integration 強，但主要為 Python，不應為此增加 sidecar |
+| Crawl orchestration | [Crawlee](https://github.com/apify/crawlee) | HTTP/browser 統一介面、queue、session/proxy rotation、fingerprints、retry、robots、transactional results | **高（web_crawl 階段）**：TypeScript、Apache-2.0；仍須置於 Groundlane security/budget boundary 內 |
+| 成熟 crawl pipeline | [Scrapy](https://github.com/scrapy/scrapy) | scheduler、downloader/spider middleware、item pipeline、signals/stats、retry/AutoThrottle | **概念高／dependency 低**：Python；browser 通常經 [scrapy-playwright](https://github.com/scrapy-plugins/scrapy-playwright) plugin，因此比 Crawlee 間接 |
+| URL discovery／security crawl | [Katana](https://github.com/projectdiscovery/katana) | scope rules、JS endpoint/XHR extraction、similarity dedupe、duration/response/domain caps、headless hybrid | **概念中**：Go、MIT；適合學 URL frontier 與 bounds，不適合作為 Node library dependency |
+| 高擬真 Web archive | [Browsertrix Crawler](https://github.com/webrecorder/browsertrix-crawler) | Brave/Puppeteer browser crawl、CDP capture、WARC/high-fidelity archival | **低**：TypeScript 但 AGPL，產品目標是 preservation，不是 LLM-ready Reader |
+| Metasearch discovery | [SearXNG](https://github.com/searxng/searxng) | 聚合多個 search services、engine adapters、privacy-oriented metasearch | **adapter 中／core 低**：Python、AGPL；沒有自己的全網 index，適合獨立部署後由 Groundlane adapter 呼叫 |
+| 大規模 vertical index | [Apache Nutch](https://github.com/apache/nutch) | 可擴展 crawler、plugin pipeline、長期 index ingestion | **低**：Java/Hadoop-oriented，適合研究自建 index 架構，不適合目前 Container MVP |
+
+因此「直接採用」與「設計參考」應分開：Reader 已依 [130 組 fixture benchmark](reader-benchmark.md) 導入 Mozilla Readability + linkedom；多頁 crawl 才評估 Crawlee；Crawl4AI、Scrapy、Katana 適合借鏡 feature 和 failure semantics；SearXNG／Nutch 則屬 search discovery 的另一條產品線。
+
 ## 優先級
 
 | 優先 | 專案 | 適合參考的部分 | 授權 | 建議 |
@@ -78,8 +95,8 @@ Groundlane 可採相同產品分層：MVP 的 `web_fetch` 保持小而有界；`
 
 ### Crawl4AI、Scrapy 與 Selenium
 
-- Crawl4AI 的 Markdown、schema extraction 與 crawl-result UX 很接近 agent 的需求；Groundlane 可採用相同的「輸出先正規化、再交給模型」思路，但維持 TypeScript 單一 runtime。
-- Scrapy 的 downloader middleware、重試分類、AutoThrottle、去重與 stats 是未來 crawl worker 的成熟參考；這些概念必須服從 Groundlane 現有的 URL policy、單一 deadline 與 byte/output budgets。
+- Crawl4AI 的 Markdown、schema extraction 與 crawl-result UX 很接近 agent 的需求，也原生涵蓋 Playwright、remote browser、profiles、sessions 與 proxy；不採用它的主因是 Python runtime 邊界，不是 browser 能力不足。Groundlane 可採用相同的「輸出先正規化、再交給模型」思路，但維持 TypeScript 單一 runtime。
+- Scrapy 的 downloader middleware、重試分類、AutoThrottle、去重與 stats 是未來 crawl worker 的成熟參考；browser automation 則通常透過獨立的 `scrapy-playwright` download handler/plugin 接入，所以對現有 Playwright core 較間接。這些概念仍必須服從 Groundlane 現有的 URL policy、單一 deadline 與 byte/output budgets。
 - Selenium 是 browser automation framework，不等於 Cloudflare/CAPTCHA bypass。Groundlane 已使用 Playwright，新增 Selenium 只會造成雙重 driver 與測試矩陣。
 - Apify 品牌下的 Crawlee 與 SDK 是開源專案；Apify Platform、Proxy 與託管 Actor execution 則是另一個商業服務層。
 

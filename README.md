@@ -1,175 +1,183 @@
-# Groundlane
+<div align="center">
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+# Groundlane
 
 **The trusted web access layer for AI agents.**
 
-Groundlane is an open-source, vendor-neutral remote MCP server for giving AI agents controlled access to the public web. It presents one stable interface for search, retrieval, and deterministic extraction, routes search to replaceable providers, cleans fetched pages through its built-in Groundlane Reader, and escalates difficult Markdown reads through an optional Jina Reader before using an isolated local or Browserless browser.
+[![CI](https://github.com/vincentxuu/groundlane/actions/workflows/ci.yml/badge.svg)](https://github.com/vincentxuu/groundlane/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Status](https://img.shields.io/badge/status-early_preview-orange.svg)
+
+[Quick start](#quick-start) · [Connect](#connect-an-mcp-client) · [Tools](#tools-at-a-glance) · [Deploy](#run-groundlane) · [Docs](#documentation)
+
+[English](README.md) · [繁體中文](README.zh-TW.md)
+
+</div>
+
+Groundlane is an open-source remote MCP server that gives AI agents one controlled interface for web search, retrieval, and deterministic extraction. It is model-neutral, routes replaceable providers behind stable contracts, and keeps authentication and resource limits under the operator's control.
 
 > [!IMPORTANT]
-> Groundlane is an early preview. Its tool contracts and deployment model are still evolving; do not treat the current release as a hosted service or a universal anti-bot bypass.
+> Groundlane is an early preview (`0.1.0`). Tool contracts and deployment behavior may change. It is not a hosted service, a CAPTCHA solver, or a universal anti-bot bypass.
 
-## Why Groundlane?
+## Tools at a glance
 
-- **Model neutral:** connect any Streamable HTTP MCP client instead of depending on a model vendor's built-in web tool.
-- **Provider neutral:** route across search APIs with recurring monthly free allowances behind one normalized result contract.
-- **HTTP first, browser when necessary:** keep ordinary reads fast and reserve Chromium for JavaScript, wait conditions, and supported fallback signals.
-- **Deterministic extraction:** select fields with CSS selectors and receive structured JSON without an implicit LLM step.
-- **Security first:** authenticate the MCP endpoint and apply URL, redirect, network, deadline, byte, output, and concurrency limits.
-- **Self-controlled deployment:** run the control plane and browser workload in your own environment, including Cloudflare Workers and Containers.
-
-## MVP tools
-
-| Tool | Purpose | Current scope |
+| Tool | What it does | Current execution paths |
 | --- | --- | --- |
-| `web_fetch` | Retrieve a URL as Markdown, text, or HTML | Bounded HTTP, built-in readable-content extraction, optional Jina Reader, then browser fallback |
-| `web_search` | Search through a configured provider | Explicit or automatic routing across seven providers |
-| `web_extract` | Extract named fields from a page | CSS selectors; text, HTML, or attribute values |
+| `web_fetch` | Reads a public URL as Markdown, text, or HTML | Bounded HTTP, local readable normalization, and eligible optional Jina/browser fallbacks |
+| `web_search` | Searches the public web with normalized results | Automatic or explicit routing across seven providers |
+| `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes; no implicit LLM step |
 
-Browser automation is an internal implementation detail called **Groundlane Browser**. Groundlane does not expose persistent browser sessions in the MVP.
+Fetch/extract results report retrieval provenance such as `engine`, `backend`, and `finalUrl`; search results identify their provider. `web_fetch` and `web_extract` work without a search-provider key.
 
 ## Quick start
 
-### Prerequisites
-
-- Node.js 22 or newer
-- pnpm 10
-- Chromium for browser fallback
-- At least one supported monthly-free search provider key if you want to use
-  `web_search` (Tavily, Exa, Parallel, Browserbase, Brave, Firecrawl, or SerpApi)
-
-### Run locally
-
-Clone this repository, then run:
+Requirements: Node.js 22+, pnpm 10, and Git. Chromium is needed only when the local browser backend is enabled.
 
 ```bash
+git clone https://github.com/vincentxuu/groundlane.git
+cd groundlane
 pnpm install
 pnpm exec playwright install chromium
 cp .env.example .env
+```
+
+Set a long random `GROUNDLANE_AUTH_TOKEN` in `.env`, then start the server:
+
+```bash
 set -a
 source .env
 set +a
 pnpm dev
 ```
 
-Set a strong `GROUNDLANE_AUTH_TOKEN` in `.env`. Add one or more supported provider keys to enable search. The local server listens on the configured `PORT` and serves:
+Groundlane now exposes an authenticated Streamable HTTP MCP endpoint at `http://localhost:8080/mcp`. Search keys are optional; add them only for the providers you want to enable.
 
-- `POST /mcp` — authenticated Streamable HTTP MCP endpoint
-- `GET /healthz` — process liveness
-- `GET /readyz` — Container reachability and service configuration readiness
+## Connect an MCP client
 
-### Connect an MCP client
-
-Configure a Streamable HTTP MCP client with the server URL and bearer token. Client configuration shapes differ, but the connection values are:
-
-```text
-URL: http://localhost:8080/mcp
-Authorization: Bearer <GROUNDLANE_AUTH_TOKEN>
-```
-
-Never put the token in a query string or commit it to source control.
-
-With the server running, open another shell, load the same `.env`, and verify the MCP handshake and public HTTP path:
+Export the same token in the shell that starts your client:
 
 ```bash
-set -a
-source .env
-set +a
-pnpm smoke
+export GROUNDLANE_AUTH_TOKEN="your-long-random-secret"
 ```
 
-Set `GROUNDLANE_SMOKE_BROWSER=1` to include the browser path.
+### Codex
 
-## Configuration
+```bash
+codex mcp add groundlane \
+  --url http://localhost:8080/mcp \
+  --bearer-token-env-var GROUNDLANE_AUTH_TOKEN
+```
 
-Groundlane reads configuration from environment variables. See [.env.example](.env.example) for a complete local template.
+### Claude Code
 
-| Variable | Purpose | Default/example |
+```bash
+claude mcp add --transport http --scope user groundlane \
+  http://localhost:8080/mcp \
+  --header "Authorization: Bearer ${GROUNDLANE_AUTH_TOKEN}"
+```
+
+The Claude Code command expands the token into its MCP configuration. For shared or production machines, use a secret-backed header helper instead of storing a plaintext token.
+
+### Make the first call
+
+Ask the client to call `web_fetch` with:
+
+```json
+{
+  "url": "https://example.com/",
+  "format": "markdown",
+  "render": "never"
+}
+```
+
+The structured response includes an envelope like this (abridged):
+
+```json
+{
+  "ok": true,
+  "data": {
+    "finalUrl": "https://example.com/",
+    "title": "Example Domain",
+    "content": "This domain is for use in illustrative examples...",
+    "engine": "http",
+    "backend": "direct",
+    "truncated": false
+  }
+}
+```
+
+Use `pnpm smoke` while the server is running to verify the MCP handshake plus `web_fetch` and `web_extract` against `example.com`.
+
+## Why Groundlane?
+
+- **One MCP contract:** clients do not need provider-specific tool schemas.
+- **HTTP first:** ordinary reads avoid browser cost; Chromium is reserved for rendering and wait conditions.
+- **Deterministic extraction:** CSS selectors produce structured output without an unrequested model inference step.
+- **Bounded by default:** URL policy, DNS/redirect checks, one deadline, byte/output caps, and concurrency limits remain in the Groundlane boundary.
+- **Explicit hosted fallbacks:** Jina Reader and Browserless receive a URL only when the operator enables them.
+
+## Run Groundlane
+
+| Mode | Best for | Entry point |
 | --- | --- | --- |
-| `GROUNDLANE_AUTH_TOKEN` | Bearer token required by `/mcp` | Required |
-| `SEARCH_PROVIDER_ORDER` | Ordered automatic-routing candidates | `tavily,exa,parallel,browserbase,brave,firecrawl,serpapi` |
-| `SEARCH_MONTHLY_REQUEST_BUDGETS` | Per-instance provider attempt caps, reset each UTC month | Conservative free-plan defaults |
-| `TAVILY_API_KEY` | Tavily adapter credential | Optional |
-| `EXA_API_KEY` | Exa adapter credential | Optional |
-| `FIRECRAWL_API_KEY` | Firecrawl Search adapter credential | Optional |
-| `SERPAPI_API_KEY` | SerpApi Google Search adapter credential | Optional |
-| `BROWSERBASE_API_KEY` | Browserbase Search adapter credential | Optional |
-| `PARALLEL_API_KEY` | Parallel Search adapter credential | Optional |
-| `BRAVE_API_KEY` | Brave Search adapter credential | Optional |
-| `READER_BACKEND` | Markdown Reader fallback: `disabled` or `jina` | `disabled` by default |
-| `BROWSER_BACKEND` | Browser capability: `disabled`, `local`, or `browserless` | `disabled` by default; local template uses `local` |
-| `BROWSERLESS_TOKEN` | Browserless `/content` credential | Required only for `browserless` |
-| `BROWSERLESS_REGION` | Browserless endpoint region: `sfo`, `lon`, or `ams` | `sfo` |
-| `REQUEST_TIMEOUT_MS` | End-to-end request deadline | `30000` locally |
-| `MAX_RESPONSE_BYTES` | Maximum upstream response bytes | `2000000` locally |
-| `MAX_OUTPUT_CHARS` | Maximum returned text characters | `100000` locally |
-| `MAX_CONCURRENCY` | Maximum active requests | `4` locally |
-| `MAX_QUEUE` | Maximum queued requests | `16` locally |
+| Local Node | Development and evaluation | [Quick start](#quick-start) |
+| Docker | Standalone Node/Chromium container | `docker build -t groundlane .` then `docker run --rm -p 8080:8080 --env-file .env groundlane` |
+| Cloudflare Worker + Container | Intended production topology | [Cloudflare deployment guide](docs/deployment/cloudflare.md) |
 
-Missing search credentials do not prevent `web_fetch` or `web_extract` from working. They do make the corresponding search provider unavailable.
+## Supported adapters
 
-Monthly budgets count attempted provider requests, including retryable failures, and prevent a running Groundlane instance from selecting a provider after its configured cap. They are deliberately conservative, but they are not billing truth: Containers restart, multiple instances do not share counters, and some providers charge variable credits. Keep provider-side spend limits enabled and override the budgets for your actual plans.
+| Capability | Adapters |
+| --- | --- |
+| Search | Tavily, Exa, Parallel, Browserbase, Brave, Firecrawl, SerpApi |
+| Hosted Reader fallback | Jina Reader (opt-in) |
+| Browser rendering | Local Playwright or Browserless (opt-in) |
 
-## Architecture
+Automatic search routing can apply conservative per-instance monthly attempt budgets. These are safeguards, not provider billing truth. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics.
+
+## How it works
 
 ```text
 MCP client
     |
     v
-Cloudflare Worker / Node HTTP edge
-    |  authentication, limits, request identity
+Worker / Node HTTP edge       authentication, request identity
+    |
     v
-tool registry
-    |-- web_search  -> monthly-free provider router (7 adapters)
-    |-- web_fetch   -> safe HTTP -> Groundlane Reader -> optional Jina/browser fallback
-    `-- web_extract -> fetch pipeline -> deterministic DOM extraction
+tool registry                 web_search | web_fetch | web_extract
+    |
+    +-- provider router       replaceable search adapters
+    +-- safe HTTP + Reader    bounded retrieval and readable content
+    `-- browser backend       isolated local or hosted rendering
 ```
 
-Core policies and contracts do not depend on a provider or browser runtime. Adapters sit behind narrow interfaces. The browser backend can be Container-local Playwright or Browserless `/content`; `engine` and `backend` output fields disclose which path produced a result without changing the public MCP tools. Hosted backends receive the requested public URL, so they are opt-in rather than silent defaults.
+Core policies do not depend on a search provider or browser runtime. Groundlane Reader uses Mozilla Readability with a local fallback for selector-free Markdown/text; raw HTML and explicit selectors retain deterministic DOM semantics. See [Architecture](docs/architecture.md) and the reproducible [Reader benchmark](docs/research/reader-benchmark.md).
 
-For HTML pages, Markdown and text responses run through the self-hosted **Groundlane Reader**. It selects the primary article region, removes common navigation, footer, advertising, and related-content chrome, resolves relative links, and returns bounded `title`, `description`, `author`, and `publishedAt` metadata when present. Raw HTML and explicit CSS selectors preserve deterministic page/selector semantics. Reader cleaning does not change retrieval provenance: `engine` and `backend` still report whether HTTP, Jina, or a browser obtained the document.
+## Security and limitations
 
-Read [Architecture](docs/architecture.md) for component boundaries, request flow, and design decisions.
+Web retrieval is SSRF-sensitive. Groundlane treats user URLs, redirects, provider-returned URLs, browser subresources, WebSockets, and DNS answers as untrusted. Keep authentication enabled, preserve the default limits, and apply an outbound network policy in production.
 
-Groundlane learns from open-source projects including Crawlee, Crawl4AI, Scrapy, Playwright MCP, and Steel while keeping hosted proxy and anti-bot services behind explicit adapters. Read [Open-source foundations](docs/open-source-foundations.md) for the adoption boundaries and future crawl plan.
+Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or access to content the operator is not authorized to retrieve. Rendering JavaScript is not proof of anti-bot bypass. See [SECURITY.md](SECURITY.md) for the threat model and private vulnerability reporting.
 
-## Security
+## Project status
 
-Web retrieval is an SSRF-sensitive capability. Groundlane treats user URLs, redirects, browser subresources, and search-provider URLs as untrusted. Deployments should keep authentication enabled, use an outbound network policy, and retain the default resource limits.
+- Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
+- Implemented: three remote MCP tools, seven search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
+- Next: compatibility fixtures, cache/health-aware routing, operational telemetry, and opt-in bounded crawl primitives.
 
-The project does **not** promise universal CAPTCHA solving, invisible automation, or access to content you are not authorized to retrieve. Operators are responsible for target-site terms, robots policies, privacy obligations, and applicable law.
-
-See [SECURITY.md](SECURITY.md) for the security model and private vulnerability reporting process.
-
-## Deployment
-
-The intended production topology uses a Cloudflare Worker as the public control plane and a Cloudflare Container for the Node/Playwright browser workload. For prerequisites, secrets, deployment steps, and verification, see [Deploying on Cloudflare](docs/deployment/cloudflare.md).
-
-## Roadmap
-
-- [x] Define the vendor-neutral `web_fetch`, `web_search`, and deterministic `web_extract` surface
-- [x] Add opt-in Jina Reader and Browserless retrieval backends with provenance
-- [ ] Stabilize MCP contracts and publish compatibility fixtures
-- [ ] Harden Cloudflare Worker + Container deployment and operational telemetry
-- [ ] Add cache adapters and provider health/cost-aware routing
-- [ ] Add opt-in batch/crawl primitives with explicit budgets
-- [ ] Evaluate stateful browser sessions as a separate, lifecycle-safe capability
-
-The roadmap is directional, not a release commitment. See the [research archive](docs/research/README.md) for the evidence behind the current scope.
+The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).
 
 ## Documentation
 
+- [Configuration](docs/configuration.md)
 - [Architecture](docs/architecture.md)
-- [Open-source foundations](docs/open-source-foundations.md)
-- [MVP product requirements](docs/product/prd.md)
 - [Cloudflare deployment](docs/deployment/cloudflare.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+- [Open-source foundations](docs/open-source-foundations.md)
+- [Reader benchmark](docs/research/reader-benchmark.md)
 - [Research archive](docs/research/README.md)
 
-## Contributing
+## Contributing and support
 
-Issues and pull requests are welcome. Before contributing, read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Security vulnerabilities must be reported privately as described in [SECURITY.md](SECURITY.md).
+Use [GitHub Issues](https://github.com/vincentxuu/groundlane/issues) for bugs and feature proposals. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull request. Report security vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

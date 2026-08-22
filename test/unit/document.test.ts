@@ -3,6 +3,7 @@ import test from "node:test";
 import type { RawDocument } from "../../src/core/contracts.js";
 import { extractFields } from "../../src/core/extract-fields.js";
 import { normalizeDocument } from "../../src/core/normalize-document.js";
+import { extractReadableDocument } from "../../src/core/readable-document.js";
 
 const html = "<!doctype html><html><head><title> Example </title><style>.x{}</style></head><body><main><h1>Hello</h1><a href='/a'>One</a><a href='/b'>Two</a><script>bad()</script></main></body></html>";
 const raw: RawDocument = { requestedUrl: "https://example.com", finalUrl: "https://example.com", status: 200, headers: {}, contentType: "text/html", body: new TextEncoder().encode(html), engine: "http", backend: "direct" };
@@ -38,6 +39,7 @@ void test("normalizeDocument reads the primary article and excludes page chrome"
             <h1>Reader title</h1>
             <p>This is the primary article body with enough useful text to be selected.</p>
             <p>It includes a <a href="/docs/reader">reader guide</a> for agents.</p>
+            <p><a href="javascript:alert(1)">unsafe link</a><img src="data:image/png;base64,abc" alt="unsafe image"></p>
             <aside>Related promotion</aside>
           </article>
         </main>
@@ -56,6 +58,7 @@ void test("normalizeDocument reads the primary article and excludes page chrome"
   assert.equal(result.publishedAt, "2026-08-22T08:00:00Z");
   assert.match(result.content, /primary article body/u);
   assert.match(result.content, /https:\/\/example\.com\/docs\/reader/u);
+  assert.doesNotMatch(result.content, /javascript:|data:image/u);
   assert.doesNotMatch(result.content, /Products Pricing Login|Related promotion|Copyright/u);
 });
 
@@ -80,6 +83,19 @@ void test("normalizeDocument bounds article metadata without splitting Unicode",
 
   assert.equal(Array.from(result.description ?? "").length, 1_000);
   assert.match(result.description ?? "", /^😀+$/u);
+});
+
+void test("extractReadableDocument resolves public links and strips unsafe URL schemes", () => {
+  const page = `<html><head><title>Safe Reader</title></head><body><article>
+    <h1>Safe Reader</h1>
+    <p>This paragraph is intentionally long enough for deterministic article extraction.</p>
+    <p><a href="/guide">public guide</a><a href="javascript:alert(1)" onclick="alert(2)">unsafe link</a></p>
+    <img src="data:image/png;base64,abc" srcset="data:image/png;base64,def 2x" onerror="alert(3)" alt="unsafe image">
+  </article></body></html>`;
+  const result = extractReadableDocument(page, "https://example.com/posts/reader");
+
+  assert.match(result.html, /href="https:\/\/example\.com\/guide"/u);
+  assert.doesNotMatch(result.html, /javascript:|data:image|onclick|onerror|srcset/u);
 });
 
 void test("extractFields deterministically extracts text, HTML, attributes and arrays", () => {

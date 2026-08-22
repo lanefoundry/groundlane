@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-22T01:35:55.809Z",
+  "corpus": {
+    "fixtureRoot": "/tmp/groundlane-oss-review.8e89hL/readability/test/test-pages",
+    "revision": "ab4027a",
+    "fixtures": 130
+  },
+  "environment": {
+    "node": "v25.6.1",
+    "platform": "darwin 25.5.0",
+    "architecture": "arm64",
+    "cpu": "Apple M3 Pro"
+  },
+  "method": {
+    "passes": 1,
+    "warmupPasses": 0,
+    "text": "micro-averaged Unicode letter/number token multiset overlap",
+    "metadata": "whitespace-normalized exact match for non-null title/byline/excerpt/publishedTime"
+  },
+  "result": {
+    "precision": 0.999496870645996,
+    "recall": 0.985370187669314,
+    "f1": 0.9923832579893448,
+    "metadataExact": 363,
+    "metadataExpected": 367,
+    "medianMs": 8.576874999999973,
+    "p95Ms": 44.375749999999925,
+    "empty": 0,
+    "failures": 0
+  }
+}

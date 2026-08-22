@@ -1,4 +1,6 @@
-import { load } from "cheerio";
+import { Readability } from "@mozilla/readability";
+import { load, type CheerioAPI } from "cheerio";
+import { parseHTML } from "linkedom";
 
 const maxScoredCandidates = 200;
 
@@ -47,7 +49,10 @@ const candidateSelectors = [
 const positiveName = /(?:^|[-_\s])(article|body|content|entry|main|page|post|story)(?:$|[-_\s])/iu;
 const negativeName = /(?:^|[-_\s])(ad|banner|comment|footer|header|menu|nav|promo|related|share|sidebar|social|subscribe)(?:$|[-_\s])/iu;
 
-function cleanMetadata(value: string | undefined, maxLength: number): string | undefined {
+function cleanMetadata(
+  value: string | null | undefined,
+  maxLength: number,
+): string | undefined {
   const cleaned = value?.replace(/\s+/gu, " ").trim();
   if (!cleaned) return undefined;
   return Array.from(cleaned).slice(0, maxLength).join("");
@@ -62,6 +67,31 @@ function absoluteHttpUrl(value: string, baseUrl: string): string | undefined {
   }
 }
 
+const urlAttributes = ["action", "cite", "formaction", "href", "poster", "src"] as const;
+
+function sanitizeDocumentUrls($: CheerioAPI, baseUrl: string): void {
+  $("*").each((_index, element) => {
+    const node = $(element);
+    const attributes = node.attr() ?? {};
+    for (const name of Object.keys(attributes)) {
+      if (/^on/iu.test(name) || name === "srcdoc" || name === "srcset") {
+        node.removeAttr(name);
+      }
+    }
+  });
+
+  for (const attribute of urlAttributes) {
+    $(`[${attribute}]`).each((_index, element) => {
+      const node = $(element);
+      const value = node.attr(attribute);
+      if (value === undefined) return;
+      const absolute = absoluteHttpUrl(value, baseUrl);
+      if (absolute === undefined) node.removeAttr(attribute);
+      else node.attr(attribute, absolute);
+    });
+  }
+}
+
 export interface ReadableDocument {
   title?: string;
   description?: string;
@@ -71,7 +101,7 @@ export interface ReadableDocument {
   text: string;
 }
 
-export function extractReadableDocument(
+function extractFallbackReadableDocument(
   source: string,
   baseUrl: string,
 ): ReadableDocument {
@@ -132,22 +162,7 @@ export function extractReadableDocument(
 
   const selected = candidates[0]?.element ?? $("body").first();
   selected.find(removableSelectors).remove();
-  selected.find("a[href]").each((_index, element) => {
-    const link = $(element);
-    const href = link.attr("href");
-    if (href === undefined) return;
-    const absolute = absoluteHttpUrl(href, baseUrl);
-    if (absolute === undefined) link.removeAttr("href");
-    else link.attr("href", absolute);
-  });
-  selected.find("img[src],source[src]").each((_index, element) => {
-    const media = $(element);
-    const src = media.attr("src");
-    if (src === undefined) return;
-    const absolute = absoluteHttpUrl(src, baseUrl);
-    if (absolute === undefined) media.removeAttr("src");
-    else media.attr("src", absolute);
-  });
+  sanitizeDocumentUrls($, baseUrl);
 
   return {
     ...(title === undefined ? {} : { title }),
@@ -157,4 +172,47 @@ export function extractReadableDocument(
     html: selected.html() ?? "",
     text: selected.text(),
   };
+}
+
+export function extractReadableDocument(
+  source: string,
+  baseUrl: string,
+): ReadableDocument {
+  try {
+    const { document } = parseHTML(source, { location: new URL(baseUrl) });
+    const article = new Readability(document, {
+      charThreshold: 80,
+      keepClasses: false,
+      maxElemsToParse: 100_000,
+      nbTopCandidates: 5,
+    }).parse();
+    if (article === null) {
+      return extractFallbackReadableDocument(source, baseUrl);
+    }
+    const content = article.content;
+    if (content === null || content === undefined || content.trim().length === 0) {
+      return extractFallbackReadableDocument(source, baseUrl);
+    }
+
+    const $ = load(content);
+    $(removableSelectors).remove();
+    const selected = $("body").first();
+    sanitizeDocumentUrls($, baseUrl);
+
+    const title = cleanMetadata(article.title, 500);
+    const description = cleanMetadata(article.excerpt, 1_000);
+    const author = cleanMetadata(article.byline, 200);
+    const publishedAt = cleanMetadata(article.publishedTime, 200);
+
+    return {
+      ...(title === undefined ? {} : { title }),
+      ...(description === undefined ? {} : { description }),
+      ...(author === undefined ? {} : { author }),
+      ...(publishedAt === undefined ? {} : { publishedAt }),
+      html: selected.html() ?? "",
+      text: selected.text(),
+    };
+  } catch {
+    return extractFallbackReadableDocument(source, baseUrl);
+  }
 }

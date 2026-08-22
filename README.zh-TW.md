@@ -1,175 +1,183 @@
-# Groundlane
+<div align="center">
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+# Groundlane
 
 **AI agent 值得信賴的 Web 存取層。**
 
-Groundlane 是開源、供應商中立的遠端 MCP server，讓 AI agent 能在受控條件下存取公開 Web。它以一套穩定介面統一搜尋、內容擷取與確定性結構化抽取；搜尋服務可替換，抓到的頁面先由內建 Groundlane Reader 清理，難讀的 Markdown 頁面再走選用的 Jina Reader，最後升級到隔離的 local 或 Browserless 瀏覽器。
+[![CI](https://github.com/vincentxuu/groundlane/actions/workflows/ci.yml/badge.svg)](https://github.com/vincentxuu/groundlane/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Status](https://img.shields.io/badge/status-early_preview-orange.svg)
+
+[快速開始](#快速開始) · [連接 Client](#連接-mcp-client) · [工具](#工具一覽) · [部署](#執行-groundlane) · [文件](#文件)
+
+[English](README.md) · [繁體中文](README.zh-TW.md)
+
+</div>
+
+Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介面搜尋 Web、讀取內容與進行確定性結構化抽取。它不綁模型，將可替換 provider 收斂成穩定契約，並讓 operator 掌握 authentication 與資源限制。
 
 > [!IMPORTANT]
-> Groundlane 目前是早期預覽版，工具契約與部署模型仍可能調整。它不是現成的託管服務，也不保證繞過所有反爬機制。
+> Groundlane 目前是早期預覽版（`0.1.0`），工具契約與部署行為仍可能調整。它不是託管服務、CAPTCHA solver，也不保證繞過所有反爬機制。
 
-## 為什麼選 Groundlane？
+## 工具一覽
 
-- **不綁模型：**任何支援 Streamable HTTP MCP 的 client 都能使用，不必依賴模型供應商內建的 Web 工具。
-- **不綁搜尋供應商：**只將具有每月重置免費額度的搜尋 API 放入 provider router，並共用同一份正規化結果契約。
-- **HTTP 優先，必要時才用瀏覽器：**普通讀取維持快速；只有 JavaScript、等待條件或明確 fallback 訊號才動用 Chromium。
-- **確定性抽取：**用 CSS selector 定義欄位並取得結構化 JSON，不暗中加入 LLM 推論步驟。
-- **安全優先：**MCP endpoint 強制驗證，並限制 URL、redirect、網路、deadline、bytes、輸出與 concurrency。
-- **部署控制權在自己手上：**control plane 與瀏覽器 workload 可部署在自己的環境，包括 Cloudflare Workers 與 Containers。
-
-## MVP 工具
-
-| 工具 | 用途 | 目前範圍 |
+| 工具 | 功能 | 目前執行路徑 |
 | --- | --- | --- |
-| `web_fetch` | 將 URL 讀成 Markdown、純文字或 HTML | bounded HTTP、內建正文抽取、選用 Jina Reader，再使用 browser fallback |
-| `web_search` | 透過已設定的 provider 搜尋 | 指定或自動路由到七個 provider |
-| `web_extract` | 從頁面抽取具名欄位 | CSS selector；支援 text、HTML 或 attribute value |
+| `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
+| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 自動或明確指定七個 provider |
+| `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute；不暗中呼叫 LLM |
 
-瀏覽器自動化只是名為 **Groundlane Browser** 的內部執行引擎。MVP 不對外提供持久 browser session。
+Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl` 等 retrieval provenance；search 結果則標示 provider。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 ## 快速開始
 
-### 前置需求
-
-- Node.js 22 以上
-- pnpm 10
-- browser fallback 所需的 Chromium
-- 若要使用 `web_search`，至少需要一組具每月循環免費額度的 provider API key
-  （Tavily、Exa、Parallel、Browserbase、Brave、Firecrawl 或 SerpApi）
-
-### 在本機執行
-
-Clone 本 repository 後執行：
+需求：Node.js 22+、pnpm 10 與 Git。只有啟用 local browser backend 時才需要 Chromium。
 
 ```bash
+git clone https://github.com/vincentxuu/groundlane.git
+cd groundlane
 pnpm install
 pnpm exec playwright install chromium
 cp .env.example .env
+```
+
+在 `.env` 設定一組足夠長且隨機的 `GROUNDLANE_AUTH_TOKEN`，然後啟動 server：
+
+```bash
 set -a
 source .env
 set +a
 pnpm dev
 ```
 
-請在 `.env` 設定足夠強的 `GROUNDLANE_AUTH_TOKEN`。要啟用搜尋，請加入一個或多個受支援 provider 的 API key。本機 server 會監聽 `PORT`，並提供：
+Groundlane 現在會在 `http://localhost:8080/mcp` 提供需要驗證的 Streamable HTTP MCP endpoint。Search key 是選填，只需設定想啟用的 provider。
 
-- `POST /mcp` — 需要驗證的 Streamable HTTP MCP endpoint
-- `GET /healthz` — process liveness
-- `GET /readyz` — Container reachability 與 service configuration readiness
+## 連接 MCP client
 
-### 連接 MCP client
-
-請在支援 Streamable HTTP 的 MCP client 設定 server URL 與 bearer token。不同 client 的設定格式不同，但連線值如下：
-
-```text
-URL: http://localhost:8080/mcp
-Authorization: Bearer <GROUNDLANE_AUTH_TOKEN>
-```
-
-不要把 token 放在 query string，也不要提交到版本控制。
-
-Server 執行後，請另開 shell、載入同一份 `.env`，驗證 MCP handshake 與 public HTTP path：
+在啟動 client 的 shell 匯出同一組 token：
 
 ```bash
-set -a
-source .env
-set +a
-pnpm smoke
+export GROUNDLANE_AUTH_TOKEN="your-long-random-secret"
 ```
 
-若也要驗證 browser path，請設定 `GROUNDLANE_SMOKE_BROWSER=1`。
+### Codex
 
-## 設定
+```bash
+codex mcp add groundlane \
+  --url http://localhost:8080/mcp \
+  --bearer-token-env-var GROUNDLANE_AUTH_TOKEN
+```
 
-Groundlane 從環境變數讀取設定；完整本機範本請看 [.env.example](.env.example)。
+### Claude Code
 
-| 變數 | 用途 | 預設值／範例 |
+```bash
+claude mcp add --transport http --scope user groundlane \
+  http://localhost:8080/mcp \
+  --header "Authorization: Bearer ${GROUNDLANE_AUTH_TOKEN}"
+```
+
+Claude Code 指令會把展開後的 token 寫入 MCP 設定。共用或正式環境應改用 secret-backed header helper，避免明文保存 token。
+
+### 第一次呼叫
+
+請 client 呼叫 `web_fetch`：
+
+```json
+{
+  "url": "https://example.com/",
+  "format": "markdown",
+  "render": "never"
+}
+```
+
+結構化回應會包含以下 envelope（節錄）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "finalUrl": "https://example.com/",
+    "title": "Example Domain",
+    "content": "This domain is for use in illustrative examples...",
+    "engine": "http",
+    "backend": "direct",
+    "truncated": false
+  }
+}
+```
+
+Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 呼叫 `web_fetch` 與 `web_extract`。
+
+## 為什麼選 Groundlane？
+
+- **一套 MCP 契約：**client 不需要理解每個 provider 的專屬 tool schema。
+- **HTTP 優先：**普通內容不付 browser 成本；只有 rendering 與 wait condition 才動用 Chromium。
+- **確定性抽取：**CSS selector 直接產生 structured output，不加入未要求的模型推論。
+- **預設有界：**URL policy、DNS／redirect checks、單一 deadline、bytes／output caps 與 concurrency limits 都留在 Groundlane boundary。
+- **Hosted fallback 必須明確啟用：**只有 operator 主動設定時才會把 URL 傳給 Jina Reader 或 Browserless。
+
+## 執行 Groundlane
+
+| 模式 | 適合情境 | 入口 |
 | --- | --- | --- |
-| `GROUNDLANE_AUTH_TOKEN` | `/mcp` 必須使用的 bearer token | 必填 |
-| `SEARCH_PROVIDER_ORDER` | 自動路由時的 provider 順序 | `tavily,exa,parallel,browserbase,brave,firecrawl,serpapi` |
-| `SEARCH_MONTHLY_REQUEST_BUDGETS` | 每個 instance 的 provider 嘗試次數上限，每個 UTC 月重置 | 保守的免費方案預設值 |
-| `TAVILY_API_KEY` | Tavily adapter credential | 選填 |
-| `EXA_API_KEY` | Exa adapter credential | 選填 |
-| `FIRECRAWL_API_KEY` | Firecrawl Search adapter credential | 選填 |
-| `SERPAPI_API_KEY` | SerpApi Google Search adapter credential | 選填 |
-| `BROWSERBASE_API_KEY` | Browserbase Search adapter credential | 選填 |
-| `PARALLEL_API_KEY` | Parallel Search adapter credential | 選填 |
-| `BRAVE_API_KEY` | Brave Search adapter credential | 選填 |
-| `READER_BACKEND` | Markdown Reader fallback：`disabled` 或 `jina` | 預設 `disabled` |
-| `BROWSER_BACKEND` | 瀏覽器能力：`disabled`、`local` 或 `browserless` | 預設 `disabled`；本機範本使用 `local` |
-| `BROWSERLESS_TOKEN` | Browserless `/content` credential | 僅 `browserless` 必填 |
-| `BROWSERLESS_REGION` | Browserless endpoint region：`sfo`、`lon` 或 `ams` | `sfo` |
-| `REQUEST_TIMEOUT_MS` | 端到端 request deadline | 本機為 `30000` |
-| `MAX_RESPONSE_BYTES` | 上游 response byte 上限 | 本機為 `2000000` |
-| `MAX_OUTPUT_CHARS` | 回傳文字字數上限 | 本機為 `100000` |
-| `MAX_CONCURRENCY` | 同時處理的 request 上限 | 本機為 `4` |
-| `MAX_QUEUE` | 等候中的 request 上限 | 本機為 `16` |
+| Local Node | 開發與評估 | [快速開始](#快速開始) |
+| Docker | 獨立 Node／Chromium container | `docker build -t groundlane .`，再執行 `docker run --rm -p 8080:8080 --env-file .env groundlane` |
+| Cloudflare Worker + Container | 預期的 production topology | [Cloudflare 部署指南](docs/deployment/cloudflare.md) |
 
-沒有搜尋 credential 時，`web_fetch` 與 `web_extract` 仍可運作；只有對應的搜尋 provider 會無法使用。
+## 支援的 adapters
 
-每月 budget 會計算實際嘗試呼叫 provider 的次數，包含 retryable failure；達到設定上限後，同一個 Groundlane instance 不再選用該 provider。這是保守的應用層護欄，不是帳務真相：Container 重啟會清空計數，多個 instances 不共享狀態，而且部分服務採變動 credits。請同時開啟 provider 端消費限制，並依實際方案覆寫 budgets。
+| 能力 | Adapters |
+| --- | --- |
+| Search | Tavily、Exa、Parallel、Browserbase、Brave、Firecrawl、SerpApi |
+| Hosted Reader fallback | Jina Reader（opt-in） |
+| Browser rendering | Local Playwright 或 Browserless（opt-in） |
 
-## 架構
+自動搜尋路由可套用保守的 per-instance 每月嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)。
+
+## 運作方式
 
 ```text
 MCP client
     |
     v
-Cloudflare Worker / Node HTTP edge
-    |  authentication, limits, request identity
+Worker / Node HTTP edge       authentication, request identity
+    |
     v
-tool registry
-    |-- web_search  -> 每月免費 provider router（7 個 adapters）
-    |-- web_fetch   -> safe HTTP -> Groundlane Reader -> 選用 Jina/browser fallback
-    `-- web_extract -> fetch pipeline -> deterministic DOM extraction
+tool registry                 web_search | web_fetch | web_extract
+    |
+    +-- provider router       可替換的 search adapters
+    +-- safe HTTP + Reader    有界的內容取得與正文清理
+    `-- browser backend       隔離的 local 或 hosted rendering
 ```
 
-核心政策與契約不依賴特定 provider 或 browser runtime。Browser backend 可選 Container-local Playwright 或 Browserless `/content`；輸出的 `engine` 與 `backend` 會揭露實際執行路徑，但公開 MCP 工具不變。Hosted backend 會收到請求的公開 URL，因此必須由 operator 主動啟用。
+核心政策不依賴特定 search provider 或 browser runtime。未指定 selector 的 Markdown/text 會由 Mozilla Readability 與本機 fallback 清理；raw HTML 與明確 selector 則維持 deterministic DOM semantics。詳見[架構文件](docs/architecture.md)與可重跑的 [Reader benchmark](docs/research/reader-benchmark.md)。
 
-HTML 頁面的 Markdown 與 text response 會經過自架的 **Groundlane Reader**：選出主要文章區域、移除常見 navigation、footer、廣告與相關內容、把相對連結轉成絕對連結，並在頁面提供時回傳有界的 `title`、`description`、`author`、`publishedAt` metadata。Raw HTML 與明確 CSS selector 仍維持 deterministic page／selector semantics。Reader 清理不會改寫 retrieval provenance；`engine` 與 `backend` 仍會說明文件是由 HTTP、Jina 或 browser 取得。
+## 安全與限制
 
-元件邊界、request flow 與設計決策請看[架構文件](docs/architecture.md)。
+Web retrieval 具有 SSRF 風險。Groundlane 將使用者 URL、redirect、provider 回傳 URL、browser subresource、WebSocket 與 DNS answer 全部視為不可信輸入。正式環境應保持 authentication、保留預設 limits，並套用 outbound network policy。
 
-Groundlane 會借鏡 Crawlee、Crawl4AI、Scrapy、Playwright MCP 與 Steel 等開源專案，但把託管 proxy／anti-bot 服務維持為明確的 adapter。採用邊界與後續 crawl 規劃請看[開源技術基礎](docs/open-source-foundations.zh-TW.md)。
+Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 operator 原本無權存取的內容。能 render JavaScript 不代表已證明可繞過反爬。Threat model 與私下通報漏洞的方式請看 [SECURITY.md](SECURITY.md)。
 
-## 安全
+## 專案狀態
 
-Web retrieval 具備 SSRF 風險。Groundlane 會將使用者 URL、redirect、browser subresource 與搜尋 provider 回傳的 URL 全部視為不可信輸入。正式部署時應維持 authentication、使用 outbound network policy，並保留預設資源限制。
+- 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
+- 已完成：三個 remote MCP tools、七個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
+- 下一步：compatibility fixtures、cache／health-aware routing、營運 telemetry 與 opt-in bounded crawl primitives。
 
-本專案**不保證**自動解開所有 CAPTCHA、不會被偵測，也不授權存取原本無權取得的內容。Operator 必須自行遵守目標網站條款、robots policy、隱私義務與適用法律。
-
-安全模型與非公開漏洞通報方式請看 [SECURITY.md](SECURITY.md)。
-
-## 部署
-
-預期的 production topology 由 Cloudflare Worker 擔任公開 control plane，Cloudflare Container 執行 Node／Playwright 瀏覽器 workload。前置需求、secrets、部署與驗證步驟請看 [Cloudflare 部署指南](docs/deployment/cloudflare.md)。
-
-## Roadmap
-
-- [x] 定義供應商中立的 `web_fetch`、`web_search` 與確定性 `web_extract` 工具面
-- [x] 加入具 provenance 的 opt-in Jina Reader 與 Browserless retrieval backends
-- [ ] 穩定 MCP 契約並發布相容性 fixtures
-- [ ] 強化 Cloudflare Worker + Container 部署與營運 telemetry
-- [ ] 加入 cache adapter 與 provider health／cost-aware routing
-- [ ] 加入 opt-in、具明確 budget 的 batch／crawl primitives
-- [ ] 將 stateful browser session 當成獨立且具安全 lifecycle 的能力評估
-
-Roadmap 只代表方向，不是版本承諾。現有範圍背後的依據請看[研究封存](docs/research/README.md)。
+詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。
 
 ## 文件
 
+- [設定](docs/configuration.md)
 - [架構](docs/architecture.md)
-- [開源技術基礎](docs/open-source-foundations.zh-TW.md)
-- [MVP 產品需求](docs/product/prd.md)
 - [Cloudflare 部署](docs/deployment/cloudflare.md)
-- [安全政策](SECURITY.md)
-- [貢獻指南](CONTRIBUTING.md)
+- [開源技術基礎](docs/open-source-foundations.zh-TW.md)
+- [Reader benchmark](docs/research/reader-benchmark.md)
 - [研究封存](docs/research/README.md)
 
-## 參與貢獻
+## 參與貢獻與支援
 
-歡迎提交 issue 與 pull request。開始前請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md) 與[行為準則](CODE_OF_CONDUCT.md)。安全漏洞請依 [SECURITY.md](SECURITY.md) 的方式私下回報。
+一般 bug 與功能提案請使用 [GitHub Issues](https://github.com/vincentxuu/groundlane/issues)。送出 pull request 前請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md) 與[行為準則](CODE_OF_CONDUCT.md)。安全漏洞請依 [SECURITY.md](SECURITY.md) 私下通報。
 
 ## 授權
 
