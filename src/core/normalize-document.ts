@@ -7,6 +7,15 @@ import { extractReadableDocument } from "./readable-document.js";
 
 const decoder = new TextDecoder("utf-8", { fatal: false });
 
+function loginRedirectWarning(raw: RawDocument): string | undefined {
+  const trimmed = (value: string): string => value.replace(/\/+$/, "");
+  if (trimmed(raw.finalUrl) === trimmed(raw.requestedUrl)) return undefined;
+  let path: string;
+  try { path = new URL(raw.finalUrl).pathname; } catch { return undefined; }
+  if (!/^\/(login|signin|sign-in|signup|sign-up|register)(\/|$)/i.test(path.replace(/\/+$/, ""))) return undefined;
+  return "navigation ended at a login page; the target content likely requires authentication";
+}
+
 export function normalizeDocument(raw: RawDocument, format: FetchFormat, maxChars: number, selector?: string): NormalizedDocument {
   const source = decoder.decode(raw.body);
   const isHtml = raw.contentType.includes("html") || /^\s*</.test(source);
@@ -47,6 +56,11 @@ export function normalizeDocument(raw: RawDocument, format: FetchFormat, maxChar
   }
   if (title !== undefined) title = truncateUnicode(title, 500).value;
   const bounded = truncateUnicode(content, maxChars);
+  const warnings: string[] = [];
+  if (bounded.truncated) warnings.push("output truncated");
+  if (content.trim().length === 0) warnings.push("document contained no extractable text");
+  const loginWarning = loginRedirectWarning(raw);
+  if (loginWarning !== undefined) warnings.push(loginWarning);
   return {
     ...(title ? { title } : {}),
     ...(description ? { description } : {}),
@@ -56,6 +70,6 @@ export function normalizeDocument(raw: RawDocument, format: FetchFormat, maxChar
     format,
     truncated: bounded.truncated,
     bytes: raw.body.byteLength,
-    warnings: bounded.truncated ? ["output truncated"] : [],
+    warnings,
   };
 }
