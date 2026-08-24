@@ -44,5 +44,5 @@ void test("only renewable search providers are routed automatically", () => {
   const automatic = new Set<string>(DEFAULT_SEARCH_PROVIDER_ORDER);
   assert.equal(automatic.has("linkup"), true);
   assert.equal(automatic.has("serper"), false);
-  assert.equal(automatic.has("you"), false);
+  assert.equal(automatic.has("you"), true);
 });

@@ -31,7 +31,7 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.equal(config.searchMonthlyRequestBudgets.serpapi, 250);
   assert.equal(config.searchMonthlyRequestBudgets.linkup, 100);
   assert.equal(config.searchMonthlyRequestBudgets.serper, 0);
-  assert.equal(config.searchMonthlyRequestBudgets.you, 0);
+  assert.equal(config.searchMonthlyRequestBudgets.you, 3000);
   assert.equal(config.readerBackend, "disabled");
   assert.equal(config.browserBackend, "disabled");
   assert.equal(config.browserlessRegion, "sfo");
