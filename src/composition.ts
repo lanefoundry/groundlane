@@ -17,8 +17,9 @@ import type { GroundlaneConfig } from "./config.js";
 import type { BrowserBackend, SearchProvider } from "./core/contracts.js";
 import { FetchPipeline } from "./core/fetch-pipeline.js";
 import { ConcurrencyLimiter } from "./core/limits.js";
+import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
 import { SearchRouter } from "./core/search-router.js";
-import { MonthlySearchBudget } from "./core/search-budget.js";
+import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
 import { createWebExtractModule } from "./tools/web-extract.js";
 import { createWebFetchModule } from "./tools/web-fetch.js";
@@ -58,9 +59,9 @@ export function createSearchProviders(config: GroundlaneConfig): SearchProvider[
   if (config.providerKeys.serper !== undefined) {
     providers.push(new SerperSearchProvider({ apiKey: config.providerKeys.serper }));
   }
-  if (config.providerKeys.you !== undefined) {
-    providers.push(new YouSearchProvider({ apiKey: config.providerKeys.you }));
-  }
+  providers.push(new YouSearchProvider(
+    config.providerKeys.you !== undefined ? { apiKey: config.providerKeys.you } : {},
+  ));
   return providers;
 }
 
@@ -76,13 +77,24 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
         : new DisabledBrowserBackend();
   const reader =
     config.readerBackend === "jina" ? new JinaReaderBackend() : undefined;
-  const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader);
+  const backendBudgetTrackers: import("./core/search-budget.js").SearchBudgetTracker[] = [
+    new MinuteRateLimiter({ jina: config.jinaReaderRpm }),
+  ];
+  if (config.browserBackend === "browserless") {
+    backendBudgetTrackers.push(new MonthlySearchBudget({ browserless: config.browserlessMonthlyUnits }));
+  }
+  const backendBudget = new CompositeSearchBudget(backendBudgetTrackers);
+  const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader, backendBudget);
   const providers = createSearchProviders(config);
+  const healthTracker = new DynamicPenaltyHealthTracker();
   const searchRouter = new SearchRouter(
     providers,
     config.searchProviderOrder,
-    undefined,
-    new MonthlySearchBudget(config.searchMonthlyRequestBudgets),
+    healthTracker,
+    new CompositeSearchBudget([
+      new MonthlySearchBudget(config.searchMonthlyRequestBudgets),
+      new DailySearchBudget(config.searchDailyRequestBudgets),
+    ]),
   );
   const limiter = new ConcurrencyLimiter(config.maxConcurrency, config.maxQueue);
   const modules = [

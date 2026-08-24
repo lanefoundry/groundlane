@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  DEFAULT_SEARCH_DAILY_BUDGETS_VALUE,
   DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE,
   DEFAULT_SEARCH_PROVIDER_ORDER_VALUE,
   SEARCH_PROVIDER_IDS,
@@ -22,6 +23,9 @@ const environmentSchema = z.object({
   SEARCH_MONTHLY_REQUEST_BUDGETS: z
     .string()
     .default(DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE),
+  SEARCH_DAILY_REQUEST_BUDGETS: z
+    .string()
+    .default(DEFAULT_SEARCH_DAILY_BUDGETS_VALUE),
   TAVILY_API_KEY: optionalSecret,
   EXA_API_KEY: optionalSecret,
   BRAVE_API_KEY: optionalSecret,
@@ -36,6 +40,8 @@ const environmentSchema = z.object({
   BROWSER_BACKEND: z.enum(["disabled", "local", "browserless"]).default("disabled"),
   BROWSERLESS_TOKEN: optionalSecret,
   BROWSERLESS_REGION: z.enum(["sfo", "lon", "ams"]).default("sfo"),
+  JINA_READER_RPM: positiveInt(1, 1_000).default(20),
+  BROWSERLESS_MONTHLY_UNITS: positiveInt(0, 100_000).default(1_000),
   REQUEST_TIMEOUT_MS: positiveInt(1_000, 120_000).default(30_000),
   MAX_RESPONSE_BYTES: positiveInt(1_024, 20_000_000).default(2_000_000),
   MAX_OUTPUT_CHARS: positiveInt(1_000, 500_000).default(100_000),
@@ -50,11 +56,14 @@ export interface GroundlaneConfig {
   authToken: string;
   searchProviderOrder: SearchProviderId[];
   searchMonthlyRequestBudgets: Partial<Record<SearchProviderId, number>>;
+  searchDailyRequestBudgets: Partial<Record<SearchProviderId, number>>;
   providerKeys: Partial<Record<SearchProviderId, string>>;
   readerBackend: "disabled" | "jina";
   browserBackend: "disabled" | "local" | "browserless";
   browserlessToken?: string;
   browserlessRegion: "sfo" | "lon" | "ams";
+  jinaReaderRpm: number;
+  browserlessMonthlyUnits: number;
   requestTimeoutMs: number;
   maxResponseBytes: number;
   maxOutputChars: number;
@@ -64,8 +73,9 @@ export interface GroundlaneConfig {
 
 const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
 
-export function parseSearchMonthlyRequestBudgets(
+function parseBudgetString(
   value: string,
+  label: string,
 ): Partial<Record<SearchProviderId, number>> {
   const budgets: Partial<Record<SearchProviderId, number>> = {};
   for (const entry of value.split(",").map((item) => item.trim()).filter(Boolean)) {
@@ -79,14 +89,26 @@ export function parseSearchMonthlyRequestBudgets(
       !/^\d+$/u.test(rawBudget) ||
       !Number.isSafeInteger(budget)
     ) {
-      throw new Error(`Invalid SEARCH_MONTHLY_REQUEST_BUDGETS entry: ${entry}`);
+      throw new Error(`Invalid ${label} entry: ${entry}`);
     }
     if (id in budgets) {
-      throw new Error(`Duplicate SEARCH_MONTHLY_REQUEST_BUDGETS provider: ${id}`);
+      throw new Error(`Duplicate ${label} provider: ${id}`);
     }
     budgets[id as SearchProviderId] = budget;
   }
   return budgets;
+}
+
+export function parseSearchMonthlyRequestBudgets(
+  value: string,
+): Partial<Record<SearchProviderId, number>> {
+  return parseBudgetString(value, "SEARCH_MONTHLY_REQUEST_BUDGETS");
+}
+
+export function parseSearchDailyRequestBudgets(
+  value: string,
+): Partial<Record<SearchProviderId, number>> {
+  return parseBudgetString(value, "SEARCH_DAILY_REQUEST_BUDGETS");
 }
 
 export function parseConfig(
@@ -129,6 +151,9 @@ export function parseConfig(
     searchMonthlyRequestBudgets: parseSearchMonthlyRequestBudgets(
       parsed.SEARCH_MONTHLY_REQUEST_BUDGETS,
     ),
+    searchDailyRequestBudgets: parseSearchDailyRequestBudgets(
+      parsed.SEARCH_DAILY_REQUEST_BUDGETS,
+    ),
     providerKeys,
     readerBackend: parsed.READER_BACKEND,
     browserBackend: parsed.BROWSER_BACKEND,
@@ -136,6 +161,8 @@ export function parseConfig(
       ? {}
       : { browserlessToken: parsed.BROWSERLESS_TOKEN }),
     browserlessRegion: parsed.BROWSERLESS_REGION,
+    jinaReaderRpm: parsed.JINA_READER_RPM,
+    browserlessMonthlyUnits: parsed.BROWSERLESS_MONTHLY_UNITS,
     requestTimeoutMs: parsed.REQUEST_TIMEOUT_MS,
     maxResponseBytes: parsed.MAX_RESPONSE_BYTES,
     maxOutputChars: parsed.MAX_OUTPUT_CHARS,

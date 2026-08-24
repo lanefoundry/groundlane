@@ -120,7 +120,7 @@ void test("balanced search counts only selected attempts and skips exhausted pro
   assert.equal(budget.remaining("exa"), 0);
   assert.equal(budget.remaining("brave"), 0);
   assert.equal(budget.remaining("firecrawl"), 1);
-  assert.match(result.warnings.join(" "), /tavily monthly budget exhausted/u);
+  assert.match(result.warnings.join(" "), /tavily budget exhausted/u);
 });
 
 void test("balanced search propagates cancellation across selected providers", async () => {
@@ -182,7 +182,13 @@ void test("SearchRouter rejects unsupported requests", async () => {
 });
 
 void test("SearchRouter excludes unhealthy providers and validates its public bound", async () => {
-  const result = await new SearchRouter([provider("a", "ok"), provider("b", "ok")], ["a", "b"], (id) => id !== "a").search(request, new AbortController().signal);
+  const health = {
+    isHealthy: (id: string) => id !== "a",
+    recordSuccess: () => {},
+    recordFailure: () => {},
+    penalty: () => 0,
+  };
+  const result = await new SearchRouter([provider("a", "ok"), provider("b", "ok")], ["a", "b"], health).search(request, new AbortController().signal);
   assert.equal(result.provider, "b");
   await assert.rejects(new SearchRouter([provider("a", "ok")], ["a"]).search({ query: "q", maxResults: 51 }, new AbortController().signal), { code: "INVALID_INPUT" });
 });
@@ -197,7 +203,7 @@ void test("SearchRouter skips exhausted monthly budgets and counts attempts", as
   );
   const result = await router.search(request, new AbortController().signal);
   assert.equal(result.provider, "b");
-  assert.deepEqual(result.warnings, ["a monthly budget exhausted"]);
+  assert.deepEqual(result.warnings, ["a budget exhausted"]);
   assert.equal(budget.remaining("b"), 0);
   await assert.rejects(
     router.search({ ...request, provider: "b" }, new AbortController().signal),

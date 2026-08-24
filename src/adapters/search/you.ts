@@ -18,7 +18,7 @@ import {
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 
 interface YouOptions {
-  apiKey: string;
+  apiKey?: string;
   fetch?: FetchLike;
   validateUrl?: UrlValidator;
 }
@@ -28,16 +28,13 @@ export class YouSearchProvider implements SearchProvider {
   private readonly fetcher: FetchLike;
   private readonly validateUrl: UrlValidator;
 
-  constructor(private readonly options: YouOptions) {
+  constructor(private readonly options: YouOptions = {}) {
     this.fetcher = options.fetch ?? globalThis.fetch;
     this.validateUrl = options.validateUrl ?? defaultUrlValidator;
   }
 
   supports(request: SearchRequest): boolean {
-    return !(
-      this.options.apiKey.length === 0 ||
-      (request.domains?.length && request.excludeDomains?.length)
-    );
+    return !(request.domains?.length && request.excludeDomains?.length);
   }
 
   async search(request: SearchRequest, signal: AbortSignal): Promise<SearchResult> {
@@ -45,15 +42,18 @@ export class YouSearchProvider implements SearchProvider {
     const started = performance.now();
     const includeDomains = cleanDomains(request.domains);
     const excludeDomains = cleanDomains(request.excludeDomains);
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (this.options.apiKey) {
+      headers["x-api-key"] = this.options.apiKey;
+    }
     const raw = await providerJson(
       this.fetcher,
       YOU_SEARCH_URL,
       {
         method: "POST",
-        headers: {
-          "x-api-key": this.options.apiKey,
-          "content-type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           query: request.query,
           count: request.maxResults,

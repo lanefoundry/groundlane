@@ -65,17 +65,19 @@ function source(
 export function fuseSearchResults(
   providerResults: readonly SearchResult[],
   maxResults: number,
+  weights?: Readonly<Partial<Record<SearchProviderId, number>>>,
 ): SearchResultItem[] {
   const candidates = new Map<string, FusedCandidate>();
 
   providerResults.forEach((result, providerIndex) => {
+    const weight = weights?.[result.provider] ?? 1;
     result.results.slice(0, MAX_CANDIDATES_PER_PROVIDER).forEach((item, itemIndex) => {
       const canonicalUrl = canonicalSearchResultUrl(item.url);
       if (canonicalUrl === undefined) return;
       const rank = itemIndex + 1;
       const existing = candidates.get(canonicalUrl);
       if (existing !== undefined) {
-        existing.fusionScore += 1 / (RRF_K + rank);
+        existing.fusionScore += weight / (RRF_K + rank);
         existing.sources.push(source(result.provider, rank, item.score));
         return;
       }
@@ -88,7 +90,7 @@ export function fuseSearchResults(
         },
         canonicalUrl,
         hostname: new URL(canonicalUrl).hostname,
-        fusionScore: 1 / (RRF_K + rank),
+        fusionScore: weight / (RRF_K + rank),
         sources: [source(result.provider, rank, item.score)],
         firstProviderIndex: providerIndex,
       });

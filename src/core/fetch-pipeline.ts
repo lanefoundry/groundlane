@@ -2,6 +2,7 @@ import type { BrowserBackend, FetchFormat, HttpFetcher, NormalizedDocument, RawD
 import { GroundlaneError } from "./errors.js";
 import { normalizeDocument } from "./normalize-document.js";
 import type { Deadline } from "./limits.js";
+import type { SearchBudgetTracker } from "./search-budget.js";
 
 export interface FetchPipelineRequest { url: string; format: FetchFormat; render: RenderMode; selector?: string; waitFor?: string; maxBytes: number; maxOutputChars: number; maxRedirects: number; deadline: Deadline }
 export interface FetchPipelineResult extends NormalizedDocument { raw: RawDocument; fallbackReason?: string }
@@ -26,6 +27,7 @@ export class FetchPipeline {
     private readonly http: HttpFetcher,
     private readonly browser: BrowserBackend,
     private readonly reader?: ReaderBackend,
+    private readonly backendBudget?: SearchBudgetTracker,
   ) {}
   async fetch(request: FetchPipelineRequest, signal?: AbortSignal): Promise<FetchPipelineResult> {
     validateFetchPipelineRequest(request);
@@ -70,7 +72,8 @@ export class FetchPipeline {
       this.reader !== undefined &&
       request.format === "markdown" &&
       request.selector === undefined &&
-      request.waitFor === undefined
+      request.waitFor === undefined &&
+      this.backendBudget?.remaining("jina") !== 0
     );
   }
 
@@ -101,6 +104,7 @@ export class FetchPipeline {
       },
       signal,
     );
+    this.backendBudget?.tryConsume("jina");
     return {
       ...normalizeDocument(raw, request.format, request.maxOutputChars),
       raw,
@@ -108,7 +112,16 @@ export class FetchPipeline {
     };
   }
   private async browserFetch(request: FetchPipelineRequest, signal?: AbortSignal, reason?: string): Promise<FetchPipelineResult> {
+    if (this.backendBudget?.remaining("browserless") === 0) {
+      throw new GroundlaneError(
+        "RATE_LIMITED",
+        "browser-budget",
+        "Browserless monthly unit budget is exhausted",
+        true,
+      );
+    }
     const raw = await this.browser.fetch({ url: request.url, maxBytes: request.maxBytes, deadline: request.deadline, ...(request.selector ? { selector: request.selector } : {}), ...(request.waitFor ? { waitFor: request.waitFor } : {}) }, signal);
+    this.backendBudget?.tryConsume("browserless");
     return { ...normalizeDocument(raw, request.format, request.maxOutputChars), raw, ...(reason ? { fallbackReason: reason } : {}) };
   }
 }

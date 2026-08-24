@@ -8,6 +8,8 @@ import type {
 import { GroundlaneError, toGroundlaneError } from "./errors.js";
 import { fuseSearchResults } from "./search-fusion.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
+import type { ProviderHealthTracker } from "./provider-health.js";
+import { searchProviderWeight } from "./search-provider-profile.js";
 import { selectSearchProviders } from "./search-selector.js";
 
 interface ResolvedProviders {
@@ -28,7 +30,7 @@ export class SearchRouter {
   constructor(
     providers: readonly SearchProvider[],
     private readonly order: readonly SearchProviderId[],
-    private readonly isHealthy: (id: SearchProviderId) => boolean = () => true,
+    private readonly health?: ProviderHealthTracker,
     private readonly budget?: SearchBudgetTracker,
   ) {
     this.providers = new Map(providers.map((provider) => [provider.id, provider]));
@@ -57,7 +59,7 @@ export class SearchRouter {
         throw new GroundlaneError(
           "PROVIDER_UNAVAILABLE",
           "search-budget",
-          `${explicitProvider} monthly request budget is exhausted`,
+          `${explicitProvider} request budget is exhausted`,
           true,
         );
       }
@@ -107,13 +109,13 @@ export class SearchRouter {
       const provider = this.providers.get(id);
       if (
         provider === undefined ||
-        !this.isHealthy(provider.id) ||
+        (this.health !== undefined && !this.health.isHealthy(provider.id)) ||
         !provider.supports(request)
       ) {
         continue;
       }
       if (this.budget?.remaining(provider.id) === 0) {
-        warnings.push(`${provider.id} monthly budget exhausted`);
+        warnings.push(`${provider.id} budget exhausted`);
         continue;
       }
       providers.push(provider);
@@ -151,11 +153,11 @@ export class SearchRouter {
           throw new GroundlaneError(
             "PROVIDER_UNAVAILABLE",
             "search-budget",
-            `${provider.id} monthly request budget is exhausted`,
+            `${provider.id} request budget is exhausted`,
             true,
           );
         }
-        warnings.push(`${provider.id} monthly budget exhausted`);
+        warnings.push(`${provider.id} budget exhausted`);
         continue;
       }
       attempted.push(provider.id);
@@ -165,6 +167,7 @@ export class SearchRouter {
           await provider.search(request, signal),
           request.maxResults,
         );
+        this.health?.recordSuccess(provider.id);
         return {
           ...normalized,
           strategy: "fallback",
@@ -175,6 +178,7 @@ export class SearchRouter {
         };
       } catch (error) {
         const safe = toGroundlaneError(error, "search");
+        this.health?.recordFailure(provider.id);
         if (providers.length === 1 || !safe.retryable) throw safe;
         warnings.push(`${provider.id} unavailable`);
       }
@@ -186,6 +190,18 @@ export class SearchRouter {
       "All matching search providers were unavailable",
       true,
     );
+  }
+
+  private effectiveWeights(
+    successes: readonly SearchResult[],
+  ): Partial<Record<SearchProviderId, number>> {
+    const weights: Partial<Record<SearchProviderId, number>> = {};
+    for (const result of successes) {
+      const base = searchProviderWeight(result.provider);
+      const penalty = this.health?.penalty(result.provider) ?? 0;
+      weights[result.provider] = base / (1 + penalty * 0.1);
+    }
+    return weights;
   }
 
   private async searchFederated(
@@ -202,21 +218,20 @@ export class SearchRouter {
           return {
             provider,
             attempted: false,
-            warning: `${provider.id} monthly budget exhausted`,
+            warning: `${provider.id} budget exhausted`,
           };
         }
         try {
-          return {
+          const result = this.normalizeProviderResult(
             provider,
-            attempted: true,
-            result: this.normalizeProviderResult(
-              provider,
-              await provider.search(request, signal),
-              request.maxResults,
-            ),
-          };
+            await provider.search(request, signal),
+            request.maxResults,
+          );
+          this.health?.recordSuccess(provider.id);
+          return { provider, attempted: true, result };
         } catch (error) {
           toGroundlaneError(error, "search");
+          this.health?.recordFailure(provider.id);
           return { provider, attempted: true, warning: `${provider.id} unavailable` };
         }
       }),
@@ -245,7 +260,7 @@ export class SearchRouter {
     return {
       query: request.query,
       provider: providers.length > 1 ? "federated" : successes[0]?.provider ?? "federated",
-      results: fuseSearchResults(successes, request.maxResults),
+      results: fuseSearchResults(successes, request.maxResults, this.effectiveWeights(successes)),
       durationMs: Date.now() - startedAt,
       warnings,
       strategy,
