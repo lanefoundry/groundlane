@@ -96,7 +96,6 @@ export class FetchPipeline {
         "Reader backend is disabled",
       );
     }
-    this.backendBudget?.tryConsume("jina");
     const raw = await this.reader.fetch(
       {
         url: request.url,
@@ -105,6 +104,7 @@ export class FetchPipeline {
       },
       signal,
     );
+    this.backendBudget?.tryConsume("jina");
     return {
       ...normalizeDocument(raw, request.format, request.maxOutputChars),
       raw,
@@ -120,8 +120,8 @@ export class FetchPipeline {
         true,
       );
     }
-    this.backendBudget?.tryConsume("browserless");
     const raw = await this.browser.fetch({ url: request.url, maxBytes: request.maxBytes, deadline: request.deadline, ...(request.selector ? { selector: request.selector } : {}), ...(request.waitFor ? { waitFor: request.waitFor } : {}) }, signal);
+    this.backendBudget?.tryConsume("browserless");
     return { ...normalizeDocument(raw, request.format, request.maxOutputChars), raw, ...(reason ? { fallbackReason: reason } : {}) };
   }
 }

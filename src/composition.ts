@@ -77,10 +77,13 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
         : new DisabledBrowserBackend();
   const reader =
     config.readerBackend === "jina" ? new JinaReaderBackend() : undefined;
-  const backendBudget = new CompositeSearchBudget([
+  const backendBudgetTrackers: import("./core/search-budget.js").SearchBudgetTracker[] = [
     new MinuteRateLimiter({ jina: config.jinaReaderRpm }),
-    new MonthlySearchBudget({ browserless: config.browserlessMonthlyUnits }),
-  ]);
+  ];
+  if (config.browserBackend === "browserless") {
+    backendBudgetTrackers.push(new MonthlySearchBudget({ browserless: config.browserlessMonthlyUnits }));
+  }
+  const backendBudget = new CompositeSearchBudget(backendBudgetTrackers);
   const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader, backendBudget);
   const providers = createSearchProviders(config);
   const healthTracker = new DynamicPenaltyHealthTracker();
