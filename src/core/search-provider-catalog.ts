@@ -17,14 +17,17 @@ export type KnownSearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 export const DEFAULT_SEARCH_PROVIDER_ORDER = [
   "tavily",
   "exa",
+  "brave",
+  "you",
+  "browserbase",
+  "firecrawl",
   "linkup",
   "parallel",
-  "browserbase",
-  "brave",
-  "firecrawl",
   "serpapi",
 ] as const satisfies readonly KnownSearchProviderId[];
 
 export const DEFAULT_SEARCH_PROVIDER_ORDER_VALUE = DEFAULT_SEARCH_PROVIDER_ORDER.join(",");
 export const DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE =
-  "tavily:1000,exa:1000,linkup:100,parallel:1000,browserbase:1000,brave:1000,firecrawl:500,serpapi:250,serper:0,you:0";
+  "tavily:800,exa:1200,brave:1000,you:3000,browserbase:1000,firecrawl:500,linkup:100,parallel:500,serpapi:250,serper:0";
+
+export const DEFAULT_SEARCH_DAILY_BUDGETS_VALUE = "you:100";

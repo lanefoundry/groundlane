@@ -24,3 +24,20 @@ const PROVIDER_FAMILIES: Readonly<Partial<Record<SearchProviderId, SearchProvide
 export function searchProviderFamily(provider: SearchProviderId): SearchProviderFamily {
   return PROVIDER_FAMILIES[provider] ?? "general-web";
 }
+
+const PROVIDER_WEIGHTS: Readonly<Partial<Record<SearchProviderId, number>>> = {
+  tavily: 1.0,
+  exa: 1.0,
+  linkup: 0.9,
+  brave: 0.9,
+  parallel: 0.8,
+  browserbase: 0.8,
+  firecrawl: 0.8,
+  serpapi: 0.7,
+  serper: 0.7,
+  you: 0.7,
+};
+
+export function searchProviderWeight(provider: SearchProviderId): number {
+  return PROVIDER_WEIGHTS[provider] ?? 0.5;
+}

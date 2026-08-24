@@ -29,8 +29,9 @@ These variables exist only on the Cloudflare Worker, not in `.env.example` or th
 
 | Variable | Purpose | Default/example |
 | --- | --- | --- |
-| `SEARCH_PROVIDER_ORDER` | Ordered automatic-routing candidates | `tavily,exa,linkup,parallel,browserbase,brave,firecrawl,serpapi` |
+| `SEARCH_PROVIDER_ORDER` | Ordered automatic-routing candidates | `tavily,exa,brave,you,browserbase,firecrawl,linkup,parallel,serpapi` |
 | `SEARCH_MONTHLY_REQUEST_BUDGETS` | Per-instance provider attempt caps, reset each UTC month | Conservative free-plan defaults in `.env.example` |
+| `SEARCH_DAILY_REQUEST_BUDGETS` | Per-instance provider attempt caps, reset each UTC day | `you:100` |
 | `TAVILY_API_KEY` | Tavily credential | Optional |
 | `EXA_API_KEY` | Exa credential | Optional |
 | `PARALLEL_API_KEY` | Parallel credential | Optional |
@@ -40,11 +41,11 @@ These variables exist only on the Cloudflare Worker, not in `.env.example` or th
 | `SERPAPI_API_KEY` | SerpApi credential | Optional |
 | `LINKUP_API_KEY` | Linkup Search credential | Optional; configured keys join automatic routing with a conservative cap |
 | `SERPER_API_KEY` | Serper Google Search credential | Optional; opt in because its free allowance is a one-time trial |
-| `YOU_API_KEY` | You.com REST Search credential | Optional; its complimentary API credits are a one-time trial |
+| `YOU_API_KEY` | You.com REST Search credential | Optional; keyless mode (100/day) is used when unset |
 
-Blank optional keys are treated as unset. Providers without credentials are unavailable and are skipped by automatic routing. Missing search credentials do not prevent `web_fetch` or `web_extract` from working.
+Blank optional keys are treated as unset. Providers without credentials are unavailable and are skipped by automatic routing, except You.com which operates in keyless mode when no key is provided. Missing search credentials do not prevent `web_fetch` or `web_extract` from working.
 
-`web_search` defaults to `strategy=balanced` when `provider=auto`: it selects at most two configured, capable, healthy, non-exhausted providers from `SEARCH_PROVIDER_ORDER`, preferring complementary retrieval families, and fuses exact canonical-URL matches with equal-weight RRF. Use `strategy=fallback` for sequential first-success routing, `strategy=deep` for at most three providers, or an explicit `provider` for exactly one provider. An optional `providers` array narrows and orders the candidate pool but never bypasses credentials, capabilities, health, or budgets.
+`web_search` defaults to `strategy=balanced` when `provider=auto`: it selects at most two configured, capable, healthy, non-exhausted providers from `SEARCH_PROVIDER_ORDER`, preferring complementary retrieval families, and fuses exact canonical-URL matches with quality-weighted RRF (provider weights adjusted by health penalty). Use `strategy=fallback` for sequential first-success routing, `strategy=deep` for at most three providers, or an explicit `provider` for exactly one provider. An optional `providers` array narrows and orders the candidate pool but never bypasses credentials, capabilities, health, or budgets.
 
 Each selected federated provider consumes a separate attempt. A partial success identifies selected, attempted, and successful providers and includes sanitized warnings for failures. Fused results expose `fusionScore` plus per-provider `sources`; raw provider `score` values are retained only as provenance because their scales are not comparable.
 
@@ -57,7 +58,9 @@ SEARCH_MONTHLY_REQUEST_BUDGETS=linkup:100,tavily:1000,exa:1000,you:100,serper:25
 
 These sample values are per-instance attempt caps, not conversions from dollars or credits and not provider billing truth. Serper currently supports only unfiltered queries in Groundlane. Linkup supports domain/date filters; You.com supports either include or exclude domain lists in one request, not both together. You.com's keyless `you-search` MCP allowance is a separate product and does not apply to `YOU_API_KEY`.
 
-Monthly budgets count attempted provider requests, including retryable failures. They prevent one running Groundlane instance from selecting a provider after the configured cap. They are deliberately conservative safeguards, not billing truth: restarts reset the in-memory counters, multiple instances do not share them, and some services charge variable credits. Keep provider-side spend limits enabled and set budgets for your actual plans.
+Monthly and daily budgets count attempted provider requests, including retryable failures. They prevent one running Groundlane instance from selecting a provider after the configured cap. They are deliberately conservative safeguards, not billing truth: restarts reset the in-memory counters, multiple instances do not share them, and some services charge variable credits. Keep provider-side spend limits enabled and set budgets for your actual plans.
+
+Providers that return errors (429, 5xx) accumulate a dynamic penalty that temporarily deprioritizes them; five consecutive failures trip a circuit breaker that skips the provider for 60 seconds. Both mechanisms self-recover when the provider starts responding again.
 
 ## Reader and browser backends
 
@@ -67,8 +70,12 @@ Monthly budgets count attempted provider requests, including retryable failures.
 | `BROWSER_BACKEND` | Browser capability: `disabled`, `local`, or `browserless` | `disabled` in code; local `.env.example` uses `local` |
 | `BROWSERLESS_TOKEN` | Browserless `/content` credential | Required only for `browserless` |
 | `BROWSERLESS_REGION` | Browserless endpoint region: `sfo`, `lon`, or `ams` | `sfo` |
+| `JINA_READER_RPM` | Proactive Jina Reader rate limit (requests per minute) | `20` |
+| `BROWSERLESS_MONTHLY_UNITS` | Proactive Browserless monthly unit cap | `1000` |
 
 The built-in Groundlane Reader is local normalization and needs no credential. Enabling Jina or Browserless sends eligible public target URLs to that hosted provider. HTML, explicit CSS selectors, wait conditions, and `render=always` do not use Jina Reader.
+
+The fetch pipeline proactively tracks Jina Reader RPM and Browserless monthly units in-memory. When a backend's budget is exhausted, the pipeline skips it and falls back to the next option instead of wasting latency on a 429 response.
 
 ## Verification
 

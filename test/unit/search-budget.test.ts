@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MonthlySearchBudget } from "../../src/core/search-budget.js";
+import {
+  CompositeSearchBudget,
+  DailySearchBudget,
+  MinuteRateLimiter,
+  MonthlySearchBudget,
+} from "../../src/core/search-budget.js";
 
 void test("MonthlySearchBudget atomically caps attempts and leaves unspecified providers unlimited", () => {
   const budget = new MonthlySearchBudget({ tavily: 2 });
@@ -31,4 +36,105 @@ void test("MonthlySearchBudget rejects invalid limits", () => {
   assert.throws(() => new MonthlySearchBudget({ tavily: 1.5 }), {
     code: "INVALID_INPUT",
   });
+});
+
+void test("DailySearchBudget caps attempts and resets at UTC day boundary", () => {
+  let now = new Date("2026-08-24T23:59:59Z");
+  const budget = new DailySearchBudget({ you: 2 }, () => now);
+  assert.equal(budget.remaining("you"), 2);
+  assert.equal(budget.tryConsume("you"), true);
+  assert.equal(budget.tryConsume("you"), true);
+  assert.equal(budget.tryConsume("you"), false);
+  assert.equal(budget.remaining("you"), 0);
+  now = new Date("2026-08-25T00:00:00Z");
+  assert.equal(budget.remaining("you"), 2);
+  assert.equal(budget.tryConsume("you"), true);
+});
+
+void test("DailySearchBudget leaves unspecified providers unlimited", () => {
+  const budget = new DailySearchBudget({ you: 1 });
+  assert.equal(budget.tryConsume("tavily"), true);
+  assert.equal(budget.remaining("tavily"), undefined);
+});
+
+void test("DailySearchBudget rejects invalid limits", () => {
+  assert.throws(() => new DailySearchBudget({ you: -1 }), { code: "INVALID_INPUT" });
+  assert.throws(() => new DailySearchBudget({ you: 0.5 }), { code: "INVALID_INPUT" });
+});
+
+void test("MinuteRateLimiter enforces sliding window per-minute cap", () => {
+  let time = 1000000;
+  const limiter = new MinuteRateLimiter({ jina: 3 }, () => time);
+  assert.equal(limiter.remaining("jina"), 3);
+  assert.equal(limiter.tryConsume("jina"), true);
+  assert.equal(limiter.tryConsume("jina"), true);
+  assert.equal(limiter.tryConsume("jina"), true);
+  assert.equal(limiter.tryConsume("jina"), false);
+  assert.equal(limiter.remaining("jina"), 0);
+  time += 61_000;
+  assert.equal(limiter.remaining("jina"), 3);
+  assert.equal(limiter.tryConsume("jina"), true);
+});
+
+void test("MinuteRateLimiter sliding window prunes old entries", () => {
+  let time = 0;
+  const limiter = new MinuteRateLimiter({ x: 2 }, () => time);
+  limiter.tryConsume("x");
+  time += 30_000;
+  limiter.tryConsume("x");
+  assert.equal(limiter.remaining("x"), 0);
+  time += 31_000;
+  assert.equal(limiter.remaining("x"), 1);
+  assert.equal(limiter.tryConsume("x"), true);
+  assert.equal(limiter.tryConsume("x"), false);
+});
+
+void test("MinuteRateLimiter leaves unconfigured providers unlimited", () => {
+  const limiter = new MinuteRateLimiter({ jina: 1 });
+  assert.equal(limiter.tryConsume("browserless"), true);
+  assert.equal(limiter.remaining("browserless"), undefined);
+});
+
+void test("MinuteRateLimiter rejects invalid limits", () => {
+  assert.throws(() => new MinuteRateLimiter({ jina: 0 }), { code: "INVALID_INPUT" });
+  assert.throws(() => new MinuteRateLimiter({ jina: -1 }), { code: "INVALID_INPUT" });
+});
+
+void test("CompositeSearchBudget returns the tightest remaining across windows", () => {
+  const monthly = new MonthlySearchBudget({ tavily: 100 });
+  const daily = new DailySearchBudget({ tavily: 5 });
+  const composite = new CompositeSearchBudget([monthly, daily]);
+  assert.equal(composite.remaining("tavily"), 5);
+  assert.equal(composite.remaining("exa"), undefined);
+});
+
+void test("CompositeSearchBudget blocks when any window is exhausted", () => {
+  const monthly = new MonthlySearchBudget({ you: 1000 });
+  let now = new Date("2026-08-24T12:00:00Z");
+  const daily = new DailySearchBudget({ you: 2 }, () => now);
+  const composite = new CompositeSearchBudget([monthly, daily]);
+  assert.equal(composite.tryConsume("you"), true);
+  assert.equal(composite.tryConsume("you"), true);
+  assert.equal(composite.tryConsume("you"), false);
+  assert.equal(monthly.remaining("you"), 998);
+  assert.equal(daily.remaining("you"), 0);
+  now = new Date("2026-08-25T00:00:00Z");
+  assert.equal(composite.tryConsume("you"), true);
+});
+
+void test("CompositeSearchBudget consumes from all trackers on success", () => {
+  const monthly = new MonthlySearchBudget({ a: 10 });
+  const daily = new DailySearchBudget({ a: 5 });
+  const composite = new CompositeSearchBudget([monthly, daily]);
+  composite.tryConsume("a");
+  assert.equal(monthly.remaining("a"), 9);
+  assert.equal(daily.remaining("a"), 4);
+});
+
+void test("CompositeSearchBudget does not consume when pre-check fails", () => {
+  const monthly = new MonthlySearchBudget({ a: 0 });
+  const daily = new DailySearchBudget({ a: 5 });
+  const composite = new CompositeSearchBudget([monthly, daily]);
+  assert.equal(composite.tryConsume("a"), false);
+  assert.equal(daily.remaining("a"), 5);
 });
