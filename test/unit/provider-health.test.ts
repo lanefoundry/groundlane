@@ -43,7 +43,7 @@ void test("DynamicPenaltyHealthTracker resets on success", () => {
 });
 
 void test("DynamicPenaltyHealthTracker trips circuit breaker after threshold failures", () => {
-  let time = 0;
+  const time = 0;
   const tracker = new DynamicPenaltyHealthTracker(
     { penaltyIncrement: 3, decayPerMinute: 1, circuitThreshold: 3, circuitCooldownMs: 10_000 },
     () => time,
