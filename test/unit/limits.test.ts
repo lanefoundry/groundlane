@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ConcurrencyLimiter, Deadline, truncateUnicode, withinDeadline } from "../../src/core/limits.js";
 
-void test("Deadline retains one decreasing budget", async () => {
-  const deadline = new Deadline(100); const first = deadline.remainingMs();
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.ok(deadline.remainingMs() < first);
+void test("Deadline retains one decreasing budget", () => {
+  const deadline = new Deadline(100, 1_000);
+  const first = deadline.remainingMs("request", 1_000);
+  assert.ok(deadline.remainingMs("request", 1_005) < first);
 });
 
 void test("withinDeadline cancels an operation at the shared deadline", async () => {

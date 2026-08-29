@@ -208,6 +208,14 @@ void test("provider_quota tool combines account balance, local budgets, and capa
         provider?: string;
         accountBalance?: { status?: string; balance?: number; unit?: string };
         toolBudgets?: Array<{ tool?: string; period?: string; remaining?: number }>;
+        searchRouting?: {
+          searchCapable?: boolean;
+          credentialConfigured?: boolean;
+          keylessSearchCapable?: boolean;
+          budgetLimited?: boolean;
+          localBudgetExhausted?: boolean;
+          nextChecks?: string[];
+        };
         groundlaneTools?: string[];
       }>;
     };
@@ -230,5 +238,15 @@ void test("provider_quota tool combines account balance, local budgets, and capa
       { tool: "web_search", period: "daily", remaining: 1 },
     ],
   );
+  assert.deepEqual(provider?.searchRouting, {
+    searchCapable: true,
+    credentialConfigured: true,
+    keylessSearchCapable: true,
+    budgetLimited: true,
+    localBudgetExhausted: false,
+    nextChecks: [
+      "Inspect web_search warnings for request-level selected, attempted, and succeeded providers.",
+    ],
+  });
   assert.ok(provider?.groundlaneTools?.includes("provider_quota"));
 });

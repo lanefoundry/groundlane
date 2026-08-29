@@ -51,7 +51,9 @@ Cloudflare Workers secrets, not that its value was read.
 
 `provider_quota` and `search_budget_status` apply to every search provider in
 this matrix because they report Groundlane diagnostics. `provider_quota` also
-embeds provider-balance data when an official balance checker exists.
+embeds provider-balance data when an official balance checker exists and adds
+`searchRouting` hints so operators can distinguish missing credentials,
+keyless-capable providers, local budget exhaustion, and request-level warnings.
 
 | Provider | Groundlane role today | Vendor features relevant to future Groundlane | Current filter support in Groundlane |
 | --- | --- | --- | --- |
@@ -77,10 +79,11 @@ embeds provider-balance data when an official balance checker exists.
    unclear unless an official account-level API is found.
 4. Use `provider_quota` as the first diagnostic view for zero-result search
    runs. It combines provider account-balance status, Groundlane's local search
-   attempt guardrails, and capability data while keeping those concepts in
-   separate fields. Use `search_budget_status` only when the raw local counters
-   are needed. Do not infer real provider quota from Groundlane local budgets or
-   live smoke success. They answer different questions.
+   attempt guardrails, capability data, and `searchRouting` hints while keeping
+   those concepts in separate fields. Use `search_budget_status` only when the
+   raw local counters are needed. Do not infer real provider quota from
+   Groundlane local budgets or live smoke success. They answer different
+   questions.
 
 ## Balance and usage API verification
 

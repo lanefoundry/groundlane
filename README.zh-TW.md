@@ -35,14 +35,14 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute，可設定單次 output cap；不暗中呼叫 LLM |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
-| `provider_quota` | 整合帳號餘額、本機工具 budget 與 capabilities | provider-scoped 診斷視圖，同時看 billing status、Groundlane `web_search` guardrail 與已 expose 工具 |
+| `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane `web_search` guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
 | `search_budget_status` | 檢查 Groundlane 本機 search attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
 
 Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 各 provider vendor 自家還有更多 API，Groundlane 目前沒有全部接成 MCP tool。請看 [provider inventory](docs/operations/provider-inventory.md) 的已查證 backlog，以及 vendor capability、已實作 Groundlane tool、live smoke、帳號餘額證據與 Groundlane 本機 attempt budget 之間的區分。
 
-當 `web_search` 回傳 0 results 時，先看 `provider_quota`：它會把 provider account-balance status、Groundlane 本機 `web_search` budget、已實作工具放在同一個視圖。`provider_balance` 只用來查 provider-owned account credits；`search_budget_status` 則用來細查本機 attempt counters。Balance 的 `not_configured` 代表 runtime 沒有該 provider balance API 需要的 credential，不代表 keyless quota 已耗盡。
+當 `web_search` 回傳 0 results 時，先看 `provider_quota`：它會把 provider account-balance status、Groundlane 本機 `web_search` budget、已實作工具與 `searchRouting` hints 放在同一個視圖。`provider_balance` 只用來查 provider-owned account credits；`search_budget_status` 則用來細查本機 attempt counters。Balance 的 `not_configured` 代表 runtime 沒有該 provider balance API 需要的 credential，不代表 keyless quota 已耗盡。
 
 ### Research 相容性
 
@@ -270,8 +270,9 @@ Worker / Node HTTP edge       authentication, request identity
                               production 由 Cloudflare 承載
     |
     v
-tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
-                              provider_balance | provider_capabilities | provider_quota | search_budget_status
+tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
+                              web_news | web_images | web_fetch | web_extract
+                              diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities
     |
     +-- provider router       可替換的 search adapters
     +-- safe HTTP + Reader    有界的內容取得與正文清理

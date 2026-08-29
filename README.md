@@ -35,14 +35,14 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes, with per-call output caps; no implicit LLM step |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
-| `provider_quota` | Combines account balance, local tool budgets, and capabilities | One provider-scoped diagnostic view for billing status, Groundlane `web_search` guardrails, and exposed tools |
+| `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane `web_search` guardrails, exposed tools, keyless availability, and next checks |
 | `search_budget_status` | Inspects Groundlane's local search attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
 
 Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
 
 Provider vendors expose more APIs than Groundlane currently wires into MCP. See [provider inventory](docs/operations/provider-inventory.md) for the verified feature backlog and the distinction between vendor capability, implemented Groundlane tool, live smoke, account balance evidence, and Groundlane's local attempt budgets.
 
-Use `provider_quota` as the first diagnostic view when `web_search` returns zero results: it shows provider account-balance status, Groundlane's local `web_search` budgets, and implemented tools together. Use `provider_balance` for provider-owned account credits only, and `search_budget_status` when you specifically need the raw local attempt counters. A balance result of `not_configured` means the runtime lacks the credential needed for that provider's balance API, not that keyless quota is exhausted.
+Use `provider_quota` as the first diagnostic view when `web_search` returns zero results: it shows provider account-balance status, Groundlane's local `web_search` budgets, implemented tools, and `searchRouting` hints together. Use `provider_balance` for provider-owned account credits only, and `search_budget_status` when you specifically need the raw local attempt counters. A balance result of `not_configured` means the runtime lacks the credential needed for that provider's balance API, not that keyless quota is exhausted.
 
 ### Research compatibility
 
@@ -275,8 +275,9 @@ Worker / Node HTTP edge       authentication, request identity
                               Cloudflare hosts this layer in production
     |
     v
-tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
-                              provider_balance | provider_capabilities | provider_quota | search_budget_status
+tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
+                              web_news | web_images | web_fetch | web_extract
+                              diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities
     |
     +-- provider router       replaceable search adapters
     +-- safe HTTP + Reader    bounded retrieval and readable content

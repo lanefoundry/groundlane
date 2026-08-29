@@ -44,6 +44,21 @@ try {
   assert.equal(capabilities.isError, undefined);
   assert.equal(capabilities.structuredContent?.ok, true);
 
+  const quota = await client.callTool({
+    name: "provider_quota",
+    arguments: { provider: "you" },
+  });
+  assert.equal(quota.isError, undefined);
+  assert.equal(quota.structuredContent?.ok, true);
+  assert.match(JSON.stringify(quota.structuredContent), /"searchRouting"/);
+
+  const budget = await client.callTool({
+    name: "search_budget_status",
+    arguments: { provider: "you" },
+  });
+  assert.equal(budget.isError, undefined);
+  assert.equal(budget.structuredContent?.ok, true);
+
   const fetched = await client.callTool({
     name: "web_fetch",
     arguments: {

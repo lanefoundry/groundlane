@@ -39,10 +39,20 @@ const budgetSchema = z.object({
   resetAt: z.string().optional(),
 });
 
+const searchRoutingSchema = z.object({
+  searchCapable: z.boolean(),
+  credentialConfigured: z.boolean(),
+  keylessSearchCapable: z.boolean(),
+  budgetLimited: z.boolean(),
+  localBudgetExhausted: z.boolean(),
+  nextChecks: z.array(z.string()),
+});
+
 const quotaProviderSchema = z.object({
   provider: z.string(),
   accountBalance: accountBalanceSchema,
   toolBudgets: z.array(budgetSchema),
+  searchRouting: searchRoutingSchema,
   groundlaneTools: z.array(z.string()),
   filterSupport: z.string(),
   notes: z.array(z.string()),
@@ -87,6 +97,48 @@ function budgetRows(snapshot: SearchBudgetSnapshot) {
     ...(snapshot.remaining === undefined ? {} : { remaining: snapshot.remaining }),
     exhausted: snapshot.exhausted,
     ...(snapshot.resetAt === undefined ? {} : { resetAt: snapshot.resetAt }),
+  };
+}
+
+function isKeylessSearchCapable(provider: SearchProviderId): boolean {
+  return provider === "keenable" || provider === "you";
+}
+
+function searchRoutingDiagnostics(
+  provider: SearchProviderId,
+  balance: ProviderBalanceResult,
+  budgets: SearchBudgetSnapshot[],
+  groundlaneTools: readonly string[],
+) {
+  const searchCapable = groundlaneTools.includes("web_search");
+  const keylessSearchCapable = isKeylessSearchCapable(provider);
+  const budgetLimited = budgets.some((snapshot) => snapshot.limited);
+  const localBudgetExhausted = budgets.some((snapshot) => snapshot.exhausted);
+  const nextChecks: string[] = [];
+
+  if (!searchCapable) {
+    nextChecks.push("Provider is not exposed through web_search.");
+  }
+  if (!balance.configured && !keylessSearchCapable) {
+    nextChecks.push("Configure the provider key before web_search routing can use this provider.");
+  }
+  if (!balance.configured && keylessSearchCapable) {
+    nextChecks.push(
+      "web_search can use the keyless path; provider_balance may still report not_configured.",
+    );
+  }
+  if (localBudgetExhausted) {
+    nextChecks.push("Groundlane's local web_search budget is exhausted for this instance.");
+  }
+  nextChecks.push("Inspect web_search warnings for request-level selected, attempted, and succeeded providers.");
+
+  return {
+    searchCapable,
+    credentialConfigured: balance.configured,
+    keylessSearchCapable,
+    budgetLimited,
+    localBudgetExhausted,
+    nextChecks,
   };
 }
 
@@ -144,6 +196,9 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
                     source: "not_implemented" as const,
                     warnings: ["Provider does not expose a Groundlane balance checker"],
                   };
+                  const providerBudgets = budgets.filter(
+                    (snapshot) => snapshot.provider === capability.provider,
+                  );
                   return {
                     provider: capability.provider,
                     accountBalance: {
@@ -155,9 +210,13 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
                       ...(balance.unit === undefined ? {} : { unit: balance.unit }),
                       warnings: balance.warnings,
                     },
-                    toolBudgets: budgets
-                      .filter((snapshot) => snapshot.provider === capability.provider)
-                      .map(budgetRows),
+                    toolBudgets: providerBudgets.map(budgetRows),
+                    searchRouting: searchRoutingDiagnostics(
+                      capability.provider,
+                      balance,
+                      providerBudgets,
+                      capability.groundlaneTools,
+                    ),
                     groundlaneTools: [...capability.groundlaneTools],
                     filterSupport: capability.filterSupport,
                     notes: [...capability.notes],
