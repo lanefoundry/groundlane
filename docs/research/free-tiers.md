@@ -42,6 +42,7 @@ At the time of this pricing snapshot, Groundlane's default automatic order expos
 1. Linkup (keyed accounts; conservative local cap; balance available through `provider_balance`)
 2. Keenable (keyless public endpoint by default; conservative local cap)
 3. You.com Web Search (keyless free MCP profile or keyed REST credits)
+4. TinyFish Search (keyed REST, 30 requests/minute)
 4. Parallel
 5. Browserbase Search (1,000 Search calls/month on its Free plan)
 6. Brave Search API
@@ -108,6 +109,8 @@ API when the key is configured; the default local cap is conservative because
 Groundlane's guardrail is monthly while You.com's free profile is daily. For
 keyed You.com accounts, `provider_balance` can refresh the remaining API credit
 balance from You.com's official account-balance API.
-Finite pools such as Serper remain opt-in and default to a zero cap.
+TinyFish uses a per-minute limit instead of a monthly pool: Groundlane's
+monthly cap is only a local attempt guardrail. Finite pools such as Serper
+remain opt-in and default to a zero cap.
 
 For retrieval, prefer Groundlane's bounded HTTP path first. Operators can then opt into Jina Reader for eligible Markdown fallback and choose either Container-local Playwright or Browserless for rendering. Cloudflare Browser Run, Firecrawl Scrape, and other hosted retrieval paths remain future adapters.

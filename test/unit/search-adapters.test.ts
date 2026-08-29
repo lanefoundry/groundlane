@@ -11,7 +11,9 @@ import { LinkupSearchProvider } from "../../src/adapters/search/linkup.js";
 import { ParallelSearchProvider } from "../../src/adapters/search/parallel.js";
 import { SerperSearchProvider } from "../../src/adapters/search/serper.js";
 import { SerpApiSearchProvider } from "../../src/adapters/search/serpapi.js";
+import { SearchApiSearchProvider } from "../../src/adapters/search/searchapi.js";
 import { TavilySearchProvider } from "../../src/adapters/search/tavily.js";
+import { TinyFishSearchProvider } from "../../src/adapters/search/tinyfish.js";
 import { YouSearchProvider } from "../../src/adapters/search/you.js";
 import { validateItems } from "../../src/adapters/search/common.js";
 import type { SearchRequest } from "../../src/core/contracts.js";
@@ -29,9 +31,118 @@ void test("search adapter capability declarations are truthful", () => {
   assert.equal(new KeenableSearchProvider({ fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, domains: ["x.com", "y.com"] }), false);
   assert.equal(new KeenableSearchProvider({ fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, excludeDomains: ["x.com"] }), false);
   assert.equal(new LinkupSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports(), true);
+  assert.equal(new SearchApiSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, domains: ["x.com"] }), true);
+  assert.equal(new SearchApiSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, timeRange: "day" }), false);
   assert.equal(new SerperSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, timeRange: "day" }), false);
+  assert.equal(new TinyFishSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, timeRange: "day" }), true);
   assert.equal(new YouSearchProvider({ apiKey: "k", fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1, domains: ["x.com"], excludeDomains: ["y.com"] }), false);
   assert.equal(new YouSearchProvider({ fetch: fetcher, validateUrl }).supports({ query: "q", maxResults: 1 }), true);
+});
+
+void test("TinyFish maps search filters and caps returned results", async () => {
+  let requestedUrl = "";
+  let apiKey = "";
+  const provider = new TinyFishSearchProvider({
+    apiKey: "tinyfish-secret",
+    fetch: (url, init) => {
+      requestedUrl = url;
+      apiKey = new Headers(init.headers).get("x-api-key") ?? "";
+      return Promise.resolve(
+        Response.json({
+          query: "groundlane",
+          results: [
+            {
+              position: 1,
+              title: "TinyFish result",
+              snippet: "Agent search result",
+              url: "https://example.com/tinyfish",
+              date: "2026-08-29",
+            },
+            {
+              position: 2,
+              title: "Second",
+              snippet: "Second result",
+              url: "https://example.org/tinyfish",
+            },
+          ],
+        }),
+      );
+    },
+    validateUrl: () => Promise.resolve(),
+  });
+
+  const result = await provider.search(
+    {
+      query: "groundlane",
+      maxResults: 1,
+      domains: ["Example.COM", "example.org"],
+      excludeDomains: ["ads.example.net"],
+      timeRange: "week",
+    },
+    new AbortController().signal,
+  );
+
+  const url = new URL(requestedUrl);
+  assert.equal(url.origin + url.pathname, "https://api.search.tinyfish.ai/");
+  assert.equal(url.searchParams.get("query"), "groundlane");
+  assert.equal(url.searchParams.get("include_domains"), "example.com,example.org");
+  assert.equal(url.searchParams.get("exclude_domains"), "ads.example.net");
+  assert.equal(url.searchParams.get("recency_minutes"), "10080");
+  assert.equal(apiKey, "tinyfish-secret");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0]?.provider, "tinyfish");
+  assert.equal(result.results[0]?.publishedAt, "2026-08-29");
+  assert.doesNotMatch(JSON.stringify(result), /tinyfish-secret/u);
+});
+
+void test("SearchAPI.io maps Google search without leaking the API key", async () => {
+  let requestedUrl = "";
+  let authorization = "";
+  const provider = new SearchApiSearchProvider({
+    apiKey: "searchapi-secret",
+    fetch: (url, init) => {
+      requestedUrl = url;
+      authorization = new Headers(init.headers).get("authorization") ?? "";
+      return Promise.resolve(
+        Response.json({
+          organic_results: [
+            {
+              title: "SearchAPI result",
+              link: "https://example.com/searchapi",
+              snippet: "Google organic result",
+              date: "2026-08-29",
+            },
+          ],
+        }),
+      );
+    },
+    validateUrl: () => Promise.resolve(),
+  });
+
+  const result = await provider.search(
+    {
+      query: "groundlane",
+      maxResults: 3,
+      domains: ["Example.COM", "example.org"],
+      excludeDomains: ["ads.example.net"],
+    },
+    new AbortController().signal,
+  );
+
+  const url = new URL(requestedUrl);
+  assert.equal(url.origin + url.pathname, "https://www.searchapi.io/api/v1/search");
+  assert.equal(url.searchParams.get("engine"), "google");
+  assert.equal(
+    url.searchParams.get("q"),
+    "groundlane (site:example.com OR site:example.org) -site:ads.example.net",
+  );
+  assert.equal(url.searchParams.get("num"), "3");
+  assert.equal(url.searchParams.has("api_key"), false);
+  assert.equal(authorization, "Bearer searchapi-secret");
+  assert.equal(result.provider, "searchapi");
+  assert.equal(result.results[0]?.provider, "searchapi");
+  assert.equal(result.results[0]?.publishedAt, "2026-08-29");
+  assert.doesNotMatch(JSON.stringify(result), /searchapi-secret/u);
 });
 
 void test("Keenable uses the public endpoint without a key and maps filters", async () => {

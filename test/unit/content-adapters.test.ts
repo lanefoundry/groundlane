@@ -6,6 +6,7 @@ import { FirecrawlContentProvider } from "../../src/adapters/content/firecrawl.j
 import { KeenableContentProvider } from "../../src/adapters/content/keenable.js";
 import { LinkupContentProvider } from "../../src/adapters/content/linkup.js";
 import { TavilyContentProvider } from "../../src/adapters/content/tavily.js";
+import { TinyFishContentProvider } from "../../src/adapters/content/tinyfish.js";
 import { YouContentProvider } from "../../src/adapters/content/you.js";
 
 const signal = new AbortController().signal;
@@ -216,4 +217,53 @@ void test("Keenable content uses public fetch without a key and keyed fetch when
   assert.equal(new URL(requested[1] ?? "").searchParams.get("live"), "true");
   assert.equal(keyedResult.content, "Keenable keyed");
   assert.doesNotMatch(JSON.stringify(keyedResult), /keenable-secret/u);
+});
+
+void test("TinyFish content maps Fetch API and live cache bypass", async () => {
+  let requestedUrl = "";
+  let apiKey = "";
+  let body: unknown;
+  const provider = new TinyFishContentProvider({
+    apiKey: "tinyfish-secret",
+    fetch: (url, init) => {
+      requestedUrl = url;
+      apiKey = new Headers(init.headers).get("x-api-key") ?? "";
+      body = parseBody(init.body);
+      return Promise.resolve(
+        Response.json({
+          results: [
+            {
+              url: "https://example.com",
+              final_url: "https://example.com/final",
+              title: "Example",
+              text: "TinyFish markdown",
+              format: "markdown",
+            },
+          ],
+          errors: [],
+        }),
+      );
+    },
+    validateUrl: () => Promise.resolve(),
+  });
+
+  const result = await provider.fetchContent(
+    { url: "https://example.com", maxContentChars: 100, live: true },
+    signal,
+  );
+
+  assert.equal(requestedUrl, "https://api.fetch.tinyfish.ai");
+  assert.equal(apiKey, "tinyfish-secret");
+  assert.deepEqual(body, {
+    urls: ["https://example.com"],
+    format: "markdown",
+    links: false,
+    image_links: false,
+    ttl: 0,
+  });
+  assert.equal(result.provider, "tinyfish");
+  assert.equal(result.finalUrl, "https://example.com/final");
+  assert.equal(result.title, "Example");
+  assert.equal(result.content, "TinyFish markdown");
+  assert.doesNotMatch(JSON.stringify(result), /tinyfish-secret/u);
 });

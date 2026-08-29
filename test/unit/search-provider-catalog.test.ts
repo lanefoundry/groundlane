@@ -21,8 +21,10 @@ void test("catalog, public schema, config, and composition expose the same provi
     BRAVE_API_KEY: "brave",
     FIRECRAWL_API_KEY: "firecrawl",
     SERPAPI_API_KEY: "serpapi",
+    SEARCHAPI_API_KEY: "searchapi",
     LINKUP_API_KEY: "linkup",
     KEENABLE_API_KEY: "keenable",
+    TINYFISH_API_KEY: "tinyfish",
     SERPER_API_KEY: "serper",
     YOU_API_KEY: "you",
   });
@@ -45,6 +47,8 @@ void test("only renewable search providers are routed automatically", () => {
   const automatic = new Set<string>(DEFAULT_SEARCH_PROVIDER_ORDER);
   assert.equal(automatic.has("linkup"), true);
   assert.equal(automatic.has("keenable"), true);
+  assert.equal(automatic.has("tinyfish"), true);
   assert.equal(automatic.has("you"), true);
+  assert.equal(automatic.has("searchapi"), false);
   assert.equal(automatic.has("serper"), false);
 });

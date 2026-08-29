@@ -57,7 +57,7 @@ Browser 不應是所有工作的預設路徑：
 ### 第一版
 
 - `web_fetch(url, format, selector, waitFor, render, timeoutMs, maxBytes, maxOutputChars)`
-- `web_search(query, maxResults, domains, excludeDomains, timeRange, provider, providers, strategy, timeoutMs)`：`auto` 預設最多選兩個互補 provider 並以 RRF 融合；可明確指定單一 provider、ordered candidate allowlist、sequential fallback 或最多三家的 deep search。預設候選包含 Tavily／Exa／Linkup／Parallel／Browserbase／Brave／Firecrawl／SerpApi；Serper／You.com 作 opt-in provider，不自建索引。
+- `web_search(query, maxResults, domains, excludeDomains, timeRange, provider, providers, strategy, timeoutMs)`：`auto` 預設最多選兩個互補 provider 並以 RRF 融合；可明確指定單一 provider、ordered candidate allowlist、sequential fallback 或最多三家的 deep search。預設候選包含 Tavily／Exa／Linkup／Parallel／Browserbase／Brave／Firecrawl／SerpApi／TinyFish；SearchAPI.io／Serper 作 opt-in finite-trial SERP provider；You.com 可用 keyless daily MCP profile 或 keyed REST，不自建索引。
 - `web_extract(url, fields)`：以 CSS selector 做 deterministic extraction
 
 ### 第二版

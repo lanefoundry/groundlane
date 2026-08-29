@@ -31,10 +31,12 @@ const environmentSchema = z.object({
   BRAVE_API_KEY: optionalSecret,
   FIRECRAWL_API_KEY: optionalSecret,
   SERPAPI_API_KEY: optionalSecret,
+  SEARCHAPI_API_KEY: optionalSecret,
   BROWSERBASE_API_KEY: optionalSecret,
   PARALLEL_API_KEY: optionalSecret,
   LINKUP_API_KEY: optionalSecret,
   KEENABLE_API_KEY: optionalSecret,
+  TINYFISH_API_KEY: optionalSecret,
   SERPER_API_KEY: optionalSecret,
   YOU_API_KEY: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
@@ -134,12 +136,16 @@ export function parseConfig(
     providerKeys.firecrawl = parsed.FIRECRAWL_API_KEY;
   }
   if (parsed.SERPAPI_API_KEY !== undefined) providerKeys.serpapi = parsed.SERPAPI_API_KEY;
+  if (parsed.SEARCHAPI_API_KEY !== undefined) {
+    providerKeys.searchapi = parsed.SEARCHAPI_API_KEY;
+  }
   if (parsed.BROWSERBASE_API_KEY !== undefined) {
     providerKeys.browserbase = parsed.BROWSERBASE_API_KEY;
   }
   if (parsed.PARALLEL_API_KEY !== undefined) providerKeys.parallel = parsed.PARALLEL_API_KEY;
   if (parsed.LINKUP_API_KEY !== undefined) providerKeys.linkup = parsed.LINKUP_API_KEY;
   if (parsed.KEENABLE_API_KEY !== undefined) providerKeys.keenable = parsed.KEENABLE_API_KEY;
+  if (parsed.TINYFISH_API_KEY !== undefined) providerKeys.tinyfish = parsed.TINYFISH_API_KEY;
   if (parsed.SERPER_API_KEY !== undefined) providerKeys.serper = parsed.SERPER_API_KEY;
   if (parsed.YOU_API_KEY !== undefined) providerKeys.you = parsed.YOU_API_KEY;
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {

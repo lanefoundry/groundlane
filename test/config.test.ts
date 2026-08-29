@@ -7,10 +7,12 @@ const token = "x".repeat(32);
 void test("parseConfig applies bounded defaults and deduplicates provider order", () => {
   const config = parseConfig({
     GROUNDLANE_AUTH_TOKEN: token,
-    SEARCH_PROVIDER_ORDER: "exa,linkup,keenable,serper,you,tavily,exa,unknown",
+    SEARCH_PROVIDER_ORDER: "exa,linkup,keenable,tinyfish,searchapi,serper,you,tavily,exa,unknown",
     EXA_API_KEY: "exa-key",
     LINKUP_API_KEY: "linkup-key",
     KEENABLE_API_KEY: "keenable-key",
+    TINYFISH_API_KEY: "tinyfish-key",
+    SEARCHAPI_API_KEY: "searchapi-key",
     SERPER_API_KEY: "serper-key",
     YOU_API_KEY: "you-key",
   });
@@ -20,6 +22,8 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
     "exa",
     "linkup",
     "keenable",
+    "tinyfish",
+    "searchapi",
     "serper",
     "you",
     "tavily",
@@ -28,11 +32,15 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
     exa: "exa-key",
     linkup: "linkup-key",
     keenable: "keenable-key",
+    tinyfish: "tinyfish-key",
+    searchapi: "searchapi-key",
     serper: "serper-key",
     you: "you-key",
   });
   assert.equal(config.searchMonthlyRequestBudgets.serpapi, 250);
   assert.equal(config.searchMonthlyRequestBudgets.linkup, 100);
+  assert.equal(config.searchMonthlyRequestBudgets.searchapi, 0);
+  assert.equal(config.searchMonthlyRequestBudgets.tinyfish, 3000);
   assert.equal(config.searchMonthlyRequestBudgets.serper, 0);
   assert.equal(config.searchMonthlyRequestBudgets.you, 3000);
   assert.equal(config.searchDailyRequestBudgets.you, 100);
@@ -42,11 +50,13 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
 });
 
 void test("parseSearchMonthlyRequestBudgets validates provider names and duplicates", () => {
-  assert.deepEqual(parseSearchMonthlyRequestBudgets("tavily:10,serpapi:0,linkup:3,keenable:4,serper:2,you:1"), {
+  assert.deepEqual(parseSearchMonthlyRequestBudgets("tavily:10,serpapi:0,searchapi:2,linkup:3,keenable:4,tinyfish:5,serper:2,you:1"), {
     tavily: 10,
     serpapi: 0,
+    searchapi: 2,
     linkup: 3,
     keenable: 4,
+    tinyfish: 5,
     serper: 2,
     you: 1,
   });
@@ -86,10 +96,12 @@ void test("parseConfig treats blank optional provider keys as unset", () => {
     BRAVE_API_KEY: "",
     FIRECRAWL_API_KEY: "",
     SERPAPI_API_KEY: "",
+    SEARCHAPI_API_KEY: "",
     BROWSERBASE_API_KEY: "",
     PARALLEL_API_KEY: "",
     LINKUP_API_KEY: "",
     KEENABLE_API_KEY: "",
+    TINYFISH_API_KEY: "",
     SERPER_API_KEY: "",
     YOU_API_KEY: "",
     BROWSERLESS_TOKEN: "",

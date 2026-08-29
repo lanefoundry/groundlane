@@ -24,10 +24,10 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | Tool | What it does | Current execution paths |
 | --- | --- | --- |
 | `web_fetch` | Reads a public URL as Markdown, text, or HTML | Bounded HTTP, local readable normalization, and eligible optional Jina/browser fallbacks |
-| `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across eleven providers |
+| `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across thirteen providers |
 | `web_answer` | Retrieves grounded answers from answer-capable providers | Parallel fan-out or fallback across You.com Answer and Linkup sourced answers, with provider attribution and citations |
 | `web_research` | Retrieves provider-attributed research reports | Parallel fan-out or fallback across Linkup Research, You.com Research, and Parallel Responses, with citations |
-| `web_content` | Fetches URL content through provider content APIs | Parallel fan-out or fallback across Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, and Keenable Fetch |
+| `web_content` | Fetches URL content through provider content APIs | Parallel fan-out or fallback across Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, TinyFish Fetch, and Keenable Fetch |
 | `web_map` | Discovers URLs from a public site | Parallel fan-out or fallback across Firecrawl Map and Tavily Map, with provider attribution |
 | `web_crawl` | Crawls bounded pages from a public site | Parallel fan-out or fallback across Firecrawl Crawl and Tavily Crawl, with capped pages and content |
 | `web_news` | Searches news-specific provider indexes | Parallel fan-out or fallback across Brave News, Serper News, and SerpApi Google News |
@@ -239,10 +239,10 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 
 | Groundlane capability | Implemented adapters |
 | --- | --- |
-| Search | Linkup, Keenable, Parallel, Browserbase, Brave, SerpApi, Tavily, Exa, Firecrawl, Serper, You.com |
+| Search | Linkup, Keenable, TinyFish, Parallel, Browserbase, Brave, SerpApi, SearchAPI.io, Tavily, Exa, Firecrawl, Serper, You.com |
 | Grounded answer | Linkup, You.com |
 | Research report | Linkup, You.com, Parallel |
-| URL content API | Linkup, You.com, Exa, Tavily, Firecrawl, Keenable |
+| URL content API | Linkup, You.com, Exa, Tavily, Firecrawl, TinyFish, Keenable |
 | Site map discovery | Firecrawl, Tavily |
 | Bounded site crawl | Firecrawl, Tavily |
 | News search | Brave, Serper, SerpApi |
@@ -303,7 +303,7 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 ## Project status
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: ten web MCP tools, two provider diagnostic MCP tools, eleven search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
+- Implemented: ten web MCP tools, two provider diagnostic MCP tools, thirteen search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
 - Next: async research job tools, structured extraction providers, finance research, durable quota ledgers, broader compatibility fixtures, cache policy, and operational telemetry.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).

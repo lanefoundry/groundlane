@@ -6,10 +6,12 @@ export const SEARCH_PROVIDER_IDS = [
   "brave",
   "firecrawl",
   "serpapi",
+  "searchapi",
   "linkup",
   "keenable",
   "serper",
   "you",
+  "tinyfish",
 ] as const;
 
 export type KnownSearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
@@ -20,6 +22,7 @@ export const DEFAULT_SEARCH_PROVIDER_ORDER = [
   "exa",
   "brave",
   "you",
+  "tinyfish",
   "keenable",
   "browserbase",
   "firecrawl",
@@ -30,6 +33,6 @@ export const DEFAULT_SEARCH_PROVIDER_ORDER = [
 
 export const DEFAULT_SEARCH_PROVIDER_ORDER_VALUE = DEFAULT_SEARCH_PROVIDER_ORDER.join(",");
 export const DEFAULT_SEARCH_PROVIDER_BUDGETS_VALUE =
-  "tavily:800,exa:1200,brave:1000,you:3000,keenable:100,browserbase:1000,firecrawl:500,linkup:100,parallel:500,serpapi:250,serper:0";
+  "tavily:800,exa:1200,brave:1000,you:3000,tinyfish:3000,keenable:100,browserbase:1000,firecrawl:500,linkup:100,parallel:500,serpapi:250,searchapi:0,serper:0";
 
 export const DEFAULT_SEARCH_DAILY_BUDGETS_VALUE = "you:100";

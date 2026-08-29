@@ -28,6 +28,7 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
   { name: "BRAVE_API_KEY", label: "Brave Search", group: "search", required: false },
   { name: "FIRECRAWL_API_KEY", label: "Firecrawl", group: "search", required: false },
   { name: "SERPAPI_API_KEY", label: "SerpApi", group: "search", required: false },
+  { name: "SEARCHAPI_API_KEY", label: "SearchAPI.io", group: "search", required: false },
   {
     name: "BROWSERBASE_API_KEY",
     label: "Browserbase Search",
@@ -37,6 +38,7 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
   { name: "PARALLEL_API_KEY", label: "Parallel", group: "search", required: false },
   { name: "LINKUP_API_KEY", label: "Linkup", group: "search", required: false },
   { name: "KEENABLE_API_KEY", label: "Keenable", group: "search", required: false },
+  { name: "TINYFISH_API_KEY", label: "TinyFish", group: "search", required: false },
   { name: "SERPER_API_KEY", label: "Serper", group: "search", required: false },
   { name: "YOU_API_KEY", label: "You.com REST", group: "search", required: false },
   {

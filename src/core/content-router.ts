@@ -14,6 +14,7 @@ export const CONTENT_PROVIDER_IDS = [
   "exa",
   "tavily",
   "firecrawl",
+  "tinyfish",
   "keenable",
 ] as const satisfies readonly ContentProviderId[];
 

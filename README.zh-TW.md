@@ -24,10 +24,10 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | 工具 | 功能 | 目前執行路徑 |
 | --- | --- | --- |
 | `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
-| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十一個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
+| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十三個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
 | `web_answer` | 從支援 answer 的 provider 取得 grounded answer | 並行 fan-out 或 fallback 到 You.com Answer 與 Linkup sourced answer，保留 provider attribution 與 citations |
 | `web_research` | 從支援 research 的 provider 取得研究報告 | 並行 fan-out 或 fallback 到 Linkup Research、You.com Research 與 Parallel Responses，保留 citations |
-| `web_content` | 透過 provider content API 抓取 URL 內容 | 並行 fan-out 或 fallback 到 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape、Keenable Fetch |
+| `web_content` | 透過 provider content API 抓取 URL 內容 | 並行 fan-out 或 fallback 到 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape、TinyFish Fetch、Keenable Fetch |
 | `web_map` | 從公開網站探索 URL | 並行 fan-out 或 fallback 到 Firecrawl Map 與 Tavily Map，保留 provider attribution |
 | `web_crawl` | 對公開網站做有界 crawl | 並行 fan-out 或 fallback 到 Firecrawl Crawl 與 Tavily Crawl，限制頁數與內容大小 |
 | `web_news` | 搜尋 news-specific provider index | 並行 fan-out 或 fallback 到 Brave News、Serper News、SerpApi Google News |
@@ -233,10 +233,10 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 | Groundlane 能力 | 已實作 adapters |
 | --- | --- |
-| Search | Linkup、Keenable、Parallel、Browserbase、Brave、SerpApi、Tavily、Exa、Firecrawl、Serper、You.com |
+| Search | Linkup、Keenable、TinyFish、Parallel、Browserbase、Brave、SerpApi、SearchAPI.io、Tavily、Exa、Firecrawl、Serper、You.com |
 | Grounded answer | Linkup、You.com |
 | Research report | Linkup、You.com、Parallel |
-| URL content API | Linkup、You.com、Exa、Tavily、Firecrawl、Keenable |
+| URL content API | Linkup、You.com、Exa、Tavily、Firecrawl、TinyFish、Keenable |
 | Site map discovery | Firecrawl、Tavily |
 | Bounded site crawl | Firecrawl、Tavily |
 | News search | Brave、Serper、SerpApi |
@@ -297,7 +297,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：十個 Web MCP tools、兩個 provider 診斷 MCP tools、十一個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
+- 已完成：十個 Web MCP tools、兩個 provider 診斷 MCP tools、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
 - 下一步：async research job tools、structured extraction providers、finance research、durable quota ledger、更完整的 compatibility fixtures、cache policy 與營運 telemetry。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。

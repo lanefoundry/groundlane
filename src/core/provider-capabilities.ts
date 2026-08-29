@@ -28,6 +28,14 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
     balanceSupport: "not_implemented",
     notes: ["Groundlane can use the keyless public endpoints when no key is configured."],
   },
+  tinyfish: {
+    provider: "tinyfish",
+    vendorFeatures: ["Search", "Fetch", "Agent", "Browser", "MCP", "SDKs", "CLI"],
+    groundlaneTools: ["web_search", "web_content", ...diagnosticsTools],
+    filterSupport: "include domains, exclude domains, date range through recency minutes",
+    balanceSupport: "dashboard",
+    notes: ["Search and Fetch are free at any wallet balance but require a configured API key.", "Groundlane does not expose TinyFish Agent or Browser paid surfaces."],
+  },
   you: {
     provider: "you",
     vendorFeatures: ["Web Search", "Contents", "Answer", "Research", "Finance Research", "MCP"],
@@ -67,6 +75,14 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
     filterSupport: "include/exclude domains mapped to Google query operators, date range",
     balanceSupport: "api",
     notes: ["web_images uses SerpApi Google Images.", "Balance uses SerpApi Account API and reports total searches left."],
+  },
+  searchapi: {
+    provider: "searchapi",
+    vendorFeatures: ["Google organic SERP", "Vertical SERP engines"],
+    groundlaneTools: ["web_search", ...diagnosticsTools],
+    filterSupport: "include/exclude domains mapped to Google query operators; no date range",
+    balanceSupport: "dashboard",
+    notes: ["Groundlane keeps SearchAPI.io opt-in because the free pool is a finite signup trial."],
   },
   tavily: {
     provider: "tavily",

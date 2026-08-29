@@ -16,6 +16,7 @@ import { SerpApiNewsProvider } from "./adapters/news/serpapi.js";
 import { TavilyMapProvider } from "./adapters/map/tavily.js";
 import { TavilyContentProvider } from "./adapters/content/tavily.js";
 import { TavilyCrawlProvider } from "./adapters/crawl/tavily.js";
+import { TinyFishContentProvider } from "./adapters/content/tinyfish.js";
 import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
@@ -37,7 +38,9 @@ import { LinkupSearchProvider } from "./adapters/search/linkup.js";
 import { ParallelSearchProvider } from "./adapters/search/parallel.js";
 import { SerperSearchProvider } from "./adapters/search/serper.js";
 import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
+import { SearchApiSearchProvider } from "./adapters/search/searchapi.js";
 import { TavilySearchProvider } from "./adapters/search/tavily.js";
+import { TinyFishSearchProvider } from "./adapters/search/tinyfish.js";
 import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
 import type { AnswerProvider, BrowserBackend, ContentProvider, CrawlProvider, ImagesProvider, MapProvider, NewsProvider, ResearchProvider, SearchProvider } from "./core/contracts.js";
@@ -93,6 +96,9 @@ export function createSearchProviders(config: GroundlaneConfig): SearchProvider[
   if (config.providerKeys.serpapi !== undefined) {
     providers.push(new SerpApiSearchProvider({ apiKey: config.providerKeys.serpapi }));
   }
+  if (config.providerKeys.searchapi !== undefined) {
+    providers.push(new SearchApiSearchProvider({ apiKey: config.providerKeys.searchapi }));
+  }
   if (config.providerKeys.browserbase !== undefined) {
     providers.push(new BrowserbaseSearchProvider({ apiKey: config.providerKeys.browserbase }));
   }
@@ -101,6 +107,9 @@ export function createSearchProviders(config: GroundlaneConfig): SearchProvider[
   }
   if (config.providerKeys.linkup !== undefined) {
     providers.push(new LinkupSearchProvider({ apiKey: config.providerKeys.linkup }));
+  }
+  if (config.providerKeys.tinyfish !== undefined) {
+    providers.push(new TinyFishSearchProvider({ apiKey: config.providerKeys.tinyfish }));
   }
   providers.push(new KeenableSearchProvider(
     config.providerKeys.keenable === undefined
@@ -157,6 +166,9 @@ export function createContentProviders(config: GroundlaneConfig): ContentProvide
   }
   if (config.providerKeys.firecrawl !== undefined) {
     providers.push(new FirecrawlContentProvider({ apiKey: config.providerKeys.firecrawl }));
+  }
+  if (config.providerKeys.tinyfish !== undefined) {
+    providers.push(new TinyFishContentProvider({ apiKey: config.providerKeys.tinyfish }));
   }
   providers.push(new KeenableContentProvider(
     config.providerKeys.keenable === undefined

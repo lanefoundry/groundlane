@@ -101,7 +101,7 @@ export type ResearchStrategy = "fallback" | "parallel";
 export type ResearchEffort = "lite" | "standard" | "deep";
 export type ContentProviderId = Extract<
   KnownSearchProviderId,
-  "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "you"
+  "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "tinyfish" | "you"
 >;
 export type ContentStrategy = "fallback" | "parallel";
 export type MapProviderId = Extract<KnownSearchProviderId, "firecrawl" | "tavily">;

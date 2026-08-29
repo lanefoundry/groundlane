@@ -103,7 +103,7 @@ warnings[], fallbackReason?
 - `maxResults`：有 deployment 上限的結果數。
 - `domains`、`excludeDomains`、`timeRange`：選填 filter。
 - `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
-- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi | linkup | keenable | serper | you`。
+- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi | searchapi | linkup | keenable | tinyfish | serper | you`。
 - `providers`：選填、有界且有順序的 provider candidate allowlist；不可與 explicit `provider` 同時使用。
 - `strategy`：`fallback | balanced | deep`；`auto` 預設為 `balanced`。
 
@@ -166,7 +166,7 @@ durationMs, warnings[]
 - `url`：必填 HTTP(S) URL。
 - `maxContentChars`：單一 provider content 的字數上限。
 - `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
-- `provider`：`auto | linkup | you | exa | tavily | firecrawl | keenable`。
+- `provider`：`auto | linkup | you | exa | tavily | firecrawl | tinyfish | keenable`。
 - `providers`：選填、有界且有順序的 content provider candidate allowlist；不可與 explicit `provider` 同時使用。
 - `strategy`：`parallel | fallback`；預設為 `parallel`。
 - `live`：選填，要求支援的 provider 嘗試 live/fresh retrieval。
@@ -188,7 +188,7 @@ durationMs, warnings[]
 - `fallback` 依序嘗試直到第一個成功，適合想節省 content-call credits 的 client。
 - 回傳多家內容時不做 LLM synthesis；caller 可自行比較品質、長度與來源。
 - provider 回傳 final URL 必須重新套用 public URL policy；不安全來源丟棄。
-- 第一批實作 provider 是 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape 與 Keenable Fetch。
+- 第一批實作 provider 是 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape、TinyFish Fetch 與 Keenable Fetch。
 
 ### 5.6 `web_map`
 
@@ -421,7 +421,7 @@ MVP 明確不包含：
 | Stagehand | 未來 schema validation 與 agent-friendly extract/observe API 參考 | MVP 不引入 LLM act/observe/extract 或 self-healing action | [Stagehand](https://github.com/browserbase/stagehand) |
 | Crawlee | 未來 crawl queue、retry、session pool、autoscaling 參考 | 單頁 MVP 不加入 crawler framework | [Crawlee](https://github.com/apify/crawlee) |
 | Browserless | Container/browser operations、queue、crash recovery、同 API 跨部署的參考 | 不依賴或複製 SSPL/commercial code；不承諾其 proxy/CAPTCHA breadth | [Browserless](https://github.com/browserless/browserless) |
-| Tavily / Exa / Jina / Firecrawl / SerpApi | Search/contents/reader/rerank 能力拆分、provider adapter 與 normalized contract | 不複製其 index；MVP 不做 rerank/research synthesis | [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [Exa Search](https://docs.exa.ai/reference/search), [Jina Reader](https://jina.ai/reader/), [Firecrawl Search](https://docs.firecrawl.dev/api-reference/endpoint/search), [SerpApi Google Search](https://serpapi.com/search-api) |
+| Tavily / Exa / Jina / Firecrawl / SerpApi / SearchAPI.io / TinyFish | Search/contents/reader/rerank 能力拆分、provider adapter 與 normalized contract | 不複製其 index；MVP 不做 rerank/research synthesis | [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [Exa Search](https://docs.exa.ai/reference/search), [Jina Reader](https://jina.ai/reader/), [Firecrawl Search](https://docs.firecrawl.dev/api-reference/endpoint/search), [SerpApi Google Search](https://serpapi.com/search-api), [SearchAPI.io Google Search](https://www.searchapi.io/docs/google), [TinyFish Search API](https://docs.tinyfish.ai/search-api/reference) |
 | Parallel / Linkup | vendor-neutral web intelligence control-plane 願景、structured/cited result 方向 | MVP 可轉接 provider research API，但不做自家 deep-research agent、monitor、FindAll 或自己的 web index | [Parallel](https://parallel.ai/), [Linkup](https://docs.linkup.so/) |
 | Cloudflare Containers | Worker control plane + isolated Node/Playwright browser workload、self-controlled deployment | core contracts 不依賴 Cloudflare；不把 Container instance 當持久 browser session | [Cloudflare Containers](https://developers.cloudflare.com/containers/) |
 

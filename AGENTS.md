@@ -78,6 +78,10 @@ routing, quota policy, validation, and shared contracts provider-neutral in
 
 - Use `rg` and `rg --files` for repository discovery.
 - Use `apply_patch` for source and documentation edits.
+- When a change affects user-visible behavior, tools, providers, configuration,
+  CLI commands, deployment, setup, or operational workflow, update
+  `README.md`, `README.zh-TW.md`, and the relevant `docs/` page in the same
+  task. If no README change is needed, state why in the final report.
 - Preserve unrelated and concurrent work in a dirty worktree. Refresh
   `git status` and the final diff before reporting scope.
 - For multi-step work, keep one task-specific plan/progress file on disk. Use
@@ -112,6 +116,7 @@ pnpm test
 pnpm build
 ```
 
-Also run `git diff --check` and state clearly whether deployment, provider
+Also run `git diff --check`, verify README/docs are synchronized with any
+user-visible change, and state clearly whether deployment, provider
 credentials, live billing behavior, and production smoke tests were verified or
 remain unproven.

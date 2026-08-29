@@ -41,8 +41,8 @@ Groundlane does use mature open-source crawler and browser projects as architect
                       |          +----------+    |
               provider ports     |               |
                       |          safe HTTP        |
-  Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi |
-                    Serper/You.com (opt-in)                    |
+  Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi/TinyFish |
+                    SearchAPI.io/Serper/You.com (opt-in/keyless where available) |
                                       |
                          optional Jina Reader
                                       |
@@ -127,7 +127,7 @@ Implemented research paths are Linkup Research, You.com Research, and Parallel's
 4. Normalize each provider response to `{provider,url,finalUrl,title?,content,format,truncated,durationMs,warnings[]}`.
 5. Revalidate provider-returned final URLs and locally enforce `maxContentChars`, even when the upstream provider ignores or over-returns its own limit.
 
-Implemented content paths are Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, and Keenable Fetch. Browserbase Fetch is documented as a vendor feature but is not exposed until the exact runtime endpoint and contract are added to this repo.
+Implemented content paths are Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, TinyFish Fetch, and Keenable Fetch. Browserbase Fetch is documented as a vendor feature but is not exposed until the exact runtime endpoint and contract are added to this repo.
 
 ### `web_map`
 
