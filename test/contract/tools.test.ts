@@ -38,12 +38,15 @@ import { MapRouter } from "../../src/core/map-router.js";
 import { NewsRouter } from "../../src/core/news-router.js";
 import { ProviderBalanceRegistry } from "../../src/core/provider-balance.js";
 import { ResearchRouter } from "../../src/core/research-router.js";
+import { MonthlySearchBudget } from "../../src/core/search-budget.js";
 import { SearchRouter } from "../../src/core/search-router.js";
 import { createContainerApp } from "../../src/container/app.js";
 import { createMcpRegistry } from "../../src/mcp/registry.js";
 import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
+import { createProviderQuotaModule } from "../../src/tools/provider-quota.js";
+import { createSearchBudgetStatusModule } from "../../src/tools/search-budget-status.js";
 import { createWebAnswerModule } from "../../src/tools/web-answer.js";
 import { createWebContentModule } from "../../src/tools/web-content.js";
 import { createWebCrawlModule } from "../../src/tools/web-crawl.js";
@@ -269,6 +272,15 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       limiter,
       requestTimeoutMs: 5_000,
     }),
+    createProviderQuotaModule({
+      balanceRegistry,
+      budget: new MonthlySearchBudget({ test: 2 }),
+      limiter,
+      requestTimeoutMs: 5_000,
+    }),
+    createSearchBudgetStatusModule({
+      budget: new MonthlySearchBudget({ test: 2 }),
+    }),
     createWebAnswerModule({
       router: new AnswerRouter([answerProvider], ["you"]),
       limiter,
@@ -355,6 +367,8 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       [
         "provider_balance",
         "provider_capabilities",
+        "provider_quota",
+        "search_budget_status",
         "web_answer",
         "web_content",
         "web_crawl",

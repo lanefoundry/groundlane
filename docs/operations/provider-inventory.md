@@ -49,6 +49,10 @@ Cloudflare Workers secrets, not that its value was read.
 
 ## Capability matrix
 
+`provider_quota` and `search_budget_status` apply to every search provider in
+this matrix because they report Groundlane diagnostics. `provider_quota` also
+embeds provider-balance data when an official balance checker exists.
+
 | Provider | Groundlane role today | Vendor features relevant to future Groundlane | Current filter support in Groundlane |
 | --- | --- | --- | --- |
 | Linkup | `web_search`, `web_answer`, `web_research`, `web_content` provider | Search, Fetch, Research, Tasks, Extract | include domains, exclude domains, date range |
@@ -71,8 +75,12 @@ Cloudflare Workers secrets, not that its value was read.
    their checked APIs report usage analytics rather than remaining credits.
 3. Keep Serper, Brave, Tavily, and Keenable balance as dashboard-only or
    unclear unless an official account-level API is found.
-4. Do not infer real provider quota from Groundlane local budgets or live smoke
-   success. They answer different questions.
+4. Use `provider_quota` as the first diagnostic view for zero-result search
+   runs. It combines provider account-balance status, Groundlane's local search
+   attempt guardrails, and capability data while keeping those concepts in
+   separate fields. Use `search_budget_status` only when the raw local counters
+   are needed. Do not infer real provider quota from Groundlane local budgets or
+   live smoke success. They answer different questions.
 
 ## Balance and usage API verification
 

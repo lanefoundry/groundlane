@@ -1,9 +1,23 @@
 import type { SearchProviderId } from "./contracts.js";
 import { GroundlaneError } from "./errors.js";
 
+export type SearchBudgetPeriod = "monthly" | "daily" | "minute";
+
+export interface SearchBudgetSnapshot {
+  period: SearchBudgetPeriod;
+  provider: SearchProviderId;
+  limited: boolean;
+  limit?: number;
+  used: number;
+  remaining?: number;
+  exhausted: boolean;
+  resetAt?: string;
+}
+
 export interface SearchBudgetTracker {
   tryConsume(provider: SearchProviderId): boolean;
   remaining(provider: SearchProviderId): number | undefined;
+  snapshots?(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[];
 }
 
 function validateBudgets(
@@ -51,6 +65,34 @@ export class MonthlySearchBudget implements SearchBudgetTracker {
     return Math.max(0, budget - (this.attempts.get(provider) ?? 0));
   }
 
+  snapshots(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[] {
+    this.resetIfNeeded();
+    return providers.map((provider) => {
+      const limit = this.budgets[provider];
+      const used = this.attempts.get(provider) ?? 0;
+      if (limit === undefined) {
+        return {
+          period: "monthly",
+          provider,
+          limited: false,
+          used,
+          exhausted: false,
+          resetAt: this.nextResetAt(),
+        };
+      }
+      return {
+        period: "monthly",
+        provider,
+        limited: true,
+        limit,
+        used,
+        remaining: Math.max(0, limit - used),
+        exhausted: used >= limit,
+        resetAt: this.nextResetAt(),
+      };
+    });
+  }
+
   private currentMonth(): string {
     const date = this.now();
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -61,6 +103,11 @@ export class MonthlySearchBudget implements SearchBudgetTracker {
     if (current === this.month) return;
     this.month = current;
     this.attempts.clear();
+  }
+
+  private nextResetAt(): string {
+    const date = this.now();
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)).toISOString();
   }
 }
 
@@ -93,6 +140,34 @@ export class DailySearchBudget implements SearchBudgetTracker {
     return Math.max(0, budget - (this.attempts.get(provider) ?? 0));
   }
 
+  snapshots(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[] {
+    this.resetIfNeeded();
+    return providers.map((provider) => {
+      const limit = this.budgets[provider];
+      const used = this.attempts.get(provider) ?? 0;
+      if (limit === undefined) {
+        return {
+          period: "daily",
+          provider,
+          limited: false,
+          used,
+          exhausted: false,
+          resetAt: this.nextResetAt(),
+        };
+      }
+      return {
+        period: "daily",
+        provider,
+        limited: true,
+        limit,
+        used,
+        remaining: Math.max(0, limit - used),
+        exhausted: used >= limit,
+        resetAt: this.nextResetAt(),
+      };
+    });
+  }
+
   private currentDay(): string {
     return this.now().toISOString().slice(0, 10);
   }
@@ -102,6 +177,11 @@ export class DailySearchBudget implements SearchBudgetTracker {
     if (current === this.day) return;
     this.day = current;
     this.attempts.clear();
+  }
+
+  private nextResetAt(): string {
+    const date = this.now();
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)).toISOString();
   }
 }
 
@@ -143,6 +223,32 @@ export class MinuteRateLimiter implements SearchBudgetTracker {
     return Math.max(0, limit - times.length);
   }
 
+  snapshots(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[] {
+    return providers.map((provider) => {
+      const limit = this.limits[provider];
+      if (limit === undefined) {
+        return {
+          period: "minute",
+          provider,
+          limited: false,
+          used: 0,
+          exhausted: false,
+        };
+      }
+      this.prune(provider);
+      const used = this.timestamps.get(provider)?.length ?? 0;
+      return {
+        period: "minute",
+        provider,
+        limited: true,
+        limit,
+        used,
+        remaining: Math.max(0, limit - used),
+        exhausted: used >= limit,
+      };
+    });
+  }
+
   private prune(provider: SearchProviderId): void {
     const times = this.timestamps.get(provider);
     if (times === undefined) return;
@@ -175,5 +281,9 @@ export class CompositeSearchBudget implements SearchBudgetTracker {
       if (min === undefined || r < min) min = r;
     }
     return min;
+  }
+
+  snapshots(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[] {
+    return this.trackers.flatMap((tracker) => tracker.snapshots?.(providers) ?? []);
   }
 }

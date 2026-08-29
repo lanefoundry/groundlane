@@ -23,6 +23,8 @@ try {
   assert.deepEqual(names, [
     "provider_balance",
     "provider_capabilities",
+    "provider_quota",
+    "search_budget_status",
     "web_answer",
     "web_content",
     "web_crawl",

@@ -58,6 +58,8 @@ import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
+import { createProviderQuotaModule } from "./tools/provider-quota.js";
+import { createSearchBudgetStatusModule } from "./tools/search-budget-status.js";
 import { createWebAnswerModule } from "./tools/web-answer.js";
 import { createWebContentModule } from "./tools/web-content.js";
 import { createWebCrawlModule } from "./tools/web-crawl.js";
@@ -250,14 +252,15 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const crawlProviders = createCrawlProviders(config);
   const newsProviders = createNewsProviders(config);
   const imagesProviders = createImagesProviders(config);
+  const searchBudget = new CompositeSearchBudget([
+    new MonthlySearchBudget(config.searchMonthlyRequestBudgets),
+    new DailySearchBudget(config.searchDailyRequestBudgets),
+  ]);
   const searchRouter = new SearchRouter(
     providers,
     config.searchProviderOrder,
     healthTracker,
-    new CompositeSearchBudget([
-      new MonthlySearchBudget(config.searchMonthlyRequestBudgets),
-      new DailySearchBudget(config.searchDailyRequestBudgets),
-    ]),
+    searchBudget,
   );
   const answerRouter = new AnswerRouter(answerProviders);
   const researchRouter = new ResearchRouter(researchProviders);
@@ -291,6 +294,15 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       registry: providerBalanceRegistry,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
+    }),
+    createProviderQuotaModule({
+      balanceRegistry: providerBalanceRegistry,
+      budget: searchBudget,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+    }),
+    createSearchBudgetStatusModule({
+      budget: searchBudget,
     }),
     createWebAnswerModule({
       router: answerRouter,

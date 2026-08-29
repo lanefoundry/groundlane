@@ -57,6 +57,34 @@ void test("DailySearchBudget leaves unspecified providers unlimited", () => {
   assert.equal(budget.remaining("tavily"), undefined);
 });
 
+void test("DailySearchBudget snapshots configured and unbounded providers", () => {
+  let now = new Date("2026-08-24T12:00:00Z");
+  const budget = new DailySearchBudget({ you: 2 }, () => now);
+  assert.equal(budget.tryConsume("you"), true);
+  assert.deepEqual(budget.snapshots(["you", "tavily"]), [
+    {
+      period: "daily",
+      provider: "you",
+      limited: true,
+      limit: 2,
+      used: 1,
+      remaining: 1,
+      exhausted: false,
+      resetAt: "2026-08-25T00:00:00.000Z",
+    },
+    {
+      period: "daily",
+      provider: "tavily",
+      limited: false,
+      used: 0,
+      exhausted: false,
+      resetAt: "2026-08-25T00:00:00.000Z",
+    },
+  ]);
+  now = new Date("2026-08-25T00:00:00Z");
+  assert.equal(budget.snapshots(["you"])[0]?.used, 0);
+});
+
 void test("DailySearchBudget rejects invalid limits", () => {
   assert.throws(() => new DailySearchBudget({ you: -1 }), { code: "INVALID_INPUT" });
   assert.throws(() => new DailySearchBudget({ you: 0.5 }), { code: "INVALID_INPUT" });
@@ -120,6 +148,26 @@ void test("CompositeSearchBudget blocks when any window is exhausted", () => {
   assert.equal(daily.remaining("you"), 0);
   now = new Date("2026-08-25T00:00:00Z");
   assert.equal(composite.tryConsume("you"), true);
+});
+
+void test("CompositeSearchBudget exposes each configured window snapshot", () => {
+  const monthly = new MonthlySearchBudget({ you: 3 }, () => new Date("2026-08-24T12:00:00Z"));
+  const daily = new DailySearchBudget({ you: 2 }, () => new Date("2026-08-24T12:00:00Z"));
+  const composite = new CompositeSearchBudget([monthly, daily]);
+  assert.equal(composite.tryConsume("you"), true);
+  assert.deepEqual(
+    composite.snapshots(["you"]).map((snapshot) => ({
+      period: snapshot.period,
+      provider: snapshot.provider,
+      limit: snapshot.limit,
+      used: snapshot.used,
+      remaining: snapshot.remaining,
+    })),
+    [
+      { period: "monthly", provider: "you", limit: 3, used: 1, remaining: 2 },
+      { period: "daily", provider: "you", limit: 2, used: 1, remaining: 1 },
+    ],
+  );
 });
 
 void test("CompositeSearchBudget consumes from all trackers on success", () => {
