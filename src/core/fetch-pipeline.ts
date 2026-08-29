@@ -3,6 +3,7 @@ import { GroundlaneError } from "./errors.js";
 import { normalizeDocument } from "./normalize-document.js";
 import type { Deadline } from "./limits.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
+import type { SourceResolver } from "./source-aware-docs.js";
 
 export interface FetchPipelineRequest { url: string; format: FetchFormat; render: RenderMode; selector?: string; waitFor?: string; maxBytes: number; maxOutputChars: number; maxRedirects: number; deadline: Deadline }
 export interface FetchPipelineResult extends NormalizedDocument { raw: RawDocument; fallbackReason?: string }
@@ -28,6 +29,7 @@ export class FetchPipeline {
     private readonly browser: BrowserBackend,
     private readonly reader?: ReaderBackend,
     private readonly backendBudget?: SearchBudgetTracker,
+    private readonly sourceResolver?: SourceResolver,
   ) {}
   async fetch(request: FetchPipelineRequest, signal?: AbortSignal): Promise<FetchPipelineResult> {
     validateFetchPipelineRequest(request);
@@ -36,6 +38,16 @@ export class FetchPipeline {
     try {
       raw = await this.http.fetch({ url: request.url, maxBytes: request.maxBytes, maxRedirects: request.maxRedirects, deadline: request.deadline }, signal);
     } catch (error) {
+      if (error instanceof GroundlaneError && error.code === "OUTPUT_LIMIT") {
+        const sourceAware = await this.sourceResolver?.resolve(request, signal);
+        if (sourceAware !== undefined) {
+          return {
+            ...normalizeDocument(sourceAware.raw, request.format, request.maxOutputChars),
+            raw: sourceAware.raw,
+            fallbackReason: sourceAware.reason,
+          };
+        }
+      }
       if (request.render !== "auto" || !this.isRetryableRetrievalFailure(error)) throw error;
       if (this.canUseReader(request)) {
         try {

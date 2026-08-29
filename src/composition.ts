@@ -52,6 +52,7 @@ import { ProviderBalanceRegistry } from "./core/provider-balance.js";
 import { ResearchRouter } from "./core/research-router.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
+import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
@@ -230,7 +231,14 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     backendBudgetTrackers.push(new MonthlySearchBudget({ browserless: config.browserlessMonthlyUnits }));
   }
   const backendBudget = new CompositeSearchBudget(backendBudgetTrackers);
-  const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader, backendBudget);
+  const httpFetcher = new SafeHttpFetcher();
+  const fetchPipeline = new FetchPipeline(
+    httpFetcher,
+    browser,
+    reader,
+    backendBudget,
+    new SourceAwareDocsResolver(httpFetcher),
+  );
   const providers = createSearchProviders(config);
   const healthTracker = new DynamicPenaltyHealthTracker();
   const answerProviders = createAnswerProviders(config);

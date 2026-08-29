@@ -33,7 +33,16 @@ async function readBounded(response: IncomingMessage, maxBytes: number, signal: 
   return body;
 }
 
-function requestPinned(url: URL, address: ResolvedAddress, options: SafeHttpFetcherOptions, signal: AbortSignal): Promise<IncomingMessage> {
+function requestPinned(
+  url: URL,
+  address: ResolvedAddress,
+  options: SafeHttpFetcherOptions,
+  signal: AbortSignal,
+  headers?: Readonly<Record<string, string>>,
+): Promise<IncomingMessage> {
+  const extraHeaders = Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([key]) => !["host", "user-agent"].includes(key.toLowerCase())),
+  );
   return new Promise((resolve, reject) => {
     const requestOptions: RequestOptions = {
       protocol: url.protocol,
@@ -42,7 +51,12 @@ function requestPinned(url: URL, address: ResolvedAddress, options: SafeHttpFetc
       port: url.port || undefined,
       path: `${url.pathname}${url.search}`,
       method: "GET",
-      headers: { host: url.host, accept: "text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.1", "user-agent": options.userAgent ?? "Groundlane/0.1" },
+      headers: {
+        accept: "text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.1",
+        ...extraHeaders,
+        host: url.host,
+        "user-agent": options.userAgent ?? "Groundlane/0.1",
+      },
       signal,
       ...(url.protocol === "https:" ? { servername: url.hostname } : {}),
     };
@@ -70,7 +84,7 @@ export class SafeHttpFetcher implements HttpFetcher {
       let lastError: unknown;
       for (const address of destination.addresses) {
         try {
-          response = await withinDeadline((signal) => requestPinned(destination.url, address, this.options, signal), request.deadline, parent, "connect");
+          response = await withinDeadline((signal) => requestPinned(destination.url, address, this.options, signal, request.headers), request.deadline, parent, "connect");
           break;
         } catch (error) {
           if (error instanceof GroundlaneError) throw error;

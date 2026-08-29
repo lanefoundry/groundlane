@@ -22,6 +22,7 @@ Research snapshots are dated. Prices, product features, repository licenses, and
 ## Engineering references
 
 - [Open-source references](open-source-references.md) — projects and licenses considered as design influences.
+- [Source-aware documentation parser](source-aware-docs-parser.md) — parser cascade and first runtime slice for large generated docs.
 
 ## Naming note
 

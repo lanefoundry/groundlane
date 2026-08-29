@@ -22,6 +22,7 @@ export interface HttpFetchRequest {
   maxBytes: number;
   maxRedirects: number;
   deadline: Deadline;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export interface HttpFetcher {

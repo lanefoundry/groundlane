@@ -4,6 +4,7 @@ import type { BrowserBackend, BrowserFetchRequest, HttpFetcher, HttpFetchRequest
 import { GroundlaneError } from "../../src/core/errors.js";
 import { FetchPipeline, validateFetchPipelineRequest } from "../../src/core/fetch-pipeline.js";
 import { Deadline } from "../../src/core/limits.js";
+import { markdownSourceCandidates, SourceAwareDocsResolver } from "../../src/core/source-aware-docs.js";
 
 function raw(body: string, engine: "http" | "reader" | "browser" = "http", status = 200): RawDocument {
   return { requestedUrl: "https://example.com", finalUrl: "https://example.com", status, headers: {}, contentType: engine === "reader" ? "text/markdown" : "text/html", body: new TextEncoder().encode(body), engine, backend: engine === "http" ? "direct" : engine };
@@ -132,6 +133,151 @@ void test("FetchPipeline falls through from a retryable Reader failure to browse
   assert.equal(result.raw.engine, "browser");
   assert.equal(result.fallbackReason, "http_upstream_failure");
   assert.equal(browserCalls, 1);
+});
+
+void test("FetchPipeline uses source-aware Markdown when broad HTML exceeds byte limit", async () => {
+  const requested: string[] = [];
+  const deadline = new Deadline(1_000);
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(request.url);
+      if (request.url === "https://developers.cloudflare.com/api/resources/accounts/") {
+        if (request.headers?.accept === "text/markdown,text/plain;q=0.9,*/*;q=0.1") {
+          return Promise.resolve({
+            requestedUrl: request.url,
+            finalUrl: request.url,
+            status: 200,
+            headers: {},
+            contentType: "text/markdown",
+            body: new TextEncoder().encode("# Accounts API\n\nMarkdown source."),
+            engine: "http",
+            backend: "direct",
+          });
+        }
+        return Promise.reject(new GroundlaneError("OUTPUT_LIMIT", "response", "too large"));
+      }
+      return Promise.reject(new Error("unexpected URL"));
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(
+    http,
+    browser,
+    undefined,
+    undefined,
+    new SourceAwareDocsResolver(http),
+  ).fetch({
+    url: "https://developers.cloudflare.com/api/resources/accounts/",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline,
+  });
+
+  assert.deepEqual(requested, [
+    "https://developers.cloudflare.com/api/resources/accounts/",
+    "https://developers.cloudflare.com/api/resources/accounts/",
+  ]);
+  assert.equal(result.raw.backend, "source:accept-markdown");
+  assert.equal(result.raw.requestedUrl, "https://developers.cloudflare.com/api/resources/accounts/");
+  assert.equal(result.fallbackReason, "source_aware_markdown");
+  assert.match(result.content, /Accounts API/u);
+});
+
+void test("FetchPipeline falls back to index markdown when content negotiation is unavailable", async () => {
+  const requested: string[] = [];
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(request.url);
+      if (request.url === "https://developers.cloudflare.com/api/resources/accounts/") {
+        if (request.headers?.accept === "text/markdown,text/plain;q=0.9,*/*;q=0.1") {
+          return Promise.resolve(raw("Not found", "http", 404));
+        }
+        return Promise.reject(new GroundlaneError("OUTPUT_LIMIT", "response", "too large"));
+      }
+      assert.equal(request.url, "https://developers.cloudflare.com/api/resources/accounts/index.md");
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: {},
+        contentType: "text/markdown",
+        body: new TextEncoder().encode("# Index Markdown"),
+        engine: "http",
+        backend: "direct",
+      });
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: "https://developers.cloudflare.com/api/resources/accounts/",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, [
+    "https://developers.cloudflare.com/api/resources/accounts/",
+    "https://developers.cloudflare.com/api/resources/accounts/",
+    "https://developers.cloudflare.com/api/resources/accounts/index.md",
+  ]);
+  assert.equal(result.raw.backend, "source:index.md");
+  assert.match(result.content, /Index Markdown/u);
+});
+
+void test("FetchPipeline does not use source-aware docs for selectors", async () => {
+  const http: HttpFetcher = {
+    fetch: () => Promise.reject(new GroundlaneError("OUTPUT_LIMIT", "response", "too large")),
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  await assert.rejects(
+    new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+      url: "https://developers.cloudflare.com/api/resources/accounts/",
+      format: "markdown",
+      render: "auto",
+      selector: "main",
+      maxBytes: 1_000,
+      maxOutputChars: 1_000,
+      maxRedirects: 3,
+      deadline: new Deadline(1_000),
+    }),
+    { code: "OUTPUT_LIMIT" },
+  );
+});
+
+void test("markdownSourceCandidates maps docs URLs to index markdown", () => {
+  assert.deepEqual(
+    markdownSourceCandidates("https://developers.cloudflare.com/workers/get-started/"),
+    [
+      {
+        url: "https://developers.cloudflare.com/workers/get-started/",
+        backend: "source:accept-markdown",
+      },
+      {
+        url: "https://developers.cloudflare.com/workers/get-started/index.md",
+        backend: "source:index.md",
+      },
+    ],
+  );
+  assert.deepEqual(
+    markdownSourceCandidates("https://developers.cloudflare.com/workers/get-started"),
+    [
+      {
+        url: "https://developers.cloudflare.com/workers/get-started",
+        backend: "source:accept-markdown",
+      },
+      {
+        url: "https://developers.cloudflare.com/workers/get-started/index.md",
+        backend: "source:index.md",
+      },
+    ],
+  );
+  assert.deepEqual(markdownSourceCandidates("https://developers.cloudflare.com/workers/index.md"), []);
 });
 
 void test("validateFetchPipelineRequest enforces byte, output, redirect and selector bounds", () => {
