@@ -115,3 +115,39 @@ void test("extractFields validates names, selectors, attributes and output bound
   assert.throws(() => extractFields(html, [{ name: "x", selector: "a", value: "attribute" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ name: "heading", selector: "h1", value: "text" }], limits), { code: "OUTPUT_LIMIT" });
 });
+
+void test("extractFields supports bounded deterministic pattern extraction", () => {
+  const page = "Plan: Starter costs $19/month. Plan: Pro costs $49/month.";
+  const result = extractFields(page, [
+    {
+      engine: "pattern",
+      name: "plans",
+      pattern: "Plan:\\s+(?<plan>[A-Za-z]+)\\s+costs\\s+\\$\\d+\\/month",
+      group: "plan",
+      many: true,
+    },
+    { engine: "pattern", name: "firstPrice", pattern: "\\$(\\d+)\\/month", group: 1 },
+    { engine: "pattern", name: "missing", pattern: "Enterprise:\\s+(\\w+)" },
+  ], { maxFields: 5, maxValuesPerField: 1, maxOutputChars: 1_000 });
+
+  assert.deepEqual(result.data, {
+    plans: ["Starter"],
+    firstPrice: "19",
+    missing: null,
+  });
+  assert.deepEqual(result.missingFields, ["missing"]);
+});
+
+void test("extractFields validates pattern shape", () => {
+  const limits = { maxFields: 3, maxValuesPerField: 3, maxOutputChars: 1_000 };
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "[" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "x", flags: "s" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "x", flags: "ii" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(a+)+" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(?=Hello)Hello" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(Hello)\\1" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(
+    () => extractFields("x".repeat(1_000_001), [{ engine: "pattern", name: "x", pattern: "x" }], limits),
+    { code: "OUTPUT_LIMIT" },
+  );
+});

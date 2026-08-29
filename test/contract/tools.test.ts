@@ -643,6 +643,28 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.equal(envelope.data?.truncated, false);
     assert.deepEqual(envelope.data?.warnings, []);
 
+    const patternExtractResult = await client.callTool({
+      name: "web_extract",
+      arguments: {
+        url: "https://example.com",
+        render: "never",
+        fields: [
+          {
+            engine: "pattern",
+            name: "docsHref",
+            pattern: "href=[\"'](?<href>[^\"']+)[\"']",
+            group: "href",
+          },
+        ],
+      },
+    });
+    const patternEnvelope = patternExtractResult.structuredContent as {
+      ok?: boolean;
+      data?: { data?: Record<string, unknown> };
+    };
+    assert.equal(patternEnvelope.ok, true);
+    assert.deepEqual(patternEnvelope.data?.data, { docsHref: "/docs" });
+
     const extractLimitResult = await client.callTool({
       name: "web_extract",
       arguments: {

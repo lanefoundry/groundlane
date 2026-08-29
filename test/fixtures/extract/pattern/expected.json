@@ -1,0 +1,28 @@
+{
+  "fields": [
+    {
+      "engine": "pattern",
+      "name": "planNames",
+      "pattern": "Plan:\\s+(?<plan>[A-Za-z]+)\\s+costs\\s+\\$\\d+\\/month",
+      "group": "plan",
+      "many": true
+    },
+    {
+      "engine": "pattern",
+      "name": "firstPrice",
+      "pattern": "\\$(\\d+)\\/month",
+      "group": 1
+    },
+    {
+      "engine": "pattern",
+      "name": "missingVat",
+      "pattern": "VAT:\\s+(\\d+%)"
+    }
+  ],
+  "data": {
+    "planNames": ["Starter", "Pro"],
+    "firstPrice": "19",
+    "missingVat": null
+  },
+  "missingFields": ["missingVat"]
+}

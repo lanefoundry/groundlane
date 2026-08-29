@@ -515,13 +515,25 @@ export interface ProviderBalanceChecker {
   getBalance(signal: AbortSignal): Promise<ProviderBalanceResult>;
 }
 
-export interface ExtractionField {
+export interface SelectorExtractionField {
+  engine?: "selector";
   name: string;
   selector: string;
   value: "text" | "html" | "attribute";
   attribute?: string;
   many?: boolean;
 }
+
+export interface PatternExtractionField {
+  engine: "pattern";
+  name: string;
+  pattern: string;
+  flags?: string;
+  group?: string | number;
+  many?: boolean;
+}
+
+export type ExtractionField = SelectorExtractionField | PatternExtractionField;
 
 export type ExtractedValue = string | string[] | null;
 

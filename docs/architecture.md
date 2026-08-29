@@ -173,10 +173,13 @@ Implemented image paths are Brave Image Search, Serper Images, and SerpApi Googl
 
 1. Retrieve the page through the same fetch pipeline and security policy as `web_fetch`.
 2. Validate field names, selectors, value modes, and result limits.
-3. Extract text, HTML, or attribute values deterministically from the DOM.
+3. Extract selector text/HTML/attribute values from the DOM or bounded pattern captures from fetched HTML.
 4. Return structured data and an explicit `missingFields` list.
 
-The current extractor engine is `selector` only. Future `pattern`, `schema`, or
+The current extractor engines are deterministic `selector` and bounded
+`pattern`. Pattern extraction is not an arbitrary-regex sandbox: it rejects
+high-risk regex syntax such as backreferences, lookarounds, and nested
+quantifiers, and caps pattern input size before matching. Future `schema` or
 `llm` engines must be explicit engine choices with separate validation,
 provenance, bounds, fixtures, and failure shapes. There is no hidden LLM
 extraction step. A future semantic extractor must be opt-in and identify its

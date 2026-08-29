@@ -8,13 +8,25 @@ import type { ExtractionField } from "../../src/core/contracts.js";
 import type { ExtractionLimits } from "../../src/core/extract-fields.js";
 import { extractFields } from "../../src/core/extract-fields.js";
 
-const fieldSchema = z.object({
+const selectorFieldSchema = z.object({
+  engine: z.literal("selector").optional(),
   name: z.string(),
   selector: z.string(),
   value: z.enum(["text", "html", "attribute"]),
   attribute: z.string().optional(),
   many: z.boolean().optional(),
 });
+
+const patternFieldSchema = z.object({
+  engine: z.literal("pattern"),
+  name: z.string(),
+  pattern: z.string(),
+  flags: z.string().optional(),
+  group: z.union([z.string(), z.number().int()]).optional(),
+  many: z.boolean().optional(),
+});
+
+const fieldSchema = z.union([selectorFieldSchema, patternFieldSchema]);
 
 const expectedSchema = z.object({
   fields: z.array(fieldSchema),
@@ -36,13 +48,26 @@ const defaultLimits: ExtractionLimits = {
 };
 
 function normalizeFields(fields: readonly z.infer<typeof fieldSchema>[]): ExtractionField[] {
-  return fields.map((field) => ({
-    name: field.name,
-    selector: field.selector,
-    value: field.value,
-    ...(field.attribute === undefined ? {} : { attribute: field.attribute }),
-    ...(field.many === undefined ? {} : { many: field.many }),
-  }));
+  return fields.map((field) => {
+    if (field.engine === "pattern") {
+      return {
+        engine: "pattern",
+        name: field.name,
+        pattern: field.pattern,
+        ...(field.flags === undefined ? {} : { flags: field.flags }),
+        ...(field.group === undefined ? {} : { group: field.group }),
+        ...(field.many === undefined ? {} : { many: field.many }),
+      };
+    }
+    return {
+      ...(field.engine === undefined ? {} : { engine: field.engine }),
+      name: field.name,
+      selector: field.selector,
+      value: field.value,
+      ...(field.attribute === undefined ? {} : { attribute: field.attribute }),
+      ...(field.many === undefined ? {} : { many: field.many }),
+    };
+  });
 }
 
 void test("extractFields matches selector fixture corpus", async () => {
@@ -52,7 +77,7 @@ void test("extractFields matches selector fixture corpus", async () => {
     .map((entry) => entry.name)
     .sort();
 
-  assert.deepEqual(fixtureNames, ["html-card", "limits", "product-list"]);
+  assert.deepEqual(fixtureNames, ["html-card", "limits", "pattern", "product-list"]);
 
   for (const fixtureName of fixtureNames) {
     const directory = join(root, fixtureName);

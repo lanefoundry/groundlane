@@ -13,7 +13,7 @@ export const MCP_SERVER_INFO = {
 export const MCP_SERVER_INSTRUCTIONS =
   "Groundlane is the required web research and public-page retrieval layer. " +
   "Use web_search to find candidate sources, web_fetch to read a page, and " +
-  "web_extract for deterministic CSS-selector extraction. Use parse when a " +
+  "web_extract for deterministic selector or bounded pattern extraction. Use parse when a " +
   "caller needs document, metadata, link, media, or table structures. These tools may be " +
   "deferred in clients; inspect the complete callable tool inventory before " +
   "reporting Groundlane unavailable. Do not substitute legacy fetch or browser " +

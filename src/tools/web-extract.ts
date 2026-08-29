@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { ExtractionField } from "../core/contracts.js";
 import { extractFields } from "../core/extract-fields.js";
 import type { FetchPipeline } from "../core/fetch-pipeline.js";
 import { Deadline, type ConcurrencyLimiter } from "../core/limits.js";
@@ -8,8 +9,9 @@ import type { McpModule } from "../mcp/registry.js";
 import { structuredToolResult } from "../mcp/results.js";
 import { resultEnvelopeSchema, toolError, withConcurrency } from "./common.js";
 
-const fieldSchema = z
+const selectorFieldSchema = z
   .object({
+    engine: z.literal("selector").default("selector"),
     name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/u),
     selector: z.string().trim().min(1).max(500),
     value: z.enum(["text", "html", "attribute"]).default("text"),
@@ -19,6 +21,17 @@ const fieldSchema = z
   .refine((field) => field.value !== "attribute" || field.attribute !== undefined, {
     message: "attribute is required when value is attribute",
   });
+
+const patternFieldSchema = z.object({
+  engine: z.literal("pattern"),
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/u),
+  pattern: z.string().min(1).max(500),
+  flags: z.string().regex(/^[imu]*$/u).optional(),
+  group: z.union([z.string().trim().min(1).max(128), z.number().int().min(0).max(100)]).optional(),
+  many: z.boolean().default(false),
+});
+
+const fieldSchema = z.union([selectorFieldSchema, patternFieldSchema]);
 
 const inputSchema = z.object({
   url: z.url().refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
@@ -63,7 +76,7 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
         "web_extract",
         {
           description:
-            "Extract deterministic structured fields from a public page with CSS selectors. No LLM inference is performed.",
+            "Extract deterministic structured fields from a public page with selector or bounded pattern engines. No LLM inference is performed.",
           inputSchema,
           outputSchema: resultEnvelopeSchema(extractDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
@@ -90,13 +103,26 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
                   },
                   extra.signal,
                 );
-                const fields = input.fields.map((field) => ({
-                  name: field.name,
-                  selector: field.selector,
-                  value: field.value,
-                  many: field.many,
-                  ...(field.attribute === undefined ? {} : { attribute: field.attribute }),
-                }));
+                const fields: ExtractionField[] = input.fields.map((field) => {
+                  if (field.engine === "pattern") {
+                    return {
+                      engine: "pattern",
+                      name: field.name,
+                      pattern: field.pattern,
+                      many: field.many,
+                      ...(field.flags === undefined ? {} : { flags: field.flags }),
+                      ...(field.group === undefined ? {} : { group: field.group }),
+                    };
+                  }
+                  return {
+                    engine: "selector",
+                    name: field.name,
+                    selector: field.selector,
+                    value: field.value,
+                    many: field.many,
+                    ...(field.attribute === undefined ? {} : { attribute: field.attribute }),
+                  };
+                });
                 const extracted = extractFields(page.content, fields, {
                   maxFields: 50,
                   maxValuesPerField: 100,
