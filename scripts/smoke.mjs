@@ -21,6 +21,7 @@ try {
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [
+    "parse",
     "provider_balance",
     "provider_capabilities",
     "provider_quota",
@@ -58,6 +59,18 @@ try {
   });
   assert.equal(budget.isError, undefined);
   assert.equal(budget.structuredContent?.ok, true);
+
+  const parsed = await client.callTool({
+    name: "parse",
+    arguments: {
+      html: "<!doctype html><title>Groundlane Smoke</title><main><h1>Groundlane Smoke</h1><p>Parser smoke fixture.</p></main>",
+      baseUrl: "https://example.com/",
+      purpose: "document",
+    },
+  });
+  assert.equal(parsed.isError, undefined);
+  assert.equal(parsed.structuredContent?.ok, true);
+  assert.match(JSON.stringify(parsed.structuredContent), /"title":"Groundlane Smoke"/);
 
   const fetched = await client.callTool({
     name: "web_fetch",

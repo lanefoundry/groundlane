@@ -18,6 +18,8 @@ function runSmoke() {
 }
 
 let lastStatus = "unknown";
+let lastStdout = "";
+let lastStderr = "";
 
 for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
   const result = runSmoke();
@@ -28,10 +30,21 @@ for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
   }
 
   lastStatus = String(result.status ?? "signal");
+  lastStdout = result.stdout;
+  lastStderr = result.stderr;
   process.stdout.write(`Production smoke not ready (${attempt}/${maxAttempts}); retrying\n`);
   if (attempt < maxAttempts) {
     await sleep(delayMs);
   }
+}
+
+if (lastStdout.length > 0) {
+  process.stdout.write("Last smoke stdout:\n");
+  process.stdout.write(lastStdout);
+}
+if (lastStderr.length > 0) {
+  process.stderr.write("Last smoke stderr:\n");
+  process.stderr.write(lastStderr);
 }
 
 throw new Error(`Production smoke failed after ${maxAttempts} attempts; last status: ${lastStatus}`);
