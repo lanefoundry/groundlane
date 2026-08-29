@@ -25,10 +25,13 @@ try {
     "provider_capabilities",
     "web_answer",
     "web_content",
+    "web_crawl",
     "web_extract",
     "web_fetch",
+    "web_images",
     "web_map",
     "web_news",
+    "web_research",
     "web_search",
   ]);
 

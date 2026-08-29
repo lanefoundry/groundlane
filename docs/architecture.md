@@ -93,7 +93,7 @@ A generic upstream 4xx does not automatically receive an expensive browser retry
 3. An explicit provider stays single-source. Automatic searches default to `balanced`, which deterministically selects at most two complementary provider families; `deep` selects at most three and `fallback` retains sequential first-success routing.
 4. Atomically consume one instance-local monthly attempt immediately before each selected provider call.
 5. Run federated calls concurrently under the original shared abort signal and deadline. One successful provider is a partial success; all-provider failure returns a stable sanitized error.
-6. Canonicalize public HTTP(S) result URLs, remove conservative tracking parameters, merge exact duplicates, and combine ranks with equal-weight Reciprocal Rank Fusion. Raw provider scores remain provenance and are never added together.
+6. Canonicalize public HTTP(S) result URLs, remove conservative tracking parameters, merge exact duplicates, and combine ranks with health-adjusted Reciprocal Rank Fusion. Raw provider scores remain provenance and are never added together.
 7. Apply a bounded hostname-diversity policy and return selected, attempted, successful, and per-result provider attribution.
 
 Automatic fusion is deliberately bounded rather than query-all: `balanced` makes at most two attempts and `deep` at most three. Callers that prioritize a single attempt can use `strategy=fallback` or pin `provider` explicitly.
@@ -108,6 +108,15 @@ Monthly counters reset on a UTC month boundary and are intentionally conservativ
 5. Return each provider answer separately with citations, source result metadata, selected providers, attempted providers, and successful providers. Groundlane does not synthesize or rank the answer texts with an LLM.
 
 The first implemented answer providers are You.com Answer and Linkup sourced answers. Parallel's cited Responses API remains cataloged as a vendor feature but is not wired into `web_answer` until its endpoint and response contract are verified in this repo.
+
+### `web_research`
+
+1. Validate the research query, provider selectors, effort, source controls, result count, and deadline.
+2. Filter research-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider research APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider report.
+4. Return each provider report separately with citations, selected providers, attempted providers, and successful providers. Groundlane does not synthesize provider reports with an LLM.
+
+Implemented research paths are You.com Research and Parallel's synchronous OpenAI-compatible Responses API. Linkup Research remains outside this synchronous tool because the checked docs describe an async minutes-scale workflow.
 
 ### `web_content`
 
@@ -129,6 +138,16 @@ Implemented content paths are Linkup Fetch, You.com Contents, Exa Contents, Tavi
 
 Implemented map paths are Firecrawl Map and Tavily Map. Groundlane treats map as URL discovery only; content extraction remains in `web_content` or `web_fetch`.
 
+### `web_crawl`
+
+1. Validate the root URL with the same public URL policy before calling any provider.
+2. Filter crawl-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider crawl APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider result.
+4. Normalize each provider response to bounded pages, provider job status metadata, and per-provider result blocks.
+5. Revalidate every provider-returned page URL, cap page count and per-page content, and deduplicate the top-level page list without hiding provider attribution.
+
+Implemented crawl paths are Firecrawl Crawl with bounded polling and Tavily Crawl. Groundlane treats crawl as bounded discovery/content retrieval, not an unbounded site mirror.
+
 ### `web_news`
 
 1. Validate query, provider selection, result limits, and optional country/language controls before calling any provider.
@@ -138,6 +157,16 @@ Implemented map paths are Firecrawl Map and Tavily Map. Groundlane treats map as
 5. Revalidate provider-returned result URLs and deduplicate the top-level result list without hiding provider attribution.
 
 Implemented news paths are Brave News Search, Serper News, and SerpApi Google News.
+
+### `web_images`
+
+1. Validate query, provider selection, result limits, and optional country/language controls before calling any provider.
+2. Filter image-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider image APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider result.
+4. Normalize each provider response to attributed `{provider,title?,imageUrl,sourceUrl?,thumbnailUrl?,width?,height?}` image items.
+5. Revalidate provider-returned image, thumbnail, and source URLs and deduplicate the top-level result list without hiding provider attribution.
+
+Implemented image paths are Brave Image Search, Serper Images, and SerpApi Google Images.
 
 ### `web_extract`
 

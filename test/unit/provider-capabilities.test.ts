@@ -19,4 +19,5 @@ void test("provider capabilities return one entry per requested provider", () =>
   assert.deepEqual(capabilities.map((item) => item.provider), ["linkup", "serper"]);
   assert.equal(capabilities[0]?.balanceSupport, "api");
   assert.equal(capabilities[1]?.balanceSupport, "dashboard");
+  assert.ok(capabilities[1]?.groundlaneTools.includes("web_images"));
 });

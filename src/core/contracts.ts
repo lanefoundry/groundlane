@@ -95,6 +95,9 @@ export type SearchTimeRange = "day" | "week" | "month" | "year";
 export type SearchStrategy = "fallback" | "balanced" | "deep";
 export type AnswerProviderId = Extract<KnownSearchProviderId, "linkup" | "you">;
 export type AnswerStrategy = "fallback" | "parallel";
+export type ResearchProviderId = Extract<KnownSearchProviderId, "parallel" | "you">;
+export type ResearchStrategy = "fallback" | "parallel";
+export type ResearchEffort = "lite" | "standard" | "deep";
 export type ContentProviderId = Extract<
   KnownSearchProviderId,
   "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "you"
@@ -102,8 +105,12 @@ export type ContentProviderId = Extract<
 export type ContentStrategy = "fallback" | "parallel";
 export type MapProviderId = Extract<KnownSearchProviderId, "firecrawl" | "tavily">;
 export type MapStrategy = "fallback" | "parallel";
+export type CrawlProviderId = Extract<KnownSearchProviderId, "firecrawl" | "tavily">;
+export type CrawlStrategy = "fallback" | "parallel";
 export type NewsProviderId = Extract<KnownSearchProviderId, "brave" | "serpapi" | "serper">;
 export type NewsStrategy = "fallback" | "parallel";
+export type ImagesProviderId = Extract<KnownSearchProviderId, "brave" | "serpapi" | "serper">;
+export type ImagesStrategy = "fallback" | "parallel";
 
 export interface SearchRequest {
   query: string;
@@ -202,6 +209,50 @@ export interface AnswerProvider {
   answer(request: AnswerRequest, signal: AbortSignal): Promise<AnswerProviderResult>;
 }
 
+export interface ResearchRequest {
+  query: string;
+  effort: ResearchEffort;
+  domains?: readonly string[];
+  excludeDomains?: readonly string[];
+  timeRange?: SearchTimeRange;
+  country?: string;
+  provider?: "auto" | ResearchProviderId;
+  providers?: readonly ResearchProviderId[];
+  strategy?: ResearchStrategy;
+}
+
+export interface ResearchCitation {
+  url: string;
+  title?: string;
+  excerpts: readonly string[];
+}
+
+export interface ResearchProviderResult {
+  provider: ResearchProviderId;
+  report: string;
+  citations: readonly ResearchCitation[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ResearchResult {
+  query: string;
+  effort: ResearchEffort;
+  strategy: ResearchStrategy;
+  providersSelected: readonly ResearchProviderId[];
+  providersAttempted: readonly ResearchProviderId[];
+  providersSucceeded: readonly ResearchProviderId[];
+  reports: readonly ResearchProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ResearchProvider {
+  readonly id: ResearchProviderId;
+  supports(request: ResearchRequest): boolean;
+  research(request: ResearchRequest, signal: AbortSignal): Promise<ResearchProviderResult>;
+}
+
 export interface ContentRequest {
   url: string;
   maxContentChars: number;
@@ -286,6 +337,63 @@ export interface MapProvider {
   map(request: MapRequest, signal: AbortSignal): Promise<MapProviderResult>;
 }
 
+export interface CrawlRequest {
+  url: string;
+  maxPages: number;
+  maxContentChars: number;
+  provider?: "auto" | CrawlProviderId;
+  providers?: readonly CrawlProviderId[];
+  strategy?: CrawlStrategy;
+  instructions?: string;
+  includeSubdomains?: boolean;
+  ignoreCache?: boolean;
+  maxDepth?: number;
+  maxBreadth?: number;
+  maxPolls?: number;
+  pollIntervalMs?: number;
+}
+
+export interface CrawlPage {
+  url: string;
+  title?: string;
+  description?: string;
+  content?: string;
+  contentChars: number;
+  truncated: boolean;
+  provider: CrawlProviderId;
+}
+
+export interface CrawlProviderResult {
+  provider: CrawlProviderId;
+  url: string;
+  status: "completed" | "running" | "failed" | "unknown";
+  jobId?: string;
+  total?: number;
+  completed?: number;
+  creditsUsed?: number;
+  pages: readonly CrawlPage[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface CrawlResult {
+  url: string;
+  strategy: CrawlStrategy;
+  providersSelected: readonly CrawlProviderId[];
+  providersAttempted: readonly CrawlProviderId[];
+  providersSucceeded: readonly CrawlProviderId[];
+  pages: readonly CrawlPage[];
+  providerResults: readonly CrawlProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface CrawlProvider {
+  readonly id: CrawlProviderId;
+  supports(request: CrawlRequest): boolean;
+  crawl(request: CrawlRequest, signal: AbortSignal): Promise<CrawlProviderResult>;
+}
+
 export interface NewsRequest {
   query: string;
   maxResults: number;
@@ -331,6 +439,56 @@ export interface NewsProvider {
   readonly id: NewsProviderId;
   supports(request: NewsRequest): boolean;
   news(request: NewsRequest, signal: AbortSignal): Promise<NewsProviderResult>;
+}
+
+export interface ImagesRequest {
+  query: string;
+  maxResults: number;
+  provider?: "auto" | ImagesProviderId;
+  providers?: readonly ImagesProviderId[];
+  strategy?: ImagesStrategy;
+  country?: string;
+  language?: string;
+  safeSearch?: "off" | "moderate" | "strict";
+}
+
+export interface ImageItem {
+  title: string;
+  imageUrl: string;
+  sourceUrl: string;
+  thumbnailUrl?: string;
+  source?: string;
+  width?: number;
+  height?: number;
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
+  provider: ImagesProviderId;
+}
+
+export interface ImagesProviderResult {
+  provider: ImagesProviderId;
+  query: string;
+  results: readonly ImageItem[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ImagesResult {
+  query: string;
+  strategy: ImagesStrategy;
+  providersSelected: readonly ImagesProviderId[];
+  providersAttempted: readonly ImagesProviderId[];
+  providersSucceeded: readonly ImagesProviderId[];
+  results: readonly ImageItem[];
+  providerResults: readonly ImagesProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ImagesProvider {
+  readonly id: ImagesProviderId;
+  supports(request: ImagesRequest): boolean;
+  images(request: ImagesRequest, signal: AbortSignal): Promise<ImagesProviderResult>;
 }
 
 export type ProviderBalanceStatus =

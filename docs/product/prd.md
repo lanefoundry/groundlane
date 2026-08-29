@@ -2,11 +2,11 @@
 
 狀態：Draft for implementation  
 日期：2026-08-21  
-範圍：`web_fetch`、`web_search`、`web_answer`、`web_content`、`web_map`、`web_news`、`web_extract`，provider diagnostics，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
+範圍：`web_fetch`、`web_search`、`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news`、`web_images`、`web_extract`，provider diagnostics，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
 
 ## 1. 摘要
 
-Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、搜尋 news-specific indexes 的 `web_news`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance` 與 `provider_capabilities`，用來檢查帳號餘額與已實作功能邊界。
+Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、取得 provider-attributed research reports 的 `web_research`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、有界 crawl 公開網站的 `web_crawl`、搜尋 news-specific indexes 的 `web_news`、搜尋 image-specific indexes 的 `web_images`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance` 與 `provider_capabilities`，用來檢查帳號餘額與已實作功能邊界。
 
 系統以便宜、容易觀測的 HTTP retrieval 為優先；只有在明確需要 render 時，才升級到內部 **Groundlane Browser** engine。搜尋透過可替換 provider adapters，不自建全網 index。Extraction 必須 deterministic，不以隱藏的 LLM call 假裝穩定 structured output。
 
@@ -124,7 +124,7 @@ durationMs, warnings[]
 - explicit provider 不可被靜默換成另一家。
 - `fallback` 只有 timeout、rate limit、provider 5xx 或 malformed response 才能換下一家；auth/input/政策類錯誤不得 fallback。
 - federated strategy 共用同一個 deadline，至少一家成功即可回傳 partial success；全部失敗才回 `PROVIDER_UNAVAILABLE`。
-- 多家結果先做保守 canonical URL 去重，再以 equal-weight RRF 融合；不得直接相加不同 provider 的 raw score。
+- 多家結果先做保守 canonical URL 去重，再以 health-adjusted RRF 融合；不得直接相加不同 provider 的 raw score。
 - response 必須清楚標出 selected、attempted、successful providers，以及每筆 fused result 的 rank provenance。
 - provider 回傳 URL 仍屬不可信資料，後續 fetch 必須重新套用 URL policy。
 
@@ -348,7 +348,7 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 
 ### MCP 與工具契約
 
-- [ ] MCP client 可 initialize、list tools，且只看到 `web_fetch`、`web_search`、`web_extract`。
+- [ ] MCP client 可 initialize、list tools，且只看到已註冊的 Groundlane stateless tools 與 provider diagnostics。
 - [ ] 每個工具至少有 success、invalid input、deadline、limit 與 upstream failure contract test。
 - [ ] MCP text content 與 `structuredContent` 表達同一結果，供不同 client 相容使用。
 - [ ] error codes 與 schema 由測試固定，raw exception 不外洩。

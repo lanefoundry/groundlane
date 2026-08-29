@@ -3,18 +3,25 @@ import { LinkupAnswerProvider } from "./adapters/answer/linkup.js";
 import { YouAnswerProvider } from "./adapters/answer/you.js";
 import { ExaContentProvider } from "./adapters/content/exa.js";
 import { FirecrawlContentProvider } from "./adapters/content/firecrawl.js";
+import { FirecrawlCrawlProvider } from "./adapters/crawl/firecrawl.js";
 import { FirecrawlMapProvider } from "./adapters/map/firecrawl.js";
 import { KeenableContentProvider } from "./adapters/content/keenable.js";
 import { LinkupContentProvider } from "./adapters/content/linkup.js";
+import { BraveImagesProvider } from "./adapters/images/brave.js";
+import { SerperImagesProvider } from "./adapters/images/serper.js";
+import { SerpApiImagesProvider } from "./adapters/images/serpapi.js";
 import { BraveNewsProvider } from "./adapters/news/brave.js";
 import { SerperNewsProvider } from "./adapters/news/serper.js";
 import { SerpApiNewsProvider } from "./adapters/news/serpapi.js";
 import { TavilyMapProvider } from "./adapters/map/tavily.js";
 import { TavilyContentProvider } from "./adapters/content/tavily.js";
+import { TavilyCrawlProvider } from "./adapters/crawl/tavily.js";
 import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
 import { YouBalanceChecker } from "./adapters/balance/you.js";
+import { ParallelResearchProvider } from "./adapters/research/parallel.js";
+import { YouResearchProvider } from "./adapters/research/you.js";
 import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwright.js";
 import { SafeHttpFetcher } from "./adapters/http/undici-fetcher.js";
 import { JinaReaderBackend } from "./adapters/reader/jina.js";
@@ -30,15 +37,18 @@ import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
 import { TavilySearchProvider } from "./adapters/search/tavily.js";
 import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
-import type { AnswerProvider, BrowserBackend, ContentProvider, MapProvider, NewsProvider, SearchProvider } from "./core/contracts.js";
+import type { AnswerProvider, BrowserBackend, ContentProvider, CrawlProvider, ImagesProvider, MapProvider, NewsProvider, ResearchProvider, SearchProvider } from "./core/contracts.js";
 import { AnswerRouter } from "./core/answer-router.js";
 import { ContentRouter } from "./core/content-router.js";
+import { CrawlRouter } from "./core/crawl-router.js";
 import { FetchPipeline } from "./core/fetch-pipeline.js";
+import { ImagesRouter } from "./core/images-router.js";
 import { ConcurrencyLimiter } from "./core/limits.js";
 import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
 import { MapRouter } from "./core/map-router.js";
 import { NewsRouter } from "./core/news-router.js";
 import { ProviderBalanceRegistry } from "./core/provider-balance.js";
+import { ResearchRouter } from "./core/research-router.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
@@ -46,10 +56,13 @@ import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
 import { createWebAnswerModule } from "./tools/web-answer.js";
 import { createWebContentModule } from "./tools/web-content.js";
+import { createWebCrawlModule } from "./tools/web-crawl.js";
 import { createWebExtractModule } from "./tools/web-extract.js";
 import { createWebFetchModule } from "./tools/web-fetch.js";
+import { createWebImagesModule } from "./tools/web-images.js";
 import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
+import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
 
 export interface GroundlaneServices {
@@ -108,6 +121,17 @@ export function createAnswerProviders(config: GroundlaneConfig): AnswerProvider[
   return providers;
 }
 
+export function createResearchProviders(config: GroundlaneConfig): ResearchProvider[] {
+  const providers: ResearchProvider[] = [];
+  if (config.providerKeys.you !== undefined) {
+    providers.push(new YouResearchProvider({ apiKey: config.providerKeys.you }));
+  }
+  if (config.providerKeys.parallel !== undefined) {
+    providers.push(new ParallelResearchProvider({ apiKey: config.providerKeys.parallel }));
+  }
+  return providers;
+}
+
 export function createContentProviders(config: GroundlaneConfig): ContentProvider[] {
   const providers: ContentProvider[] = [];
   if (config.providerKeys.linkup !== undefined) {
@@ -144,6 +168,17 @@ export function createMapProviders(config: GroundlaneConfig): MapProvider[] {
   return providers;
 }
 
+export function createCrawlProviders(config: GroundlaneConfig): CrawlProvider[] {
+  const providers: CrawlProvider[] = [];
+  if (config.providerKeys.firecrawl !== undefined) {
+    providers.push(new FirecrawlCrawlProvider({ apiKey: config.providerKeys.firecrawl }));
+  }
+  if (config.providerKeys.tavily !== undefined) {
+    providers.push(new TavilyCrawlProvider({ apiKey: config.providerKeys.tavily }));
+  }
+  return providers;
+}
+
 export function createNewsProviders(config: GroundlaneConfig): NewsProvider[] {
   const providers: NewsProvider[] = [];
   if (config.providerKeys.brave !== undefined) {
@@ -154,6 +189,20 @@ export function createNewsProviders(config: GroundlaneConfig): NewsProvider[] {
   }
   if (config.providerKeys.serpapi !== undefined) {
     providers.push(new SerpApiNewsProvider({ apiKey: config.providerKeys.serpapi }));
+  }
+  return providers;
+}
+
+export function createImagesProviders(config: GroundlaneConfig): ImagesProvider[] {
+  const providers: ImagesProvider[] = [];
+  if (config.providerKeys.brave !== undefined) {
+    providers.push(new BraveImagesProvider({ apiKey: config.providerKeys.brave }));
+  }
+  if (config.providerKeys.serper !== undefined) {
+    providers.push(new SerperImagesProvider({ apiKey: config.providerKeys.serper }));
+  }
+  if (config.providerKeys.serpapi !== undefined) {
+    providers.push(new SerpApiImagesProvider({ apiKey: config.providerKeys.serpapi }));
   }
   return providers;
 }
@@ -181,9 +230,12 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const providers = createSearchProviders(config);
   const healthTracker = new DynamicPenaltyHealthTracker();
   const answerProviders = createAnswerProviders(config);
+  const researchProviders = createResearchProviders(config);
   const contentProviders = createContentProviders(config);
   const mapProviders = createMapProviders(config);
+  const crawlProviders = createCrawlProviders(config);
   const newsProviders = createNewsProviders(config);
+  const imagesProviders = createImagesProviders(config);
   const searchRouter = new SearchRouter(
     providers,
     config.searchProviderOrder,
@@ -194,9 +246,12 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     ]),
   );
   const answerRouter = new AnswerRouter(answerProviders);
+  const researchRouter = new ResearchRouter(researchProviders);
   const contentRouter = new ContentRouter(contentProviders);
   const mapRouter = new MapRouter(mapProviders);
+  const crawlRouter = new CrawlRouter(crawlProviders);
   const newsRouter = new NewsRouter(newsProviders);
+  const imagesRouter = new ImagesRouter(imagesProviders);
   const providerBalanceRegistry = new ProviderBalanceRegistry({
     supportedProviders: config.searchProviderOrder,
     configuredProviders: Object.keys(config.providerKeys),
@@ -223,6 +278,12 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
     }),
+    createWebResearchModule({
+      router: researchRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
     createWebContentModule({
       router: contentRouter,
       limiter,
@@ -235,8 +296,20 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
     }),
+    createWebCrawlModule({
+      router: crawlRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
     createWebNewsModule({
       router: newsRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createWebImagesModule({
+      router: imagesRouter,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
