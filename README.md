@@ -38,7 +38,7 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane `web_search` guardrails, exposed tools, keyless availability, and next checks |
 | `search_budget_status` | Inspects Groundlane's local search attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
 
-Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
+Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Non-explicit `web_search` fallback treats a single provider rejection, timeout, quota error, 5xx, or malformed response as a warning and continues to the next eligible provider; an explicit `provider` preserves that provider's error instead of silently switching sources. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
 
 Provider vendors expose more APIs than Groundlane currently wires into MCP. See [provider inventory](docs/operations/provider-inventory.md) for the verified feature backlog and the distinction between vendor capability, implemented Groundlane tool, live smoke, account balance evidence, and Groundlane's local attempt budgets.
 
@@ -143,7 +143,10 @@ GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 
 CI runs `pnpm run wait:container` and `pnpm run smoke:retry` after deploy, so a
 successful run means the Cloudflare Container application has left provisioning
-and the deployed MCP server responds with the expected tool contracts.
+and the deployed MCP server responds with the expected tool contracts. At
+runtime, the Worker also starts the named Container instance before proxied
+`/readyz` and authenticated `/mcp` requests when Cloudflare reports it as not
+running.
 
 ## Connect an MCP client
 

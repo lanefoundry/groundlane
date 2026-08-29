@@ -38,7 +38,7 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane `web_search` guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
 | `search_budget_status` | 檢查 Groundlane 本機 search attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
 
-Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
+Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 各 provider vendor 自家還有更多 API，Groundlane 目前沒有全部接成 MCP tool。請看 [provider inventory](docs/operations/provider-inventory.md) 的已查證 backlog，以及 vendor capability、已實作 Groundlane tool、live smoke、帳號餘額證據與 Groundlane 本機 attempt budget 之間的區分。
 
@@ -140,7 +140,9 @@ GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 
 CI deploy 後會跑 `pnpm run wait:container` 和 `pnpm run smoke:retry`，所以
 成功的 run 代表 Cloudflare Container application 已離開 provisioning，且
-production MCP server 會回應預期的 tool contracts。
+production MCP server 會回應預期的 tool contracts。Runtime 中，當 Cloudflare
+回報 named Container instance 尚未 running 時，Worker 也會在 proxied
+`/readyz` 與已驗證 `/mcp` request 前先啟動該 instance。
 
 ## 連接 MCP client
 
