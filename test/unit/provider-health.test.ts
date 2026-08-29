@@ -10,7 +10,11 @@ void test("DynamicPenaltyHealthTracker starts healthy with zero penalty", () => 
 });
 
 void test("DynamicPenaltyHealthTracker increments penalty on failure", () => {
-  const tracker = new DynamicPenaltyHealthTracker({ penaltyIncrement: 3, decayPerMinute: 1, circuitThreshold: 5, circuitCooldownMs: 60_000 });
+  const time = 0;
+  const tracker = new DynamicPenaltyHealthTracker(
+    { penaltyIncrement: 3, decayPerMinute: 1, circuitThreshold: 5, circuitCooldownMs: 60_000 },
+    () => time,
+  );
   tracker.recordFailure("tavily");
   assert.equal(tracker.penalty("tavily"), 3);
   tracker.recordFailure("tavily");
