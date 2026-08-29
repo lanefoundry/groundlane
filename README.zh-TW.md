@@ -234,12 +234,13 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | Bounded site crawl | Firecrawl、Tavily |
 | News search | Brave、Serper、SerpApi |
 | Image search | Brave、Serper、SerpApi |
-| Account balance | Linkup、You.com |
+| Account balance | Linkup、You.com、Firecrawl、SerpApi |
+| Quota diagnostics | Provider quota summary 與本機 search budget status |
 | Hosted Reader fallback | Jina Reader（opt-in） |
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
 | Cloudflare runtime | 目前支援 Worker + Container deployment；Browser Run、AI Search、AI Gateway、Agents 與 Workflows 是已查到的未來 adapter surface |
 
-自動搜尋路由可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup 與 You.com。Firecrawl 與 SerpApi 已查到 account-level API 候選；Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
+自動搜尋路由可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_quota` 會整合帳戶餘額、Groundlane 本機 `web_search` budget 與 capabilities；`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup、You.com、Firecrawl 與 SerpApi。Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
 
 ### Provider selection
 
@@ -251,7 +252,7 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 Cloudflare 目前是 Groundlane 的 production runtime，同時也有可成為未來 Groundlane adapter 的相關能力。AI Search 是給 operator-provided data 用的 managed search service，支援 Workers、REST 與 MCP。Browser Run / Browser Rendering 透過 REST API 或 Workers binding 提供 content、markdown、screenshot、PDF、accessibility tree、links、crawl 與 structured JSON browser actions。Agents 與 Workflows 提供 durable agent sessions、scheduled work、WebSockets、可恢復 steps 與 tool orchestration。AI Gateway 可提供 model observability、caching、retries、rate limiting 與 fallback。
 
-這些服務和 provider router 裡的 public-web search providers 不是同一層。因此 Cloudflare 不會列在 `provider_balance`：這個 tool 只查詢 web-data provider 官方 API 暴露的 account balance，目前是 Linkup credits 與 You.com API credits。
+這些服務和 provider router 裡的 public-web search providers 不是同一層。因此 Cloudflare 不會列在 `provider_balance`：這個 tool 只查詢 web-data provider 官方 API 暴露的 account balance，目前是 Linkup credits、You.com API credits、Firecrawl remaining credits 與 SerpApi searches left。
 
 Cloudflare usage 需要透過 Cloudflare dashboard、billing exports、logs、metrics，或未來獨立的 Cloudflare diagnostics 追蹤。Container 成本看的是 active runtime resource，例如 vCPU、memory、disk、egress、Workers、Durable Objects 與 logs；這些單位和 search-provider requests/credits 是不同帳。Groundlane 的 local budgets 不會限制 Cloudflare runtime 花費。
 
@@ -270,7 +271,7 @@ Worker / Node HTTP edge       authentication, request identity
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
-                              provider_balance | provider_capabilities
+                              provider_balance | provider_capabilities | provider_quota | search_budget_status
     |
     +-- provider router       可替換的 search adapters
     +-- safe HTTP + Reader    有界的內容取得與正文清理

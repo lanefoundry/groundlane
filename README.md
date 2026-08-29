@@ -240,6 +240,7 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | News search | Brave, Serper, SerpApi |
 | Image search | Brave, Serper, SerpApi |
 | Account balance | Linkup, You.com, Firecrawl, SerpApi |
+| Quota diagnostics | Provider quota summary and local search budget status |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
 | Cloudflare runtime | Worker + Container deployment today; Browser Run, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
@@ -275,7 +276,7 @@ Worker / Node HTTP edge       authentication, request identity
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
-                              provider_balance | provider_capabilities
+                              provider_balance | provider_capabilities | provider_quota | search_budget_status
     |
     +-- provider router       replaceable search adapters
     +-- safe HTTP + Reader    bounded retrieval and readable content
