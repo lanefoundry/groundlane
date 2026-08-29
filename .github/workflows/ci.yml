@@ -63,3 +63,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm run deploy
+      - name: Wait for Container application
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm run wait:container
+      - name: Production MCP smoke
+        env:
+          GROUNDLANE_AUTH_TOKEN: ${{ secrets.GROUNDLANE_AUTH_TOKEN }}
+          GROUNDLANE_MCP_URL: https://groundlane.vincent-xu-work.workers.dev/mcp
+        run: |
+          test -n "$GROUNDLANE_AUTH_TOKEN" || { echo "Missing GitHub environment secret: GROUNDLANE_AUTH_TOKEN" >&2; exit 1; }
+          pnpm run smoke:retry

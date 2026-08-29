@@ -17,10 +17,12 @@
     "secrets:setup": "tsx scripts/cloudflare-secrets.mts setup",
     "secrets:status": "tsx scripts/cloudflare-secrets.mts status",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:retry": "node scripts/smoke-retry.mjs",
     "test": "node --test --import tsx --import ./test/support/node-test-setup.mjs 'test/**/*.test.ts'",
     "test:coverage": "c8 pnpm test",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types",
+    "wait:container": "node scripts/wait-cloudflare-container.mjs",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

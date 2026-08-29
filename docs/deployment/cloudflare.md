@@ -283,7 +283,7 @@ Run checks from a network outside the deployment account:
 9. Private, loopback, metadata, redirect-to-private, and browser-subresource targets are blocked.
 10. Timeouts, byte/output caps, concurrency, and queue limits behave as configured.
 
-The bundled smoke client verifies the exact MCP tool list plus `web_fetch` and `web_extract` against the reserved `example.com` documentation domain:
+The bundled smoke client verifies the exact MCP tool list, diagnostic tools, plus `web_fetch` and `web_extract` against the reserved `example.com` documentation domain:
 
 ```bash
 GROUNDLANE_MCP_URL=https://your-worker.example/mcp \
@@ -294,6 +294,15 @@ pnpm smoke
 Add `GROUNDLANE_SMOKE_BROWSER=1` to exercise Groundlane Browser as well. `web_search` is intentionally omitted from this smoke command because it requires a live provider credential and consumes provider quota.
 
 Do not use arbitrary third-party sites as a production smoke test. Host controlled fixtures and keep live-provider tests opt-in.
+
+After `wrangler deploy`, Cloudflare can report the Worker deployment as
+successful while the Container application is still provisioning a new image.
+CI therefore runs `pnpm run wait:container` before `pnpm run smoke:retry`.
+`wait:container` polls `wrangler containers list` until
+`groundlane-groundlanecontainer` is `active` or `ready`; `smoke:retry` then
+retries the MCP smoke until the deployed Container responds with the expected
+schema. This catches stale named Container instances instead of treating
+`wrangler deploy` as the final readiness signal.
 
 ## Operations
 

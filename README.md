@@ -132,13 +132,18 @@ to verify health, readiness, authentication, and MCP behavior.
 
 Pushes to `main` automatically deploy after the CI quality job succeeds. The
 repository must have `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` GitHub
-Actions secrets; see [Continuous deployment](docs/deployment/cloudflare.md#continuous-deployment-from-github).
+Actions secrets, plus `GROUNDLANE_AUTH_TOKEN` for post-deploy smoke; see
+[Continuous deployment](docs/deployment/cloudflare.md#continuous-deployment-from-github).
 
 Cloudflare Container deploys build a Docker image locally before upload. If `pnpm run deploy` stalls while loading Docker Hub metadata or pulling `node:22-bookworm-slim`, check the local Docker credential helper first; this is a local Docker/registry problem, not a Worker or TypeScript build result. The production smoke test remains the final deployment proof:
 
 ```bash
 GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 ```
+
+CI runs `pnpm run wait:container` and `pnpm run smoke:retry` after deploy, so a
+successful run means the Cloudflare Container application has left provisioning
+and the deployed MCP server responds with the expected tool contracts.
 
 ## Connect an MCP client
 

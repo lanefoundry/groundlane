@@ -128,14 +128,19 @@ pnpm secrets:setup -- --from-file .cloudflare-secrets.env
 readiness、authentication 與 MCP 行為。
 
 push 到 `main` 後，GitHub Actions 會在 CI quality job 成功後自動部署。Repo
-必須設定 `CLOUDFLARE_ACCOUNT_ID` 與 `CLOUDFLARE_API_TOKEN` Actions secrets；
-詳見[GitHub 持續部署](docs/deployment/cloudflare.md#continuous-deployment-from-github)。
+必須設定 `CLOUDFLARE_ACCOUNT_ID` 與 `CLOUDFLARE_API_TOKEN` Actions secrets，
+並設定 `GROUNDLANE_AUTH_TOKEN` 給 post-deploy smoke 使用；詳見
+[GitHub 持續部署](docs/deployment/cloudflare.md#continuous-deployment-from-github)。
 
 Cloudflare Container deploy 會先在本機 build Docker image 再上傳。如果 `pnpm run deploy` 卡在讀取 Docker Hub metadata 或拉取 `node:22-bookworm-slim`，先檢查本機 Docker credential helper；這是本機 Docker／registry 問題，不是 Worker 或 TypeScript build 的結果。production smoke 才是最終部署證據：
 
 ```bash
 GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 ```
+
+CI deploy 後會跑 `pnpm run wait:container` 和 `pnpm run smoke:retry`，所以
+成功的 run 代表 Cloudflare Container application 已離開 provisioning，且
+production MCP server 會回應預期的 tool contracts。
 
 ## 連接 MCP client
 
