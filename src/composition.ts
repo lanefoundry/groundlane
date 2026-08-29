@@ -1,5 +1,20 @@
 import { DisabledBrowserBackend } from "./adapters/browser/disabled.js";
+import { LinkupAnswerProvider } from "./adapters/answer/linkup.js";
+import { YouAnswerProvider } from "./adapters/answer/you.js";
+import { ExaContentProvider } from "./adapters/content/exa.js";
+import { FirecrawlContentProvider } from "./adapters/content/firecrawl.js";
+import { FirecrawlMapProvider } from "./adapters/map/firecrawl.js";
+import { KeenableContentProvider } from "./adapters/content/keenable.js";
+import { LinkupContentProvider } from "./adapters/content/linkup.js";
+import { BraveNewsProvider } from "./adapters/news/brave.js";
+import { SerperNewsProvider } from "./adapters/news/serper.js";
+import { SerpApiNewsProvider } from "./adapters/news/serpapi.js";
+import { TavilyMapProvider } from "./adapters/map/tavily.js";
+import { TavilyContentProvider } from "./adapters/content/tavily.js";
+import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
+import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
+import { YouBalanceChecker } from "./adapters/balance/you.js";
 import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwright.js";
 import { SafeHttpFetcher } from "./adapters/http/undici-fetcher.js";
 import { JinaReaderBackend } from "./adapters/reader/jina.js";
@@ -7,6 +22,7 @@ import { BraveSearchProvider } from "./adapters/search/brave.js";
 import { BrowserbaseSearchProvider } from "./adapters/search/browserbase.js";
 import { ExaSearchProvider } from "./adapters/search/exa.js";
 import { FirecrawlSearchProvider } from "./adapters/search/firecrawl.js";
+import { KeenableSearchProvider } from "./adapters/search/keenable.js";
 import { LinkupSearchProvider } from "./adapters/search/linkup.js";
 import { ParallelSearchProvider } from "./adapters/search/parallel.js";
 import { SerperSearchProvider } from "./adapters/search/serper.js";
@@ -14,15 +30,26 @@ import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
 import { TavilySearchProvider } from "./adapters/search/tavily.js";
 import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
-import type { BrowserBackend, SearchProvider } from "./core/contracts.js";
+import type { AnswerProvider, BrowserBackend, ContentProvider, MapProvider, NewsProvider, SearchProvider } from "./core/contracts.js";
+import { AnswerRouter } from "./core/answer-router.js";
+import { ContentRouter } from "./core/content-router.js";
 import { FetchPipeline } from "./core/fetch-pipeline.js";
 import { ConcurrencyLimiter } from "./core/limits.js";
 import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
+import { MapRouter } from "./core/map-router.js";
+import { NewsRouter } from "./core/news-router.js";
+import { ProviderBalanceRegistry } from "./core/provider-balance.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
+import { createProviderBalanceModule } from "./tools/provider-balance.js";
+import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
+import { createWebAnswerModule } from "./tools/web-answer.js";
+import { createWebContentModule } from "./tools/web-content.js";
 import { createWebExtractModule } from "./tools/web-extract.js";
 import { createWebFetchModule } from "./tools/web-fetch.js";
+import { createWebMapModule } from "./tools/web-map.js";
+import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebSearchModule } from "./tools/web-search.js";
 
 export interface GroundlaneServices {
@@ -56,12 +83,78 @@ export function createSearchProviders(config: GroundlaneConfig): SearchProvider[
   if (config.providerKeys.linkup !== undefined) {
     providers.push(new LinkupSearchProvider({ apiKey: config.providerKeys.linkup }));
   }
+  providers.push(new KeenableSearchProvider(
+    config.providerKeys.keenable === undefined
+      ? {}
+      : { apiKey: config.providerKeys.keenable },
+  ));
   if (config.providerKeys.serper !== undefined) {
     providers.push(new SerperSearchProvider({ apiKey: config.providerKeys.serper }));
   }
   providers.push(new YouSearchProvider(
     config.providerKeys.you !== undefined ? { apiKey: config.providerKeys.you } : {},
   ));
+  return providers;
+}
+
+export function createAnswerProviders(config: GroundlaneConfig): AnswerProvider[] {
+  const providers: AnswerProvider[] = [];
+  if (config.providerKeys.linkup !== undefined) {
+    providers.push(new LinkupAnswerProvider({ apiKey: config.providerKeys.linkup }));
+  }
+  if (config.providerKeys.you !== undefined) {
+    providers.push(new YouAnswerProvider({ apiKey: config.providerKeys.you }));
+  }
+  return providers;
+}
+
+export function createContentProviders(config: GroundlaneConfig): ContentProvider[] {
+  const providers: ContentProvider[] = [];
+  if (config.providerKeys.linkup !== undefined) {
+    providers.push(new LinkupContentProvider({ apiKey: config.providerKeys.linkup }));
+  }
+  if (config.providerKeys.you !== undefined) {
+    providers.push(new YouContentProvider({ apiKey: config.providerKeys.you }));
+  }
+  if (config.providerKeys.exa !== undefined) {
+    providers.push(new ExaContentProvider({ apiKey: config.providerKeys.exa }));
+  }
+  if (config.providerKeys.tavily !== undefined) {
+    providers.push(new TavilyContentProvider({ apiKey: config.providerKeys.tavily }));
+  }
+  if (config.providerKeys.firecrawl !== undefined) {
+    providers.push(new FirecrawlContentProvider({ apiKey: config.providerKeys.firecrawl }));
+  }
+  providers.push(new KeenableContentProvider(
+    config.providerKeys.keenable === undefined
+      ? {}
+      : { apiKey: config.providerKeys.keenable },
+  ));
+  return providers;
+}
+
+export function createMapProviders(config: GroundlaneConfig): MapProvider[] {
+  const providers: MapProvider[] = [];
+  if (config.providerKeys.firecrawl !== undefined) {
+    providers.push(new FirecrawlMapProvider({ apiKey: config.providerKeys.firecrawl }));
+  }
+  if (config.providerKeys.tavily !== undefined) {
+    providers.push(new TavilyMapProvider({ apiKey: config.providerKeys.tavily }));
+  }
+  return providers;
+}
+
+export function createNewsProviders(config: GroundlaneConfig): NewsProvider[] {
+  const providers: NewsProvider[] = [];
+  if (config.providerKeys.brave !== undefined) {
+    providers.push(new BraveNewsProvider({ apiKey: config.providerKeys.brave }));
+  }
+  if (config.providerKeys.serper !== undefined) {
+    providers.push(new SerperNewsProvider({ apiKey: config.providerKeys.serper }));
+  }
+  if (config.providerKeys.serpapi !== undefined) {
+    providers.push(new SerpApiNewsProvider({ apiKey: config.providerKeys.serpapi }));
+  }
   return providers;
 }
 
@@ -87,6 +180,10 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const fetchPipeline = new FetchPipeline(new SafeHttpFetcher(), browser, reader, backendBudget);
   const providers = createSearchProviders(config);
   const healthTracker = new DynamicPenaltyHealthTracker();
+  const answerProviders = createAnswerProviders(config);
+  const contentProviders = createContentProviders(config);
+  const mapProviders = createMapProviders(config);
+  const newsProviders = createNewsProviders(config);
   const searchRouter = new SearchRouter(
     providers,
     config.searchProviderOrder,
@@ -96,8 +193,54 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       new DailySearchBudget(config.searchDailyRequestBudgets),
     ]),
   );
+  const answerRouter = new AnswerRouter(answerProviders);
+  const contentRouter = new ContentRouter(contentProviders);
+  const mapRouter = new MapRouter(mapProviders);
+  const newsRouter = new NewsRouter(newsProviders);
+  const providerBalanceRegistry = new ProviderBalanceRegistry({
+    supportedProviders: config.searchProviderOrder,
+    configuredProviders: Object.keys(config.providerKeys),
+    checkers: [
+      new LinkupBalanceChecker(
+        config.providerKeys.linkup === undefined ? {} : { apiKey: config.providerKeys.linkup },
+      ),
+      new YouBalanceChecker(
+        config.providerKeys.you === undefined ? {} : { apiKey: config.providerKeys.you },
+      ),
+    ],
+  });
   const limiter = new ConcurrencyLimiter(config.maxConcurrency, config.maxQueue);
   const modules = [
+    createProviderCapabilitiesModule(),
+    createProviderBalanceModule({
+      registry: providerBalanceRegistry,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+    }),
+    createWebAnswerModule({
+      router: answerRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createWebContentModule({
+      router: contentRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createWebMapModule({
+      router: mapRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createWebNewsModule({
+      router: newsRouter,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
     createWebFetchModule({
       pipeline: fetchPipeline,
       limiter,

@@ -93,6 +93,17 @@ export interface WebFetchResult {
 export type SearchProviderId = KnownSearchProviderId | (string & {});
 export type SearchTimeRange = "day" | "week" | "month" | "year";
 export type SearchStrategy = "fallback" | "balanced" | "deep";
+export type AnswerProviderId = Extract<KnownSearchProviderId, "linkup" | "you">;
+export type AnswerStrategy = "fallback" | "parallel";
+export type ContentProviderId = Extract<
+  KnownSearchProviderId,
+  "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "you"
+>;
+export type ContentStrategy = "fallback" | "parallel";
+export type MapProviderId = Extract<KnownSearchProviderId, "firecrawl" | "tavily">;
+export type MapStrategy = "fallback" | "parallel";
+export type NewsProviderId = Extract<KnownSearchProviderId, "brave" | "serpapi" | "serper">;
+export type NewsStrategy = "fallback" | "parallel";
 
 export interface SearchRequest {
   query: string;
@@ -140,6 +151,211 @@ export interface SearchProvider {
   search(request: SearchRequest, signal: AbortSignal): Promise<SearchResult>;
 }
 
+export interface AnswerRequest {
+  query: string;
+  maxResults: number;
+  domains?: readonly string[];
+  excludeDomains?: readonly string[];
+  timeRange?: SearchTimeRange;
+  provider?: "auto" | AnswerProviderId;
+  providers?: readonly AnswerProviderId[];
+  strategy?: AnswerStrategy;
+}
+
+export interface AnswerCitation {
+  url: string;
+  title?: string;
+  excerpts: readonly string[];
+}
+
+export interface AnswerResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  publishedAt?: string;
+  provider: AnswerProviderId;
+}
+
+export interface AnswerProviderResult {
+  provider: AnswerProviderId;
+  answer: string;
+  citations: readonly AnswerCitation[];
+  results: readonly AnswerResultItem[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface AnswerResult {
+  query: string;
+  strategy: AnswerStrategy;
+  providersSelected: readonly AnswerProviderId[];
+  providersAttempted: readonly AnswerProviderId[];
+  providersSucceeded: readonly AnswerProviderId[];
+  answers: readonly AnswerProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface AnswerProvider {
+  readonly id: AnswerProviderId;
+  supports(request: AnswerRequest): boolean;
+  answer(request: AnswerRequest, signal: AbortSignal): Promise<AnswerProviderResult>;
+}
+
+export interface ContentRequest {
+  url: string;
+  maxContentChars: number;
+  provider?: "auto" | ContentProviderId;
+  providers?: readonly ContentProviderId[];
+  strategy?: ContentStrategy;
+  live?: boolean;
+}
+
+export interface ContentProviderResult {
+  provider: ContentProviderId;
+  url: string;
+  finalUrl: string;
+  title?: string;
+  content: string;
+  format: "markdown" | "text";
+  truncated: boolean;
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ContentResult {
+  url: string;
+  strategy: ContentStrategy;
+  providersSelected: readonly ContentProviderId[];
+  providersAttempted: readonly ContentProviderId[];
+  providersSucceeded: readonly ContentProviderId[];
+  contents: readonly ContentProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface ContentProvider {
+  readonly id: ContentProviderId;
+  supports(request: ContentRequest): boolean;
+  fetchContent(request: ContentRequest, signal: AbortSignal): Promise<ContentProviderResult>;
+}
+
+export interface MapRequest {
+  url: string;
+  maxLinks: number;
+  provider?: "auto" | MapProviderId;
+  providers?: readonly MapProviderId[];
+  strategy?: MapStrategy;
+  search?: string;
+  includeSubdomains?: boolean;
+  ignoreCache?: boolean;
+  maxDepth?: number;
+  maxBreadth?: number;
+}
+
+export interface MapLink {
+  url: string;
+  title?: string;
+  description?: string;
+  provider: MapProviderId;
+}
+
+export interface MapProviderResult {
+  provider: MapProviderId;
+  url: string;
+  links: readonly MapLink[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface MapResult {
+  url: string;
+  strategy: MapStrategy;
+  providersSelected: readonly MapProviderId[];
+  providersAttempted: readonly MapProviderId[];
+  providersSucceeded: readonly MapProviderId[];
+  links: readonly MapLink[];
+  providerResults: readonly MapProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface MapProvider {
+  readonly id: MapProviderId;
+  supports(request: MapRequest): boolean;
+  map(request: MapRequest, signal: AbortSignal): Promise<MapProviderResult>;
+}
+
+export interface NewsRequest {
+  query: string;
+  maxResults: number;
+  provider?: "auto" | NewsProviderId;
+  providers?: readonly NewsProviderId[];
+  strategy?: NewsStrategy;
+  timeRange?: SearchTimeRange;
+  country?: string;
+  language?: string;
+}
+
+export interface NewsItem {
+  title: string;
+  url: string;
+  snippet: string;
+  source?: string;
+  publishedAt?: string;
+  thumbnailUrl?: string;
+  provider: NewsProviderId;
+}
+
+export interface NewsProviderResult {
+  provider: NewsProviderId;
+  query: string;
+  results: readonly NewsItem[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface NewsResult {
+  query: string;
+  strategy: NewsStrategy;
+  providersSelected: readonly NewsProviderId[];
+  providersAttempted: readonly NewsProviderId[];
+  providersSucceeded: readonly NewsProviderId[];
+  results: readonly NewsItem[];
+  providerResults: readonly NewsProviderResult[];
+  durationMs: number;
+  warnings: readonly string[];
+}
+
+export interface NewsProvider {
+  readonly id: NewsProviderId;
+  supports(request: NewsRequest): boolean;
+  news(request: NewsRequest, signal: AbortSignal): Promise<NewsProviderResult>;
+}
+
+export type ProviderBalanceStatus =
+  | "available"
+  | "not_configured"
+  | "unsupported"
+  | "unknown";
+
+export interface ProviderBalanceResult {
+  provider: SearchProviderId;
+  configured: boolean;
+  status: ProviderBalanceStatus;
+  source: "api" | "configuration" | "not_configured" | "not_implemented";
+  balance?: number;
+  currency?: string;
+  unit?: "credits" | "cents" | "requests";
+  warnings: string[];
+}
+
+export interface ProviderBalanceChecker {
+  readonly id: SearchProviderId;
+  configured(): boolean;
+  getBalance(signal: AbortSignal): Promise<ProviderBalanceResult>;
+}
+
 export interface ExtractionField {
   name: string;
   selector: string;
@@ -157,5 +373,10 @@ export interface WebExtractResult {
   engine: Engine;
   backend: string;
   missingFields: string[];
+  truncated: boolean;
+  bytes: number;
+  blockedSubrequests?: number;
   durationMs: number;
+  warnings: string[];
+  fallbackReason?: string;
 }

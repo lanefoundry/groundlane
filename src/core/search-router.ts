@@ -46,13 +46,10 @@ export class SearchRouter {
       ? (request.strategy ?? "balanced")
       : "fallback";
     const resolved = this.resolveProviders(request, explicitProvider);
-    const selectedIds = selectSearchProviders(
-      resolved.providers.map((provider) => provider.id),
-      strategy,
-    );
-    const selected = selectedIds
-      .map((id) => this.providers.get(id))
-      .filter((provider): provider is SearchProvider => provider !== undefined);
+    const selected =
+      strategy === "fallback"
+        ? resolved.providers
+        : this.selectProviderBatch(resolved.providers, strategy);
 
     if (selected.length === 0) {
       if (explicitProvider !== undefined && this.budget?.remaining(explicitProvider) === 0) {
@@ -73,7 +70,7 @@ export class SearchRouter {
 
     return strategy === "fallback"
       ? this.searchWithFallback(request, selected, resolved.warnings, signal)
-      : this.searchFederated(request, strategy, selected, resolved.warnings, signal);
+      : this.searchFederated(request, strategy, resolved.providers, resolved.warnings, signal);
   }
 
   private validateRequest(request: SearchRequest): void {
@@ -136,6 +133,19 @@ export class SearchRouter {
         provider: provider.id,
       })),
     };
+  }
+
+  private selectProviderBatch(
+    providers: readonly SearchProvider[],
+    strategy: Exclude<SearchStrategy, "fallback">,
+  ): SearchProvider[] {
+    const selectedIds = selectSearchProviders(
+      providers.map((provider) => provider.id),
+      strategy,
+    );
+    return selectedIds
+      .map((id) => this.providers.get(id))
+      .filter((provider): provider is SearchProvider => provider !== undefined);
   }
 
   private async searchWithFallback(
@@ -212,63 +222,83 @@ export class SearchRouter {
     signal: AbortSignal,
   ): Promise<SearchResult> {
     const startedAt = Date.now();
-    const outcomes = await Promise.all(
-      providers.map(async (provider): Promise<ProviderOutcome> => {
-        if (this.budget !== undefined && !this.budget.tryConsume(provider.id)) {
-          return {
-            provider,
-            attempted: false,
-            warning: `${provider.id} budget exhausted`,
-          };
-        }
-        try {
-          const result = this.normalizeProviderResult(
-            provider,
-            await provider.search(request, signal),
-            request.maxResults,
-          );
-          this.health?.recordSuccess(provider.id);
-          return { provider, attempted: true, result };
-        } catch (error) {
-          toGroundlaneError(error, "search");
-          this.health?.recordFailure(provider.id);
-          return { provider, attempted: true, warning: `${provider.id} unavailable` };
-        }
-      }),
-    );
-    if (signal.aborted) {
-      if (signal.reason instanceof GroundlaneError) throw signal.reason;
-      throw new GroundlaneError("CANCELLED", "search", "The request was cancelled");
-    }
-    const successes = outcomes
-      .map((outcome) => outcome.result)
-      .filter((result): result is SearchResult => result !== undefined);
-    if (successes.length === 0) {
-      throw new GroundlaneError(
-        "PROVIDER_UNAVAILABLE",
-        "search",
-        "All matching search providers were unavailable",
-        true,
+    const warnings = [...initialWarnings];
+    const selectedIds: SearchProviderId[] = [];
+    const attemptedIds: SearchProviderId[] = [];
+    const remaining = [...providers];
+
+    while (remaining.length > 0) {
+      const batch = this.selectProviderBatch(remaining, strategy);
+      if (batch.length === 0) break;
+      selectedIds.push(...batch.map((provider) => provider.id));
+      const selected = new Set(batch.map((provider) => provider.id));
+      for (let index = remaining.length - 1; index >= 0; index--) {
+        const provider = remaining[index];
+        if (provider !== undefined && selected.has(provider.id)) remaining.splice(index, 1);
+      }
+
+      const outcomes = await Promise.all(
+        batch.map(async (provider): Promise<ProviderOutcome> => {
+          if (this.budget !== undefined && !this.budget.tryConsume(provider.id)) {
+            return {
+              provider,
+              attempted: false,
+              warning: `${provider.id} budget exhausted`,
+            };
+          }
+          try {
+            const result = this.normalizeProviderResult(
+              provider,
+              await provider.search(request, signal),
+              request.maxResults,
+            );
+            this.health?.recordSuccess(provider.id);
+            return { provider, attempted: true, result };
+          } catch (error) {
+            toGroundlaneError(error, "search");
+            this.health?.recordFailure(provider.id);
+            return { provider, attempted: true, warning: `${provider.id} unavailable` };
+          }
+        }),
       );
+      if (signal.aborted) {
+        if (signal.reason instanceof GroundlaneError) throw signal.reason;
+        throw new GroundlaneError("CANCELLED", "search", "The request was cancelled");
+      }
+
+      attemptedIds.push(
+        ...outcomes
+          .filter((outcome) => outcome.attempted)
+          .map((outcome) => outcome.provider.id),
+      );
+      warnings.push(
+        ...outcomes.flatMap((outcome) => outcome.warning === undefined ? [] : [outcome.warning]),
+      );
+
+      const successes = outcomes
+        .map((outcome) => outcome.result)
+        .filter((result): result is SearchResult => result !== undefined);
+      if (successes.length > 0) {
+        warnings.push(...successes.flatMap((result) => result.warnings));
+        return {
+          query: request.query,
+          provider: successes.length > 1 ? "federated" : successes[0]?.provider ?? "federated",
+          results: fuseSearchResults(successes, request.maxResults, this.effectiveWeights(successes)),
+          durationMs: Date.now() - startedAt,
+          warnings,
+          strategy,
+          providersSelected: selectedIds,
+          providersAttempted: attemptedIds,
+          providersSucceeded: successes.map((result) => result.provider),
+        };
+      }
     }
 
-    const warnings = [
-      ...initialWarnings,
-      ...outcomes.flatMap((outcome) => outcome.warning === undefined ? [] : [outcome.warning]),
-      ...successes.flatMap((result) => result.warnings),
-    ];
-    return {
-      query: request.query,
-      provider: providers.length > 1 ? "federated" : successes[0]?.provider ?? "federated",
-      results: fuseSearchResults(successes, request.maxResults, this.effectiveWeights(successes)),
-      durationMs: Date.now() - startedAt,
-      warnings,
-      strategy,
-      providersSelected: providers.map((provider) => provider.id),
-      providersAttempted: outcomes
-        .filter((outcome) => outcome.attempted)
-        .map((outcome) => outcome.provider.id),
-      providersSucceeded: successes.map((result) => result.provider),
-    };
+    throw new GroundlaneError(
+      "PROVIDER_UNAVAILABLE",
+      "search",
+      "All selected search providers were unavailable",
+      true,
+    );
   }
 }

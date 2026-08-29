@@ -24,10 +24,16 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | Tool | What it does | Current execution paths |
 | --- | --- | --- |
 | `web_fetch` | Reads a public URL as Markdown, text, or HTML | Bounded HTTP, local readable normalization, and eligible optional Jina/browser fallbacks |
-| `web_search` | Searches the public web with normalized results | Bounded two-provider auto fusion, explicit single-provider, fallback, or deep routing across ten providers |
-| `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes; no implicit LLM step |
+| `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across eleven providers |
+| `web_answer` | Retrieves grounded answers from answer-capable providers | Parallel fan-out or fallback across You.com Answer and Linkup sourced answers, with provider attribution and citations |
+| `web_content` | Fetches URL content through provider content APIs | Parallel fan-out or fallback across Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, and Keenable Fetch |
+| `web_map` | Discovers URLs from a public site | Parallel fan-out or fallback across Firecrawl Map and Tavily Map, with provider attribution |
+| `web_news` | Searches news-specific provider indexes | Parallel fan-out or fallback across Brave News, Serper News, and SerpApi Google News |
+| `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes, with per-call output caps; no implicit LLM step |
+| `provider_balance` | Checks provider account-balance APIs when available | You.com keyed credits and Linkup credits; unsupported providers return explicit diagnostic status |
+| `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 
-Fetch/extract results report retrieval provenance such as `engine`, `backend`, and `finalUrl`. Automatic search defaults to at most two complementary providers, canonical-URL deduplication, and RRF while retaining per-provider rank provenance; pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
+Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. `web_answer`, `web_content`, `web_map`, and `web_news` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
 
 ## Quick start
 
@@ -50,7 +56,7 @@ set +a
 pnpm dev
 ```
 
-Groundlane now exposes an authenticated Streamable HTTP MCP endpoint at `http://localhost:8080/mcp`. Search keys are optional; add them only for the providers you want to enable.
+Groundlane now exposes an authenticated Streamable HTTP MCP endpoint at `http://localhost:8080/mcp`. Search keys are optional; add them only for the providers you want to enable. Keenable can run without a key through its public endpoint, and You.com can run without a key through its free MCP Search profile; set provider keys only when you want authenticated account allowances.
 
 ### Deploy to Cloudflare
 
@@ -204,11 +210,13 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 
 | Capability | Adapters |
 | --- | --- |
-| Search | Tavily, Exa, Parallel, Browserbase, Brave, Firecrawl, SerpApi, Linkup, Serper, You.com |
+| Search | Linkup, Keenable, Parallel, Browserbase, Brave, SerpApi, Tavily, Exa, Firecrawl, Serper, You.com |
+| News search | Brave, Serper, SerpApi |
+| Site map discovery | Firecrawl, Tavily |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
 
-Automatic search routing can apply conservative per-instance monthly attempt budgets. These are safeguards, not provider billing truth. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics.
+Automatic search routing can apply conservative per-instance monthly attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status and capability matrix.
 
 ## How it works
 
@@ -219,7 +227,8 @@ MCP client
 Worker / Node HTTP edge       authentication, request identity
     |
     v
-tool registry                 web_search | web_fetch | web_extract
+tool registry                 web_search | web_answer | web_content | web_map | web_news | web_fetch | web_extract
+                              provider_balance | provider_capabilities
     |
     +-- provider router       replaceable search adapters
     +-- safe HTTP + Reader    bounded retrieval and readable content
@@ -237,7 +246,7 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 ## Project status
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: three remote MCP tools, ten search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
+- Implemented: three core web MCP tools, two provider diagnostic MCP tools, eleven search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
 - Next: compatibility fixtures, cache/health-aware routing, operational telemetry, and opt-in bounded crawl primitives.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).

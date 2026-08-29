@@ -137,7 +137,7 @@ Browserless region, and documented runtime limits into the Container. Keep that
 explicit allowlist, `src/config.ts`, and `CLOUDFLARE_SECRET_DEFINITIONS`
 synchronized when adding configuration.
 
-`SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables automatic and explicit use for that provider. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
+`SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables automatic and explicit use for that provider. Keenable may run without `KEENABLE_API_KEY` through its keyless public endpoint; set the key to use its authenticated monthly allowance. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars` and keep the file untracked.
 

@@ -36,6 +36,7 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
   },
   { name: "PARALLEL_API_KEY", label: "Parallel", group: "search", required: false },
   { name: "LINKUP_API_KEY", label: "Linkup", group: "search", required: false },
+  { name: "KEENABLE_API_KEY", label: "Keenable", group: "search", required: false },
   { name: "SERPER_API_KEY", label: "Serper", group: "search", required: false },
   { name: "YOU_API_KEY", label: "You.com REST", group: "search", required: false },
   {

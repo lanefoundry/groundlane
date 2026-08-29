@@ -24,10 +24,16 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | 工具 | 功能 | 目前執行路徑 |
 | --- | --- | --- |
 | `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
-| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十個 provider 的有界雙來源自動融合、明確單一來源、fallback 或 deep routing |
-| `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute；不暗中呼叫 LLM |
+| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十一個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
+| `web_answer` | 從支援 answer 的 provider 取得 grounded answer | 並行 fan-out 或 fallback 到 You.com Answer 與 Linkup sourced answer，保留 provider attribution 與 citations |
+| `web_content` | 透過 provider content API 抓取 URL 內容 | 並行 fan-out 或 fallback 到 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape、Keenable Fetch |
+| `web_map` | 從公開網站探索 URL | 並行 fan-out 或 fallback 到 Firecrawl Map 與 Tavily Map，保留 provider attribution |
+| `web_news` | 搜尋 news-specific provider index | 並行 fan-out 或 fallback 到 Brave News、Serper News、SerpApi Google News |
+| `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute，可設定單次 output cap；不暗中呼叫 LLM |
+| `provider_balance` | 查詢 provider 帳號餘額 API | You.com keyed credits 與 Linkup credits；未支援的 provider 會回明確診斷狀態 |
+| `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 
-Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl` 等 retrieval provenance。自動搜尋預設最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留各 provider 的排名 provenance；明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
+Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。`web_answer`、`web_content`、`web_map` 與 `web_news` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 ## 快速開始
 
@@ -50,7 +56,7 @@ set +a
 pnpm dev
 ```
 
-Groundlane 現在會在 `http://localhost:8080/mcp` 提供需要驗證的 Streamable HTTP MCP endpoint。Search key 是選填，只需設定想啟用的 provider。
+Groundlane 現在會在 `http://localhost:8080/mcp` 提供需要驗證的 Streamable HTTP MCP endpoint。Search key 是選填，只需設定想啟用的 provider。Keenable 可在沒有 key 時走 public endpoint，You.com 可在沒有 key 時走 free MCP Search profile；只有要使用 authenticated account allowance 時才設定 provider key。
 
 ### 部署到 Cloudflare
 
@@ -199,11 +205,13 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 | 能力 | Adapters |
 | --- | --- |
-| Search | Tavily、Exa、Parallel、Browserbase、Brave、Firecrawl、SerpApi、Linkup、Serper、You.com |
+| Search | Linkup、Keenable、Parallel、Browserbase、Brave、SerpApi、Tavily、Exa、Firecrawl、Serper、You.com |
+| News search | Brave、Serper、SerpApi |
+| Site map discovery | Firecrawl、Tavily |
 | Hosted Reader fallback | Jina Reader（opt-in） |
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
 
-自動搜尋路由可套用保守的 per-instance 每月嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)。
+自動搜尋路由可套用保守的 per-instance 每月嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態與功能矩陣請看 [Provider inventory](docs/operations/provider-inventory.md)。
 
 ## 運作方式
 
@@ -214,7 +222,8 @@ MCP client
 Worker / Node HTTP edge       authentication, request identity
     |
     v
-tool registry                 web_search | web_fetch | web_extract
+tool registry                 web_search | web_answer | web_content | web_map | web_news | web_fetch | web_extract
+                              provider_balance | provider_capabilities
     |
     +-- provider router       可替換的 search adapters
     +-- safe HTTP + Reader    有界的內容取得與正文清理
@@ -232,7 +241,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：三個 remote MCP tools、十個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
+- 已完成：三個核心 Web MCP tools、兩個 provider 診斷 MCP tools、十一個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
 - 下一步：compatibility fixtures、cache／health-aware routing、營運 telemetry 與 opt-in bounded crawl primitives。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。

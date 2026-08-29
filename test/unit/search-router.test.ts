@@ -80,6 +80,30 @@ void test("balanced search returns partial success with sanitized provider warni
   assert.deepEqual(result.warnings, ["exa unavailable"]);
 });
 
+void test("balanced search continues to the next eligible batch when the first batch fails", async () => {
+  const router = new SearchRouter(
+    [
+      provider("tavily", "retry"),
+      provider("exa", "retry"),
+      provider("linkup", "ok"),
+      provider("keenable", "ok"),
+    ],
+    ["tavily", "exa", "linkup", "keenable"],
+  );
+
+  const result = await router.search(
+    { query: "test", maxResults: 2, strategy: "balanced" },
+    new AbortController().signal,
+  );
+
+  assert.equal(result.provider, "federated");
+  assert.deepEqual(result.providersSelected, ["tavily", "exa", "linkup", "keenable"]);
+  assert.deepEqual(result.providersAttempted, ["tavily", "exa", "linkup", "keenable"]);
+  assert.deepEqual(result.providersSucceeded, ["linkup", "keenable"]);
+  assert.deepEqual(result.warnings, ["tavily unavailable", "exa unavailable"]);
+  assert.equal(result.results.length, 2);
+});
+
 void test("SearchRouter rejects conflicting provider selectors", async () => {
   await assert.rejects(
     new SearchRouter([provider("tavily", "ok")], ["tavily"]).search(

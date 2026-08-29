@@ -8,20 +8,39 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 import { DisabledBrowserBackend } from "../../src/adapters/browser/disabled.js";
 import type {
+  AnswerProvider,
+  AnswerProviderResult,
+  ContentProvider,
+  ContentProviderResult,
   HttpFetcher,
+  MapProvider,
+  MapProviderResult,
+  NewsProvider,
+  NewsProviderResult,
   RawDocument,
   SearchProvider,
   SearchRequest,
   SearchResult,
 } from "../../src/core/contracts.js";
+import { AnswerRouter } from "../../src/core/answer-router.js";
+import { ContentRouter } from "../../src/core/content-router.js";
 import { FetchPipeline } from "../../src/core/fetch-pipeline.js";
 import { ConcurrencyLimiter } from "../../src/core/limits.js";
+import { MapRouter } from "../../src/core/map-router.js";
+import { NewsRouter } from "../../src/core/news-router.js";
+import { ProviderBalanceRegistry } from "../../src/core/provider-balance.js";
 import { SearchRouter } from "../../src/core/search-router.js";
 import { createContainerApp } from "../../src/container/app.js";
 import { createMcpRegistry } from "../../src/mcp/registry.js";
 import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
+import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
+import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
+import { createWebAnswerModule } from "../../src/tools/web-answer.js";
+import { createWebContentModule } from "../../src/tools/web-content.js";
 import { createWebExtractModule } from "../../src/tools/web-extract.js";
 import { createWebFetchModule } from "../../src/tools/web-fetch.js";
+import { createWebMapModule } from "../../src/tools/web-map.js";
+import { createWebNewsModule } from "../../src/tools/web-news.js";
 import { createWebSearchModule } from "../../src/tools/web-search.js";
 
 const html = `<!doctype html><html><head><title>Groundlane</title><meta name="description" content="Trusted web access"><meta name="author" content="Groundlane Team"></head><body><main><h1>Hello</h1><p>Groundlane provides readable web content for AI agents.</p><a href="/docs">Docs</a></main></body></html>`;
@@ -64,6 +83,89 @@ const searchProvider: SearchProvider = {
   },
 };
 
+const answerProvider: AnswerProvider = {
+  id: "you",
+  supports(): boolean {
+    return true;
+  },
+  answer(): Promise<AnswerProviderResult> {
+    return Promise.resolve({
+      provider: "you",
+      answer: "Groundlane provides trusted web access.",
+      citations: [{ url: "https://example.com/groundlane", excerpts: ["Trusted web access"] }],
+      results: [
+        {
+          title: "Groundlane",
+          url: "https://example.com/groundlane",
+          snippet: "Trusted web access",
+          provider: "you",
+        },
+      ],
+      durationMs: 1,
+      warnings: [],
+    });
+  },
+};
+
+const contentProvider: ContentProvider = {
+  id: "keenable",
+  supports(): boolean {
+    return true;
+  },
+  fetchContent(): Promise<ContentProviderResult> {
+    return Promise.resolve({
+      provider: "keenable",
+      url: "https://example.com",
+      finalUrl: "https://example.com",
+      title: "Example",
+      content: "Groundlane content",
+      format: "markdown",
+      truncated: false,
+      durationMs: 1,
+      warnings: [],
+    });
+  },
+};
+
+const mapProvider: MapProvider = {
+  id: "firecrawl",
+  supports(): boolean {
+    return true;
+  },
+  map(): Promise<MapProviderResult> {
+    return Promise.resolve({
+      provider: "firecrawl",
+      url: "https://example.com",
+      links: [{ url: "https://example.com/docs", title: "Docs", provider: "firecrawl" }],
+      durationMs: 1,
+      warnings: [],
+    });
+  },
+};
+
+const newsProvider: NewsProvider = {
+  id: "brave",
+  supports(): boolean {
+    return true;
+  },
+  news(): Promise<NewsProviderResult> {
+    return Promise.resolve({
+      provider: "brave",
+      query: "groundlane",
+      results: [
+        {
+          title: "Groundlane news",
+          url: "https://example.com/news",
+          snippet: "Trusted web access",
+          provider: "brave",
+        },
+      ],
+      durationMs: 1,
+      warnings: [],
+    });
+  },
+};
+
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -74,7 +176,41 @@ async function listen(server: Server): Promise<number> {
 void test("remote MCP lists and executes all Groundlane MVP tools", async () => {
   const pipeline = new FetchPipeline(httpFetcher, new DisabledBrowserBackend());
   const limiter = new ConcurrencyLimiter(2, 2);
+  const balanceRegistry = new ProviderBalanceRegistry({
+    supportedProviders: ["test"],
+    checkers: [],
+  });
   const modules = [
+    createProviderCapabilitiesModule(),
+    createProviderBalanceModule({
+      registry: balanceRegistry,
+      limiter,
+      requestTimeoutMs: 5_000,
+    }),
+    createWebAnswerModule({
+      router: new AnswerRouter([answerProvider], ["you"]),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createWebContentModule({
+      router: new ContentRouter([contentProvider], ["keenable"]),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createWebMapModule({
+      router: new MapRouter([mapProvider], ["firecrawl"]),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createWebNewsModule({
+      router: new NewsRouter([newsProvider], ["brave"]),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createWebFetchModule({
       pipeline,
       limiter,
@@ -116,8 +252,43 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     const tools = await client.listTools();
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
-      ["web_extract", "web_fetch", "web_search"],
+      [
+        "provider_balance",
+        "provider_capabilities",
+        "web_answer",
+        "web_content",
+        "web_extract",
+        "web_fetch",
+        "web_map",
+        "web_news",
+        "web_search",
+      ],
     );
+
+    const capabilitiesResult = await client.callTool({
+      name: "provider_capabilities",
+      arguments: { provider: "you" },
+    });
+    const capabilitiesEnvelope = capabilitiesResult.structuredContent as {
+      ok?: boolean;
+      data?: { providers?: Array<{ provider?: string; groundlaneTools?: string[] }> };
+    };
+    assert.equal(capabilitiesEnvelope.ok, true);
+    assert.equal(capabilitiesEnvelope.data?.providers?.[0]?.provider, "you");
+    assert.ok(capabilitiesEnvelope.data?.providers?.[0]?.groundlaneTools?.includes("web_search"));
+    assert.ok(capabilitiesEnvelope.data?.providers?.[0]?.groundlaneTools?.includes("web_answer"));
+
+    const balanceResult = await client.callTool({
+      name: "provider_balance",
+      arguments: { provider: "you" },
+    });
+    const balanceEnvelope = balanceResult.structuredContent as {
+      ok?: boolean;
+      data?: { results?: Array<{ provider?: string; status?: string }> };
+    };
+    assert.equal(balanceEnvelope.ok, true);
+    assert.equal(balanceEnvelope.data?.results?.[0]?.provider, "you");
+    assert.equal(balanceEnvelope.data?.results?.[0]?.status, "unsupported");
 
     const fetchResult = await client.callTool({
       name: "web_fetch",
@@ -161,6 +332,94 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.equal(typeof searchEnvelope.data?.results?.[0]?.fusionScore, "number");
     assert.equal(searchEnvelope.data?.results?.[0]?.sources?.[0]?.provider, "test");
 
+    const answerResult = await client.callTool({
+      name: "web_answer",
+      arguments: { query: "what is Groundlane?", provider: "you" },
+    });
+    const answerEnvelope = answerResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        strategy?: string;
+        providersSelected?: string[];
+        providersAttempted?: string[];
+        providersSucceeded?: string[];
+        answers?: Array<{ provider?: string; citations?: Array<{ url?: string }> }>;
+      };
+    };
+    assert.equal(answerEnvelope.ok, true);
+    assert.equal(answerEnvelope.data?.strategy, "fallback");
+    assert.deepEqual(answerEnvelope.data?.providersSelected, ["you"]);
+    assert.deepEqual(answerEnvelope.data?.providersAttempted, ["you"]);
+    assert.deepEqual(answerEnvelope.data?.providersSucceeded, ["you"]);
+    assert.equal(answerEnvelope.data?.answers?.[0]?.provider, "you");
+    assert.equal(answerEnvelope.data?.answers?.[0]?.citations?.[0]?.url, "https://example.com/groundlane");
+
+    const contentResult = await client.callTool({
+      name: "web_content",
+      arguments: { url: "https://example.com", provider: "keenable" },
+    });
+    const contentEnvelope = contentResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        strategy?: string;
+        providersSelected?: string[];
+        providersAttempted?: string[];
+        providersSucceeded?: string[];
+        contents?: Array<{ provider?: string; content?: string }>;
+      };
+    };
+    assert.equal(contentEnvelope.ok, true);
+    assert.equal(contentEnvelope.data?.strategy, "fallback");
+    assert.deepEqual(contentEnvelope.data?.providersSelected, ["keenable"]);
+    assert.deepEqual(contentEnvelope.data?.providersAttempted, ["keenable"]);
+    assert.deepEqual(contentEnvelope.data?.providersSucceeded, ["keenable"]);
+    assert.equal(contentEnvelope.data?.contents?.[0]?.provider, "keenable");
+    assert.equal(contentEnvelope.data?.contents?.[0]?.content, "Groundlane content");
+
+    const mapResult = await client.callTool({
+      name: "web_map",
+      arguments: { url: "https://example.com", provider: "firecrawl" },
+    });
+    const mapEnvelope = mapResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        strategy?: string;
+        providersSelected?: string[];
+        providersAttempted?: string[];
+        providersSucceeded?: string[];
+        links?: Array<{ provider?: string; url?: string; title?: string }>;
+      };
+    };
+    assert.equal(mapEnvelope.ok, true);
+    assert.equal(mapEnvelope.data?.strategy, "fallback");
+    assert.deepEqual(mapEnvelope.data?.providersSelected, ["firecrawl"]);
+    assert.deepEqual(mapEnvelope.data?.providersAttempted, ["firecrawl"]);
+    assert.deepEqual(mapEnvelope.data?.providersSucceeded, ["firecrawl"]);
+    assert.equal(mapEnvelope.data?.links?.[0]?.provider, "firecrawl");
+    assert.equal(mapEnvelope.data?.links?.[0]?.url, "https://example.com/docs");
+
+    const newsResult = await client.callTool({
+      name: "web_news",
+      arguments: { query: "groundlane", provider: "brave" },
+    });
+    const newsEnvelope = newsResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        strategy?: string;
+        providersSelected?: string[];
+        providersAttempted?: string[];
+        providersSucceeded?: string[];
+        results?: Array<{ provider?: string; url?: string; title?: string }>;
+      };
+    };
+    assert.equal(newsEnvelope.ok, true);
+    assert.equal(newsEnvelope.data?.strategy, "fallback");
+    assert.deepEqual(newsEnvelope.data?.providersSelected, ["brave"]);
+    assert.deepEqual(newsEnvelope.data?.providersAttempted, ["brave"]);
+    assert.deepEqual(newsEnvelope.data?.providersSucceeded, ["brave"]);
+    assert.equal(newsEnvelope.data?.results?.[0]?.provider, "brave");
+    assert.equal(newsEnvelope.data?.results?.[0]?.url, "https://example.com/news");
+
     const extractResult = await client.callTool({
       name: "web_extract",
       arguments: {
@@ -174,10 +433,39 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     });
     const envelope = extractResult.structuredContent as {
       ok?: boolean;
-      data?: { data?: Record<string, unknown> };
+      data?: {
+        data?: Record<string, unknown>;
+        bytes?: number;
+        truncated?: boolean;
+        warnings?: string[];
+      };
     };
     assert.equal(envelope.ok, true);
     assert.deepEqual(envelope.data?.data, { heading: "Hello", href: "/docs" });
+    assert.equal(typeof envelope.data?.bytes, "number");
+    assert.equal(envelope.data?.truncated, false);
+    assert.deepEqual(envelope.data?.warnings, []);
+
+    const extractLimitResult = await client.callTool({
+      name: "web_extract",
+      arguments: {
+        url: "https://example.com",
+        render: "never",
+        maxOutputChars: 1_000,
+        fields: [{ name: "body", selector: "body", value: "text" }],
+      },
+    });
+    assert.equal(extractLimitResult.isError, undefined);
+    const extractLimitEnvelope = extractLimitResult.structuredContent as {
+      ok?: boolean;
+      data?: { data?: Record<string, unknown> };
+    };
+    assert.equal(extractLimitEnvelope.ok, true);
+    const extractedBody = extractLimitEnvelope.data?.data?.body;
+    if (typeof extractedBody !== "string") {
+      assert.fail("expected extracted body to be a string");
+    }
+    assert.match(extractedBody, /Groundlane/u);
   } finally {
     await client.close();
     await new Promise<void>((resolve, reject) =>

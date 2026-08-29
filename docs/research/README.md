@@ -14,6 +14,7 @@ Research snapshots are dated. Prices, product features, repository licenses, and
 
 - [Extended competitor map](extended-competitors.md) — web-intelligence APIs, search/data providers, model-native tools, and extraction platforms.
 - [Verified free tiers and trial credits](free-tiers.md) — current recurring allowances, finite signup pools, and recommended routing order.
+- [Provider inventory](../operations/provider-inventory.md) — current production secret presence, live smoke state, balance evidence, and capability matrix.
 - [Browser infrastructure appendix](appendix-browser-infrastructure.md) — Browserbase, Browserless, Steel, and Hyperbrowser.
 - [Scraping platforms appendix](appendix-scraping-platforms.md) — Bright Data, ZenRows, and ScrapingBee.
 - [Agent platforms appendix](appendix-agent-platforms.md) — Cloudflare Browser Run, Browser Use, Firecrawl, and Apify.

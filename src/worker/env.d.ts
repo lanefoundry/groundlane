@@ -14,6 +14,7 @@ declare global {
       BROWSERBASE_API_KEY?: string;
       PARALLEL_API_KEY?: string;
       LINKUP_API_KEY?: string;
+      KEENABLE_API_KEY?: string;
       SERPER_API_KEY?: string;
       YOU_API_KEY?: string;
       BROWSERLESS_TOKEN?: string;

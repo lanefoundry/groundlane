@@ -33,14 +33,14 @@ Groundlane does use mature open-source crawler and browser projects as architect
                                |
                   +------------v-------------+
                   | MCP server + tool registry|
-                  +---+----------+----------+-+
-                      |          |          |
-             web_search   web_fetch   web_extract
-                      |          |          |
-             SearchRouter   FetchPipeline   |
-                      |          +----------+
-              provider ports     |
-                      |          safe HTTP
+                  +---+----------+----------+----+
+                      |          |          |    |
+             web_search   web_fetch   web_extract provider diagnostics
+                      |          |          |    |
+             SearchRouter   FetchPipeline   |    |
+                      |          +----------+    |
+              provider ports     |               |
+                      |          safe HTTP        |
   Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi |
                     Serper/You.com (opt-in)                    |
                                       |
@@ -99,6 +99,46 @@ A generic upstream 4xx does not automatically receive an expensive browser retry
 Automatic fusion is deliberately bounded rather than query-all: `balanced` makes at most two attempts and `deep` at most three. Callers that prioritize a single attempt can use `strategy=fallback` or pin `provider` explicitly.
 Monthly counters reset on a UTC month boundary and are intentionally conservative. They are not durable or shared across Container instances, so provider-side quotas and spend limits remain authoritative. A durable multi-instance ledger requires a later storage/control-plane design.
 
+### `web_answer`
+
+1. Validate the query, provider selectors, filters, result count, and deadline.
+2. Filter answer-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to all selected providers under the same abort signal and deadline. One provider success is enough for a partial-success response; all-provider failure returns `PROVIDER_UNAVAILABLE`.
+4. `strategy=fallback` tries providers sequentially and returns the first success.
+5. Return each provider answer separately with citations, source result metadata, selected providers, attempted providers, and successful providers. Groundlane does not synthesize or rank the answer texts with an LLM.
+
+The first implemented answer providers are You.com Answer and Linkup sourced answers. Parallel's cited Responses API remains cataloged as a vendor feature but is not wired into `web_answer` until its endpoint and response contract are verified in this repo.
+
+### `web_content`
+
+1. Validate the target URL with the same public URL policy before calling any provider.
+2. Filter content-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider content APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider result.
+4. Normalize each provider response to `{provider,url,finalUrl,title?,content,format,truncated,durationMs,warnings[]}`.
+5. Revalidate provider-returned final URLs and locally enforce `maxContentChars`, even when the upstream provider ignores or over-returns its own limit.
+
+Implemented content paths are Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, and Keenable Fetch. Browserbase Fetch is documented as a vendor feature but is not exposed until the exact runtime endpoint and contract are added to this repo.
+
+### `web_map`
+
+1. Validate the root URL with the same public URL policy before calling any provider.
+2. Filter map-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider map APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider result.
+4. Normalize each provider response to attributed `{provider,url,title?,description?}` links and per-provider result blocks.
+5. Revalidate every provider-returned URL and deduplicate the top-level link list without hiding provider attribution.
+
+Implemented map paths are Firecrawl Map and Tavily Map. Groundlane treats map as URL discovery only; content extraction remains in `web_content` or `web_fetch`.
+
+### `web_news`
+
+1. Validate query, provider selection, result limits, and optional country/language controls before calling any provider.
+2. Filter news-capable providers by configured credentials and request support.
+3. `strategy=parallel` fans out to selected provider news APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider result.
+4. Normalize each provider response to attributed `{provider,title,url,snippet,source?,publishedAt?,thumbnailUrl?}` news items.
+5. Revalidate provider-returned result URLs and deduplicate the top-level result list without hiding provider attribution.
+
+Implemented news paths are Brave News Search, Serper News, and SerpApi Google News.
+
 ### `web_extract`
 
 1. Retrieve the page through the same fetch pipeline and security policy as `web_fetch`.
@@ -107,6 +147,17 @@ Monthly counters reset on a UTC month boundary and are intentionally conservativ
 4. Return structured data and an explicit `missingFields` list.
 
 There is no hidden LLM extraction step. A future semantic extractor must be opt-in and identify its provider in output metadata.
+
+### Provider diagnostics
+
+`provider_capabilities` returns a static capability matrix that separates vendor
+features from Groundlane-exposed tools and current filter support.
+`provider_balance` calls only official provider balance APIs that Groundlane has
+implemented. It currently supports You.com keyed account credits and Linkup
+credits. `provider_balance(provider=all)` fans out to implemented balance
+checkers in parallel under one deadline and returns explicit unsupported or
+not-configured statuses for other providers. Balance diagnostics are operational
+metadata; they are not used as a durable spend ledger.
 
 ## Stable public failures
 

@@ -31,6 +31,7 @@ void test("Cloudflare secret manifest contains runtime-forwarded credentials", (
       "BROWSERBASE_API_KEY",
       "PARALLEL_API_KEY",
       "LINKUP_API_KEY",
+      "KEENABLE_API_KEY",
       "SERPER_API_KEY",
       "YOU_API_KEY",
       "BROWSERLESS_TOKEN",
@@ -177,7 +178,7 @@ void test("provider selection rejects invalid choices", () => {
   const providers = CLOUDFLARE_SECRET_DEFINITIONS.filter(
     (definition) => !definition.required,
   );
-  assert.throws(() => parseSecretSelection("0", providers), /between 1 and 11/u);
+  assert.throws(() => parseSecretSelection("0", providers), /between 1 and 12/u);
   assert.throws(() => parseSecretSelection("4-2", providers), /Invalid range/u);
   assert.throws(() => parseSecretSelection("tavily", providers), /Invalid selection/u);
 });

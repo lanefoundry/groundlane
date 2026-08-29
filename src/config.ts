@@ -34,6 +34,7 @@ const environmentSchema = z.object({
   BROWSERBASE_API_KEY: optionalSecret,
   PARALLEL_API_KEY: optionalSecret,
   LINKUP_API_KEY: optionalSecret,
+  KEENABLE_API_KEY: optionalSecret,
   SERPER_API_KEY: optionalSecret,
   YOU_API_KEY: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
@@ -138,6 +139,7 @@ export function parseConfig(
   }
   if (parsed.PARALLEL_API_KEY !== undefined) providerKeys.parallel = parsed.PARALLEL_API_KEY;
   if (parsed.LINKUP_API_KEY !== undefined) providerKeys.linkup = parsed.LINKUP_API_KEY;
+  if (parsed.KEENABLE_API_KEY !== undefined) providerKeys.keenable = parsed.KEENABLE_API_KEY;
   if (parsed.SERPER_API_KEY !== undefined) providerKeys.serper = parsed.SERPER_API_KEY;
   if (parsed.YOU_API_KEY !== undefined) providerKeys.you = parsed.YOU_API_KEY;
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {

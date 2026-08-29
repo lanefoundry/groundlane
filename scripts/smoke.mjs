@@ -20,7 +20,24 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ["web_extract", "web_fetch", "web_search"]);
+  assert.deepEqual(names, [
+    "provider_balance",
+    "provider_capabilities",
+    "web_answer",
+    "web_content",
+    "web_extract",
+    "web_fetch",
+    "web_map",
+    "web_news",
+    "web_search",
+  ]);
+
+  const capabilities = await client.callTool({
+    name: "provider_capabilities",
+    arguments: { provider: "you" },
+  });
+  assert.equal(capabilities.isError, undefined);
+  assert.equal(capabilities.structuredContent?.ok, true);
 
   const fetched = await client.callTool({
     name: "web_fetch",

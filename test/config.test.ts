@@ -7,9 +7,10 @@ const token = "x".repeat(32);
 void test("parseConfig applies bounded defaults and deduplicates provider order", () => {
   const config = parseConfig({
     GROUNDLANE_AUTH_TOKEN: token,
-    SEARCH_PROVIDER_ORDER: "exa,linkup,serper,you,tavily,exa,unknown",
+    SEARCH_PROVIDER_ORDER: "exa,linkup,keenable,serper,you,tavily,exa,unknown",
     EXA_API_KEY: "exa-key",
     LINKUP_API_KEY: "linkup-key",
+    KEENABLE_API_KEY: "keenable-key",
     SERPER_API_KEY: "serper-key",
     YOU_API_KEY: "you-key",
   });
@@ -18,6 +19,7 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.deepEqual(config.searchProviderOrder, [
     "exa",
     "linkup",
+    "keenable",
     "serper",
     "you",
     "tavily",
@@ -25,6 +27,7 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.deepEqual(config.providerKeys, {
     exa: "exa-key",
     linkup: "linkup-key",
+    keenable: "keenable-key",
     serper: "serper-key",
     you: "you-key",
   });
@@ -32,16 +35,18 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.equal(config.searchMonthlyRequestBudgets.linkup, 100);
   assert.equal(config.searchMonthlyRequestBudgets.serper, 0);
   assert.equal(config.searchMonthlyRequestBudgets.you, 3000);
+  assert.equal(config.searchDailyRequestBudgets.you, 100);
   assert.equal(config.readerBackend, "disabled");
   assert.equal(config.browserBackend, "disabled");
   assert.equal(config.browserlessRegion, "sfo");
 });
 
 void test("parseSearchMonthlyRequestBudgets validates provider names and duplicates", () => {
-  assert.deepEqual(parseSearchMonthlyRequestBudgets("tavily:10,serpapi:0,linkup:3,serper:2,you:1"), {
+  assert.deepEqual(parseSearchMonthlyRequestBudgets("tavily:10,serpapi:0,linkup:3,keenable:4,serper:2,you:1"), {
     tavily: 10,
     serpapi: 0,
     linkup: 3,
+    keenable: 4,
     serper: 2,
     you: 1,
   });
@@ -84,6 +89,7 @@ void test("parseConfig treats blank optional provider keys as unset", () => {
     BROWSERBASE_API_KEY: "",
     PARALLEL_API_KEY: "",
     LINKUP_API_KEY: "",
+    KEENABLE_API_KEY: "",
     SERPER_API_KEY: "",
     YOU_API_KEY: "",
     BROWSERLESS_TOKEN: "",

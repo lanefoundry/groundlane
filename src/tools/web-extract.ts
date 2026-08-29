@@ -29,6 +29,7 @@ const inputSchema = z.object({
   render: z.enum(["auto", "never", "always"]).default("auto"),
   timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
   maxBytes: z.number().int().min(1_024).max(20_000_000).optional(),
+  maxOutputChars: z.number().int().min(1_000).max(500_000).optional(),
 });
 
 const extractDataSchema = z.object({
@@ -38,7 +39,12 @@ const extractDataSchema = z.object({
   engine: z.enum(["http", "reader", "browser"]),
   backend: z.string(),
   missingFields: z.array(z.string()),
+  truncated: z.boolean(),
+  bytes: z.number().int().nonnegative(),
+  blockedSubrequests: z.number().int().nonnegative().optional(),
   durationMs: z.number().int().nonnegative(),
+  warnings: z.array(z.string()),
+  fallbackReason: z.string().optional(),
 });
 
 export interface WebExtractModuleOptions {
@@ -94,7 +100,10 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
                 const extracted = extractFields(page.content, fields, {
                   maxFields: 50,
                   maxValuesPerField: 100,
-                  maxOutputChars: options.maxOutputChars,
+                  maxOutputChars: Math.min(
+                    input.maxOutputChars ?? options.maxOutputChars,
+                    options.maxOutputChars,
+                  ),
                 });
                 return { page, extracted };
               },
@@ -106,7 +115,16 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
               engine: result.page.raw.engine,
               backend: result.page.raw.backend,
               missingFields: result.extracted.missingFields,
+              truncated: result.page.truncated || result.extracted.truncated,
+              bytes: result.page.bytes,
+              ...(result.page.raw.blockedSubrequests === undefined
+                ? {}
+                : { blockedSubrequests: result.page.raw.blockedSubrequests }),
               durationMs: Math.round(performance.now() - started),
+              warnings: result.page.warnings,
+              ...(result.page.fallbackReason === undefined
+                ? {}
+                : { fallbackReason: result.page.fallbackReason }),
             };
             return structuredToolResult({ ok: true, data });
           } catch (error) {

@@ -30,6 +30,7 @@ export class GroundlaneContainer extends Container<Cloudflare.Env> {
     BROWSERBASE_API_KEY: this.env.BROWSERBASE_API_KEY ?? "",
     PARALLEL_API_KEY: this.env.PARALLEL_API_KEY ?? "",
     LINKUP_API_KEY: this.env.LINKUP_API_KEY ?? "",
+    KEENABLE_API_KEY: this.env.KEENABLE_API_KEY ?? "",
     SERPER_API_KEY: this.env.SERPER_API_KEY ?? "",
     YOU_API_KEY: this.env.YOU_API_KEY ?? "",
     REQUEST_TIMEOUT_MS: this.env.REQUEST_TIMEOUT_MS ?? "30000",

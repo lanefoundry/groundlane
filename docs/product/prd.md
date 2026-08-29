@@ -2,11 +2,11 @@
 
 狀態：Draft for implementation  
 日期：2026-08-21  
-範圍：`web_fetch`、`web_search`、`web_extract`，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
+範圍：`web_fetch`、`web_search`、`web_answer`、`web_content`、`web_map`、`web_news`、`web_extract`，provider diagnostics，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
 
 ## 1. 摘要
 
-Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 透過 authenticated Streamable HTTP MCP 提供三個 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、依 DOM 規則抽取欄位的 `web_extract`。
+Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、搜尋 news-specific indexes 的 `web_news`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance` 與 `provider_capabilities`，用來檢查帳號餘額與已實作功能邊界。
 
 系統以便宜、容易觀測的 HTTP retrieval 為優先；只有在明確需要 render 時，才升級到內部 **Groundlane Browser** engine。搜尋透過可替換 provider adapters，不自建全網 index。Extraction 必須 deterministic，不以隱藏的 LLM call 假裝穩定 structured output。
 
@@ -25,15 +25,15 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 
 ### 3.1 產品目標
 
-1. 任何支援 Streamable HTTP MCP 的 agent client，都能以一個 endpoint 使用三項 Web primitives。
+1. 任何支援 Streamable HTTP MCP 的 agent client，都能以一個 endpoint 使用 Web primitives 與只讀 provider diagnostics。
 2. 使用者可替換 search provider，而不必改 tool name 與 normalized output contract。
 3. 一般公開頁面由 HTTP fast path 完成；browser 只處理明確 render/fallback 條件。
-4. 三項工具共用 authentication、URL policy、deadline、resource limits、errors 與 audit metadata。
+4. 公開工具共用 authentication、URL policy、deadline、resource limits、errors 與 audit metadata。
 5. 可在本機開發，並能遷移到 Cloudflare Worker + Container topology。
 
 ### 3.2 MVP 成功指標
 
-- contract tests 能完成 MCP initialize、tools/list 與三項 tools/call。
+- contract tests 能完成 MCP initialize、tools/list 與公開 tools/call。
 - 所有公開 tool failure 都回傳穩定 error code，不洩漏 secret、stack 或 raw upstream body。
 - security regression suite 覆蓋 direct private IP、DNS-to-private、redirect-to-private、IPv6、metadata endpoint 與 browser subresource。
 - fetch/extract fixtures 可分辨 HTTP 與 browser engine，並保留同一 end-to-end deadline。
@@ -50,6 +50,8 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 
 - 「讓 agent 讀取一個公開 URL，並知道實際 final URL、engine 與是否 truncated。」
 - 「用同一工具搜尋 Web，由系統選擇可用 provider，但保留來源 attribution。」
+- 「用同一工具並行詢問多個 answer-capable providers，保留各自答案與 citations，不做不可審計的隱藏合成。」
+- 「用同一工具並行呼叫多個 provider content APIs，對照不同 provider 對同一 URL 的抽取品質與成功率。」
 - 「從固定頁面 DOM 抽出具名欄位，結果可重現、缺失欄位可判斷。」
 
 ## 5. MVP 功能需求
@@ -101,7 +103,7 @@ warnings[], fallbackReason?
 - `maxResults`：有 deployment 上限的結果數。
 - `domains`、`excludeDomains`、`timeRange`：選填 filter。
 - `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
-- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi | linkup | serper | you`。
+- `provider`：`auto | tavily | exa | parallel | browserbase | brave | firecrawl | serpapi | linkup | keenable | serper | you`。
 - `providers`：選填、有界且有順序的 provider candidate allowlist；不可與 explicit `provider` 同時使用。
 - `strategy`：`fallback | balanced | deep`；`auto` 預設為 `balanced`。
 
@@ -116,7 +118,7 @@ durationMs, warnings[]
 
 行為：
 
-- `auto` 先過濾能支援請求 features、具 credential、健康且尚有本機 budget 的 providers。
+- `auto` 先過濾能支援請求 features、具 credential 或 keyless public mode、健康且尚有本機 budget 的 providers。
 - `balanced` 預設選擇最多兩個互補 provider family；`deep` 最多三個；`fallback` 依序嘗試直到第一個成功。
 - 每次 provider attempt 先原子消耗該 instance 的月度 request budget；到頂後跳過並回報 warning。
 - explicit provider 不可被靜默換成另一家。
@@ -126,18 +128,144 @@ durationMs, warnings[]
 - response 必須清楚標出 selected、attempted、successful providers，以及每筆 fused result 的 rank provenance。
 - provider 回傳 URL 仍屬不可信資料，後續 fetch 必須重新套用 URL policy。
 
-### 5.4 `web_extract`
+### 5.4 `web_answer`
+
+預期 input：
+
+- `query`：必填查詢字串，長度受限。
+- `maxResults`：有 deployment 上限的引用來源數。
+- `domains`、`excludeDomains`、`timeRange`：選填 filter。
+- `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
+- `provider`：`auto | linkup | you`。
+- `providers`：選填、有界且有順序的 answer provider candidate allowlist；不可與 explicit `provider` 同時使用。
+- `strategy`：`parallel | fallback`；預設為 `parallel`。
+
+預期 output：
+
+```text
+query, strategy,
+providersSelected[], providersAttempted[], providersSucceeded[],
+answers[{provider, answer, citations[{url,title?,excerpts[]}],
+results[{title,url,snippet,publishedAt?,provider}], durationMs, warnings[]}],
+durationMs, warnings[]
+```
+
+行為：
+
+- `auto` 只選擇已設定 credential 且支援該請求 filters 的 answer providers。
+- `parallel` 在同一 deadline 與 abort signal 下並行呼叫多個 providers；至少一家成功即可回 partial success。
+- `fallback` 依序嘗試直到第一個成功，適合想節省 answer-call credits 的 client。
+- 回傳多家答案時不做 LLM synthesis；caller 可自行比較或另行合成。
+- provider 回傳 citation/source URL 必須套用 public URL policy；不安全來源丟棄。
+- 第一批實作 provider 是 You.com Answer API 與 Linkup `outputType=sourcedAnswer`。
+
+### 5.5 `web_content`
+
+預期 input：
+
+- `url`：必填 HTTP(S) URL。
+- `maxContentChars`：單一 provider content 的字數上限。
+- `timeoutMs`：選填 request deadline，但不得超過 deployment 上限。
+- `provider`：`auto | linkup | you | exa | tavily | firecrawl | keenable`。
+- `providers`：選填、有界且有順序的 content provider candidate allowlist；不可與 explicit `provider` 同時使用。
+- `strategy`：`parallel | fallback`；預設為 `parallel`。
+- `live`：選填，要求支援的 provider 嘗試 live/fresh retrieval。
+
+預期 output：
+
+```text
+url, strategy,
+providersSelected[], providersAttempted[], providersSucceeded[],
+contents[{provider,url,finalUrl,title?,content,format(markdown|text),truncated,durationMs,warnings[]}],
+durationMs, warnings[]
+```
+
+行為：
+
+- 呼叫 provider 前先用 Groundlane public URL policy 驗證目標 URL。
+- `auto` 只選擇已設定 credential 或 keyless public mode 且支援該請求的 content providers。
+- `parallel` 在同一 deadline 與 abort signal 下並行呼叫多個 provider content APIs；至少一家成功即可回 partial success。
+- `fallback` 依序嘗試直到第一個成功，適合想節省 content-call credits 的 client。
+- 回傳多家內容時不做 LLM synthesis；caller 可自行比較品質、長度與來源。
+- provider 回傳 final URL 必須重新套用 public URL policy；不安全來源丟棄。
+- 第一批實作 provider 是 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape 與 Keenable Fetch。
+
+### 5.6 `web_map`
+
+預期 input：
+
+- `url`：必填 HTTP(S) root URL。
+- `maxLinks`：最多回傳 URL 數，上限 1,000。
+- `provider`：`auto | firecrawl | tavily`。
+- `providers`：選填、有界且有順序的 map provider candidate allowlist；不可與 explicit `provider` 同時使用。
+- `strategy`：`parallel | fallback`；預設為 `parallel`。
+- `search`：選填，交給支援 provider 做相關 URL discovery。
+- `includeSubdomains`、`ignoreCache`、`maxDepth`、`maxBreadth`：有界 provider map controls。
+- `timeoutMs`：選填 request deadline。
+
+預期 output：
+
+```text
+url, strategy,
+providersSelected[], providersAttempted[], providersSucceeded[],
+links[{provider,url,title?,description?}],
+providerResults[{provider,url,links[],durationMs,warnings[]}],
+durationMs, warnings[]
+```
+
+行為：
+
+- 呼叫 provider 前先用 Groundlane public URL policy 驗證 root URL。
+- `auto` 只選擇已設定 credential 且支援該請求的 map providers。
+- `parallel` 在同一 deadline 與 abort signal 下並行呼叫 provider map APIs；至少一家成功即可回 partial success。
+- `fallback` 依序嘗試直到第一個成功，適合想節省 map-call credits 的 client。
+- provider 回傳的 URL 必須重新套用 public URL policy；不安全候選直接丟棄。
+- 第一批實作 provider 是 Firecrawl Map 與 Tavily Map。
+
+### 5.7 `web_news`
+
+預期 input：
+
+- `query`：必填 news query。
+- `maxResults`：最多回傳 news results，上限 50。
+- `provider`：`auto | brave | serper | serpapi`。
+- `providers`：選填、有界且有順序的 news provider candidate allowlist；不可與 explicit `provider` 同時使用。
+- `strategy`：`parallel | fallback`；預設為 `parallel`。
+- `timeRange`：選填 `day | week | month | year`，映射到支援 provider 的 freshness / when 參數。
+- `country`、`language`：選填 2-letter locale controls。
+- `timeoutMs`：選填 request deadline。
+
+預期 output：
+
+```text
+query, strategy,
+providersSelected[], providersAttempted[], providersSucceeded[],
+results[{provider,title,url,snippet,source?,publishedAt?,thumbnailUrl?}],
+providerResults[{provider,query,results[],durationMs,warnings[]}],
+durationMs, warnings[]
+```
+
+行為：
+
+- `auto` 只選擇已設定 credential 且支援該請求的 news providers。
+- `parallel` 在同一 deadline 與 abort signal 下並行呼叫 provider news APIs；至少一家成功即可回 partial success。
+- `fallback` 依序嘗試直到第一個成功，適合想節省 news-call credits 的 client。
+- provider 回傳的 URL 必須重新套用 public URL policy；不安全候選直接丟棄。
+- 第一批實作 provider 是 Brave News Search、Serper News 與 SerpApi Google News。
+
+### 5.8 `web_extract`
 
 預期 input：
 
 - `url`：必填 HTTP(S) URL。
 - `fields`：具名欄位陣列，每項含 `name`、`selector`、`value(text|html|attribute)`，attribute mode 另含 `attribute`，並可設定 `many`。
-- 共用 `render`、`waitFor`、`timeoutMs` 與 `maxBytes` 控制。
+- 共用 `render`、`waitFor`、`timeoutMs`、`maxBytes` 與 `maxOutputChars` 控制。
 
 預期 output：
 
 ```text
-requestedUrl, finalUrl, data, engine, backend, missingFields[], durationMs
+requestedUrl, finalUrl, data, engine, backend, missingFields[],
+truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 ```
 
 行為：
@@ -147,6 +275,19 @@ requestedUrl, finalUrl, data, engine, backend, missingFields[], durationMs
 - 單值欄位找不到時在 `missingFields` 明確列出，不以空字串偽裝成功。
 - `many=true` 固定回傳陣列；單值欄位固定回傳單值或明確缺失。
 - 不呼叫 LLM；相同 DOM 與 input 應產生相同結果。
+
+### 5.9 Provider diagnostics
+
+`provider_capabilities` 回傳靜態 provider matrix，明確分開 vendor 自家功能、Groundlane 目前 expose 的 tools、filter support 與 balance support。這個工具不呼叫第三方 API。
+
+`provider_balance` 只呼叫已實作且官方文件明確的帳號餘額 API。已支援：
+
+- You.com：`GET https://api.you.com/v1/billing/account_balance`，回傳 cents。
+- Linkup：`GET https://api.linkup.so/v1/credits/balance`，回傳 credits。
+
+沒有 key、沒有已實作 balance API、或 upstream 拒絕時，必須回傳 sanitized status，不得洩漏 secret、raw provider body 或 provider-specific error payload。它不是 durable billing ledger，也不取代 provider dashboard。
+
+`provider_balance(provider=all)` 必須並行查詢所有已實作的 balance checkers，並在同一 response 中保留 unsupported / not-configured providers 的診斷狀態。
 
 ## 6. Cross-cutting requirements
 

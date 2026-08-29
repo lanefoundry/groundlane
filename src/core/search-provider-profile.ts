@@ -17,6 +17,7 @@ const PROVIDER_FAMILIES: Readonly<Partial<Record<SearchProviderId, SearchProvide
   brave: "independent-index",
   firecrawl: "extraction-backed",
   serpapi: "serp",
+  keenable: "independent-index",
   serper: "serp",
   you: "general-web",
 };
