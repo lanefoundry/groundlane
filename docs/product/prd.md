@@ -37,7 +37,7 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 - 所有公開 tool failure 都回傳穩定 error code，不洩漏 secret、stack 或 raw upstream body。
 - security regression suite 覆蓋 direct private IP、DNS-to-private、redirect-to-private、IPv6、metadata endpoint 與 browser subresource。
 - fetch/extract fixtures 可分辨 HTTP 與 browser engine，並保留同一 end-to-end deadline。
-- provider routing tests 覆蓋 explicit selection、capability filtering、retryable fallback 與 non-retryable failure。
+- provider routing tests 覆蓋 explicit selection、capability filtering、provider-rejection fallback 與 explicit-provider failure。
 - 預設 CI 不需要 live provider key 或任意外網即可通過。
 
 ## 4. 使用者與情境
@@ -122,7 +122,7 @@ durationMs, warnings[]
 - `balanced` 預設選擇最多兩個互補 provider family；`deep` 最多三個；`fallback` 依序嘗試直到第一個成功。
 - 每次 provider attempt 先原子消耗該 instance 的月度 request budget；到頂後跳過並回報 warning。
 - explicit provider 不可被靜默換成另一家。
-- `fallback` 只有 timeout、rate limit、provider 5xx 或 malformed response 才能換下一家；auth/input/政策類錯誤不得 fallback。
+- 非 explicit provider 的 `fallback` 會把單一 provider 的 HTTP rejection、timeout、rate limit、5xx 或 malformed response 轉成 warning 並換下一家；明確指定 `provider` 時不得靜默切換其他 provider。
 - federated strategy 共用同一個 deadline，至少一家成功即可回傳 partial success；全部失敗才回 `PROVIDER_UNAVAILABLE`。
 - 多家結果先做保守 canonical URL 去重，再以 health-adjusted RRF 融合；不得直接相加不同 provider 的 raw score。
 - response 必須清楚標出 selected、attempted、successful providers，以及每筆 fused result 的 rank provenance。
@@ -370,7 +370,7 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 
 ### Search routing
 
-- [ ] Explicit provider、auto order、capability selection、missing key、retryable fallback 與 non-retryable no-fallback 有 deterministic fake-adapter tests。
+- [ ] Explicit provider、auto order、capability selection、missing key、provider-rejection fallback 與 explicit-provider no-fallback 有 deterministic fake-adapter tests。
 - [ ] 所有結果符合 normalized schema 並保留 selected provider。
 - [ ] 預設 CI 不呼叫真實 provider。
 

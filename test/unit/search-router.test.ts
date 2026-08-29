@@ -196,9 +196,18 @@ void test("deep search is bounded to three complementary providers", async () =>
   assert.deepEqual(result.providersSucceeded, ["tavily", "exa", "brave"]);
 });
 
-void test("SearchRouter does not fall back on non-retryable errors or explicit provider", async () => {
-  await assert.rejects(new SearchRouter([provider("a", "fatal"), provider("b", "ok")], ["a", "b"]).search(request, new AbortController().signal), /bad request/);
+void test("SearchRouter fallback continues past provider rejections", async () => {
+  const result = await new SearchRouter(
+    [provider("a", "fatal"), provider("b", "ok")],
+    ["a", "b"],
+  ).search(request, new AbortController().signal);
+  assert.equal(result.provider, "b");
+  assert.deepEqual(result.warnings, ["a unavailable"]);
+});
+
+void test("SearchRouter preserves explicit provider errors", async () => {
   await assert.rejects(new SearchRouter([provider("a", "retry"), provider("b", "ok")], ["a", "b"]).search({ ...request, provider: "a" }, new AbortController().signal), /down/);
+  await assert.rejects(new SearchRouter([provider("a", "fatal"), provider("b", "ok")], ["a", "b"]).search({ ...request, provider: "a" }, new AbortController().signal), /bad request/);
 });
 
 void test("SearchRouter rejects unsupported requests", async () => {

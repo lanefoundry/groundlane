@@ -69,7 +69,13 @@ export class SearchRouter {
     }
 
     return strategy === "fallback"
-      ? this.searchWithFallback(request, selected, resolved.warnings, signal)
+      ? this.searchWithFallback(
+        request,
+        selected,
+        resolved.warnings,
+        explicitProvider !== undefined,
+        signal,
+      )
       : this.searchFederated(request, strategy, resolved.providers, resolved.warnings, signal);
   }
 
@@ -152,6 +158,7 @@ export class SearchRouter {
     request: SearchRequest,
     providers: readonly SearchProvider[],
     initialWarnings: readonly string[],
+    explicitProvider: boolean,
     signal: AbortSignal,
   ): Promise<SearchResult> {
     const warnings = [...initialWarnings];
@@ -189,7 +196,7 @@ export class SearchRouter {
       } catch (error) {
         const safe = toGroundlaneError(error, "search");
         this.health?.recordFailure(provider.id);
-        if (providers.length === 1 || !safe.retryable) throw safe;
+        if (explicitProvider || (providers.length === 1 && !safe.retryable)) throw safe;
         warnings.push(`${provider.id} unavailable`);
       }
     }

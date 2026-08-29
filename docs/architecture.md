@@ -91,10 +91,11 @@ A generic upstream 4xx does not automatically receive an expensive browser retry
 1. Validate the query, domains, time range, strategy, provider allowlist, and bounded result count.
 2. Filter configured providers by requested capabilities, health, and remaining local attempt budget.
 3. An explicit provider stays single-source. Automatic searches default to `balanced`, which deterministically selects at most two complementary provider families; `deep` selects at most three and `fallback` retains sequential first-success routing.
-4. Atomically consume one instance-local monthly attempt immediately before each selected provider call.
-5. Run federated calls concurrently under the original shared abort signal and deadline. One successful provider is a partial success; all-provider failure returns a stable sanitized error.
-6. Canonicalize public HTTP(S) result URLs, remove conservative tracking parameters, merge exact duplicates, and combine ranks with health-adjusted Reciprocal Rank Fusion. Raw provider scores remain provenance and are never added together.
-7. Apply a bounded hostname-diversity policy and return selected, attempted, successful, and per-result provider attribution.
+4. In non-explicit fallback mode, a single provider rejection is recorded as a warning and the router tries the next eligible provider. Explicit provider calls preserve the sanitized provider error.
+5. Atomically consume one instance-local monthly attempt immediately before each selected provider call.
+6. Run federated calls concurrently under the original shared abort signal and deadline. One successful provider is a partial success; all-provider failure returns a stable sanitized error.
+7. Canonicalize public HTTP(S) result URLs, remove conservative tracking parameters, merge exact duplicates, and combine ranks with health-adjusted Reciprocal Rank Fusion. Raw provider scores remain provenance and are never added together.
+8. Apply a bounded hostname-diversity policy and return selected, attempted, successful, and per-result provider attribution.
 
 Automatic fusion is deliberately bounded rather than query-all: `balanced` makes at most two attempts and `deep` at most three. Callers that prioritize a single attempt can use `strategy=fallback` or pin `provider` explicitly.
 Monthly counters reset on a UTC month boundary and are intentionally conservative. They are not durable or shared across Container instances, so provider-side quotas and spend limits remain authoritative. A durable multi-instance ledger requires a later storage/control-plane design.
@@ -104,7 +105,7 @@ Monthly counters reset on a UTC month boundary and are intentionally conservativ
 1. Validate the query, provider selectors, filters, result count, and deadline.
 2. Filter answer-capable providers by configured credentials and request support.
 3. `strategy=parallel` fans out to all selected providers under the same abort signal and deadline. One provider success is enough for a partial-success response; all-provider failure returns `PROVIDER_UNAVAILABLE`.
-4. `strategy=fallback` tries providers sequentially and returns the first success.
+4. `strategy=fallback` tries providers sequentially and returns the first success. Provider rejections are fallback-eligible unless the caller pinned a single provider.
 5. Return each provider answer separately with citations, source result metadata, selected providers, attempted providers, and successful providers. Groundlane does not synthesize or rank the answer texts with an LLM.
 
 The first implemented answer providers are You.com Answer and Linkup sourced answers. Parallel's cited Responses API remains cataloged as a vendor feature but is not wired into `web_answer` until its endpoint and response contract are verified in this repo.
