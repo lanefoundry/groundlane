@@ -34,10 +34,13 @@ const ctx = createFakeExecutionContext();
 function mockEnv(fetchImpl: (request: Request) => Promise<Response>): {
   env: WorkerEnv;
   names: string[];
+  starts: string[];
 } {
   const names: string[] = [];
+  const starts: string[] = [];
   return {
     names,
+    starts,
     env: {
       GROUNDLANE_AUTH_TOKEN: "test-secret",
       OAUTH_KV: createFakeKvNamespace(),
@@ -45,7 +48,13 @@ function mockEnv(fetchImpl: (request: Request) => Promise<Response>): {
       GROUNDLANE_CONTAINER: {
         getByName(name) {
           names.push(name);
-          return { fetch: fetchImpl };
+          return {
+            running: true,
+            start: () => {
+              starts.push(name);
+            },
+            fetch: fetchImpl,
+          };
         },
       },
     },
@@ -82,6 +91,31 @@ void test("readiness endpoint proxies the container without requiring MCP auth",
   assert.equal(response.status, 200);
   assert.equal(forwardedPath, "/readyz");
   assert.deepEqual(names, [CONTAINER_INSTANCE_NAME]);
+});
+
+void test("readiness endpoint starts an inactive named container before fetching", async () => {
+  const { env, starts } = mockEnv(() => Promise.resolve(Response.json({ status: "ready" })));
+  env.GROUNDLANE_CONTAINER = {
+    getByName(name) {
+      return {
+        running: false,
+        start: () => {
+          starts.push(name);
+        },
+        fetch: () => Promise.resolve(Response.json({ status: "ready" })),
+      };
+    },
+  };
+
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/readyz"),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(starts, [CONTAINER_INSTANCE_NAME]);
 });
 
 void test("MCP endpoint without any credentials falls through to the OAuth challenge", async () => {
@@ -140,6 +174,36 @@ void test("authenticated MCP requests route to the named container", async () =>
     forwardedRequest?.headers.get("x-request-id"),
     response.headers.get("x-request-id"),
   );
+});
+
+void test("authenticated MCP requests start an inactive named container before proxying", async () => {
+  const starts: string[] = [];
+  const { env } = mockEnv(() => Promise.resolve(new Response()));
+  env.GROUNDLANE_CONTAINER = {
+    getByName(name) {
+      return {
+        running: false,
+        start: () => {
+          starts.push(name);
+        },
+        fetch: () => Promise.resolve(Response.json({ ok: true }, { status: 202 })),
+      };
+    },
+  };
+
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret" },
+      body: "{}",
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(starts, [CONTAINER_INSTANCE_NAME]);
 });
 
 void test("container failures return a structured gateway error", async () => {

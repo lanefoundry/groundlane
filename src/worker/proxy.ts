@@ -1,6 +1,8 @@
 import { jsonError, logWorkerEvent } from "./http.js";
 
 export interface ContainerStub {
+  readonly running?: boolean;
+  start?: () => void;
   fetch(request: Request): Promise<Response>;
 }
 
@@ -21,6 +23,12 @@ export function requestWithId(request: Request, requestId: string): Request {
   const headers = new Headers(request.headers);
   headers.set("x-request-id", requestId);
   return new Request(request, { headers });
+}
+
+export function ensureContainerStarted(container: ContainerStub): void {
+  if (container.running === false) {
+    container.start?.();
+  }
 }
 
 /**
@@ -49,6 +57,7 @@ export async function proxyToContainer(
 ): Promise<Response> {
   try {
     const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
+    ensureContainerStarted(container);
     const response = await container.fetch(
       requestForContainer(request, requestId, env.GROUNDLANE_AUTH_TOKEN),
     );

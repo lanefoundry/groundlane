@@ -3,6 +3,7 @@ import { jsonError } from "./http.js";
 import { buildOAuthProvider } from "./oauth.js";
 import {
   CONTAINER_INSTANCE_NAME,
+  ensureContainerStarted,
   proxyToContainer,
   requestWithId,
   type WorkerEnv,
@@ -42,6 +43,7 @@ export async function handleWorkerRequest(
   if (pathname === "/readyz" && request.method === "GET") {
     try {
       const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
+      ensureContainerStarted(container);
       return await container.fetch(requestWithId(request, requestId));
     } catch {
       return jsonError(
