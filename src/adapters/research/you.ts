@@ -140,7 +140,7 @@ export class YouResearchProvider implements ResearchProvider {
     return {
       provider: this.id,
       report: value.content,
-      citations: await validateResearchCitations(citations, this.validateUrl),
+      citations: await validateResearchCitations(citations, this.validateUrl, signal),
       durationMs: Math.round(performance.now() - started),
       warnings: [],
     };

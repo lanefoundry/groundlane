@@ -6,7 +6,7 @@
 
 ## 1. 摘要
 
-Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、取得 provider-attributed research reports 的 `web_research`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、有界 crawl 公開網站的 `web_crawl`、搜尋 news-specific indexes 的 `web_news`、搜尋 image-specific indexes 的 `web_images`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance`、`provider_capabilities`、`provider_quota` 與 `search_budget_status`，分別用來檢查帳號餘額、已實作功能邊界、整合 quota 狀態與 Groundlane 本機搜尋 attempt guardrail。
+Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、取得 provider-attributed research reports 的 `web_research`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、有界 crawl 公開網站的 `web_crawl`、搜尋 news-specific indexes 的 `web_news`、搜尋 image-specific indexes 的 `web_images`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance`、`provider_capabilities`、`provider_quota` 與 `search_budget_status`，分別用來檢查帳號餘額、已實作功能邊界、整合 quota 狀態與 Groundlane 本機 provider-dispatch attempt guardrail。
 
 系統以便宜、容易觀測的 HTTP retrieval 為優先；只有在明確需要 render 時，才升級到內部 **Groundlane Browser** engine。搜尋透過可替換 provider adapters，不自建全網 index。Extraction 必須 deterministic，不以隱藏的 LLM call 假裝穩定 structured output。
 
@@ -291,9 +291,9 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 
 `provider_balance(provider=all)` 必須並行查詢所有已實作的 balance checkers，並在同一 response 中保留 unsupported / not-configured providers 的診斷狀態。
 
-`provider_quota(provider=all)` 必須整合 `provider_balance` 類帳號餘額、Groundlane 本機 `web_search` attempt budgets、provider capabilities、filter support 與 `searchRouting` hints。它是操作時的第一層診斷視圖，但 response 必須明確分開 accountBalance、toolBudgets 與 routing hints，不能把本機 guardrail 說成 provider 帳務真相。
+`provider_quota(provider=all)` 必須整合 `provider_balance` 類帳號餘額、Groundlane 本機 provider-dispatch attempt budgets、provider capabilities、filter support 與 `searchRouting` hints。它是操作時的第一層診斷視圖，但 response 必須明確分開 accountBalance、toolBudgets 與 routing hints，不能把本機 guardrail 說成 provider 帳務真相。
 
-`search_budget_status(provider=all)` 回傳 Groundlane 當前 process 內的 search attempt budget 快照，包括 daily/monthly period、limit、used、remaining、exhausted 與 resetAt。它不呼叫第三方 API，不代表 provider 帳務真相，也不能跨 Container instance 合併計數。當 `web_search` 回傳 0 results 時，操作者應先檢查 `web_search.providersSelected/providersAttempted/warnings` 與 `search_budget_status`，再用 `provider_balance` 查 vendor account 狀態。
+`search_budget_status(provider=all)` 回傳 Groundlane 當前 process 內的 provider dispatch attempt budget 快照，包括 daily/monthly period、limit、used、remaining、exhausted 與 resetAt。它不呼叫第三方 API，不代表 provider 帳務真相，也不能跨 Container instance 合併計數。當 provider-backed tool 耗盡本機 attempt 或 `web_search` 回傳 0 results 時，操作者應先檢查 tool response 的 `providersSelected/providersAttempted/warnings` 與 `search_budget_status`，再用 `provider_balance` 查 vendor account 狀態。
 
 ## 6. Cross-cutting requirements
 

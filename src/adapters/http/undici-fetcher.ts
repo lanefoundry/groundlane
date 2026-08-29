@@ -3,10 +3,15 @@ import https from "node:https";
 import type { IncomingHttpHeaders, IncomingMessage, RequestOptions } from "node:http";
 import type { HttpFetcher, HttpFetchRequest, RawDocument } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { withinDeadline } from "../../core/limits.js";
+import { withinDeadline, type Deadline } from "../../core/limits.js";
 import { resolvePublicUrl, resolveRedirect, type DnsLookup, type ResolvedAddress } from "../../core/url-policy.js";
 
 export interface SafeHttpFetcherOptions { lookup?: DnsLookup; allowedPorts?: ReadonlySet<number>; userAgent?: string }
+export interface RedirectResolutionRequest {
+  url: string;
+  maxRedirects: number;
+  deadline: Deadline;
+}
 
 function headersToRecord(headers: IncomingHttpHeaders): Record<string, string> {
   return Object.fromEntries(Object.entries(headers).flatMap(([key, value]) => value === undefined ? [] : [[key, Array.isArray(value) ? value.join(", ") : value]]));
@@ -114,6 +119,59 @@ export class SafeHttpFetcher implements HttpFetcher {
         backend: "direct",
       };
     }
+  }
+}
+
+export async function resolveFinalHttpUrl(
+  request: RedirectResolutionRequest,
+  options: SafeHttpFetcherOptions = {},
+  parent?: AbortSignal,
+): Promise<string> {
+  const cache = new Map<string, readonly ResolvedAddress[]>();
+  let current = request.url;
+  for (let redirects = 0; ; redirects += 1) {
+    if (redirects > request.maxRedirects) {
+      throw new GroundlaneError("UPSTREAM_ERROR", "redirect", "Upstream exceeded the redirect limit");
+    }
+    const destination = await withinDeadline(
+      () =>
+        resolvePublicUrl(current, {
+          cache,
+          ...(options.lookup ? { lookup: options.lookup } : {}),
+          ...(options.allowedPorts ? { allowedPorts: options.allowedPorts } : {}),
+        }),
+      request.deadline,
+      parent,
+      "dns",
+    );
+    let response: IncomingMessage | undefined;
+    let lastError: unknown;
+    for (const address of destination.addresses) {
+      try {
+        response = await withinDeadline(
+          (signal) => requestPinned(destination.url, address, options, signal),
+          request.deadline,
+          parent,
+          "connect",
+        );
+        break;
+      } catch (error) {
+        if (error instanceof GroundlaneError) throw error;
+        lastError = error;
+      }
+    }
+    if (!response) {
+      if (lastError instanceof GroundlaneError) throw lastError;
+      throw new GroundlaneError("UPSTREAM_ERROR", "connect", "Could not connect to the validated destination", true);
+    }
+    const status = response.statusCode ?? 502;
+    const location = response.headers.location;
+    response.destroy();
+    if ([301, 302, 303, 307, 308].includes(status) && location) {
+      current = resolveRedirect(destination.url, location);
+      continue;
+    }
+    return destination.url.href;
   }
 }
 

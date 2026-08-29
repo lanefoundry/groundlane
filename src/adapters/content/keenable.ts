@@ -68,6 +68,7 @@ export class KeenableContentProvider implements ContentProvider {
       started,
       this.validateUrl,
       keyed ? [] : ["keenable public endpoint used"],
+      signal,
     );
   }
 }

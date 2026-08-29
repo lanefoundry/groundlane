@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   CompositeSearchBudget,
+  consumeProviderAttemptBudget,
   DailySearchBudget,
   MinuteRateLimiter,
   MonthlySearchBudget,
@@ -185,4 +186,17 @@ void test("CompositeSearchBudget does not consume when pre-check fails", () => {
   const composite = new CompositeSearchBudget([monthly, daily]);
   assert.equal(composite.tryConsume("a"), false);
   assert.equal(daily.remaining("a"), 5);
+});
+
+void test("consumeProviderAttemptBudget reserves before provider dispatch", () => {
+  const budget = new MonthlySearchBudget({ you: 1 });
+  assert.equal(consumeProviderAttemptBudget(budget, "you", "provider-budget", false), undefined);
+  assert.equal(
+    consumeProviderAttemptBudget(budget, "you", "provider-budget", false),
+    "you budget exhausted",
+  );
+  assert.throws(
+    () => consumeProviderAttemptBudget(budget, "you", "provider-budget", true),
+    { code: "PROVIDER_UNAVAILABLE", stage: "provider-budget" },
+  );
 });

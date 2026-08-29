@@ -200,7 +200,7 @@ export class LinkupResearchProvider implements ResearchProvider {
         return {
           provider: this.id,
           report,
-          citations: await validateResearchCitations(citationsFromOutput(outputValue), this.validateUrl),
+          citations: await validateResearchCitations(citationsFromOutput(outputValue), this.validateUrl, signal),
           durationMs: Math.round(performance.now() - started),
           warnings: [
             "linkup research is asynchronous upstream; Groundlane polled within the request deadline",

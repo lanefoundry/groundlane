@@ -9,13 +9,19 @@ import {
   resolvePublicUrl,
   type DnsLookup,
 } from "../../core/url-policy.js";
+import { resolveFinalHttpUrl } from "../http/undici-fetcher.js";
 import { readBoundedResponse } from "../shared/bounded-response.js";
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+type RedirectResolver = (
+  request: ReaderFetchRequest,
+  parent?: AbortSignal,
+) => Promise<string>;
 
 export interface JinaReaderOptions {
   fetch?: FetchLike;
   lookup?: DnsLookup;
+  resolveRedirects?: RedirectResolver;
 }
 
 export class JinaReaderBackend implements ReaderBackend {
@@ -39,9 +45,17 @@ export class JinaReaderBackend implements ReaderBackend {
       parent,
       "reader-url",
     );
+    const providerUrl =
+      this.options.resolveRedirects === undefined
+        ? await resolveFinalHttpUrl(
+            { url: target.url.href, maxRedirects: 5, deadline: request.deadline },
+            { ...(this.options.lookup === undefined ? {} : { lookup: this.options.lookup }) },
+            parent,
+          )
+        : await this.options.resolveRedirects(request, parent);
     const response = await withinDeadline(
       (signal) =>
-        this.fetcher(`https://r.jina.ai/${target.url.href}`, {
+        this.fetcher(`https://r.jina.ai/${providerUrl}`, {
           method: "GET",
           redirect: "error",
           headers: {
@@ -96,7 +110,7 @@ export class JinaReaderBackend implements ReaderBackend {
     );
     return {
       requestedUrl: request.url,
-      finalUrl: target.url.href,
+      finalUrl: providerUrl,
       status: 200,
       headers: {},
       contentType: "text/markdown; charset=utf-8",

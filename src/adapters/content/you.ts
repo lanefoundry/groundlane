@@ -88,6 +88,8 @@ export class YouContentProvider implements ContentProvider {
       request.maxContentChars,
       started,
       this.validateUrl,
+      [],
+      signal,
     );
   }
 }

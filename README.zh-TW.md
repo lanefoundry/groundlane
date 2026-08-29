@@ -35,14 +35,14 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute，可設定單次 output cap；不暗中呼叫 LLM |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
-| `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane `web_search` guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
-| `search_budget_status` | 檢查 Groundlane 本機 search attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
+| `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
+| `search_budget_status` | 檢查 Groundlane 本機 provider attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
 
 Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
 
 各 provider vendor 自家還有更多 API，Groundlane 目前沒有全部接成 MCP tool。請看 [provider inventory](docs/operations/provider-inventory.md) 的已查證 backlog，以及 vendor capability、已實作 Groundlane tool、live smoke、帳號餘額證據與 Groundlane 本機 attempt budget 之間的區分。
 
-當 `web_search` 回傳 0 results 時，先看 `provider_quota`：它會把 provider account-balance status、Groundlane 本機 `web_search` budget、已實作工具與 `searchRouting` hints 放在同一個視圖。`provider_balance` 只用來查 provider-owned account credits；`search_budget_status` 則用來細查本機 attempt counters。Balance 的 `not_configured` 代表 runtime 沒有該 provider balance API 需要的 credential，不代表 keyless quota 已耗盡。
+當 provider-backed tool 耗盡本機 attempt 或 `web_search` 回傳 0 results 時，先看 `provider_quota`：它會把 provider account-balance status、Groundlane 本機 provider-dispatch budget、已實作工具與 `searchRouting` hints 放在同一個視圖。`provider_balance` 只用來查 provider-owned account credits；`search_budget_status` 則用來細查本機 attempt counters。Balance 的 `not_configured` 代表 runtime 沒有該 provider balance API 需要的 credential，不代表 keyless quota 已耗盡。
 
 ### Research 相容性
 
@@ -141,8 +141,8 @@ GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 CI deploy 後會跑 `pnpm run wait:container` 和 `pnpm run smoke:retry`，所以
 成功的 run 代表 Cloudflare Container application 已離開 provisioning，且
 production MCP server 會回應預期的 tool contracts。Runtime 中，當 Cloudflare
-回報 named Container instance 尚未 running 時，Worker 也會在 proxied
-`/readyz` 與已驗證 `/mcp` request 前先啟動該 instance。
+回報 named Container instance 尚未 running 時，Worker 也會在已驗證的
+`/readyz` 與 `/mcp` request 前先啟動該 instance。
 
 ## 連接 MCP client
 
@@ -178,10 +178,11 @@ bearer token：只要在該平台把 `GROUNDLANE_AUTH_TOKEN` 設成一次性 sec
 
 互動式雲端連接器（claude.ai、ChatGPT 的 Custom Connector）認的是 OAuth，不接受
 直接貼 API key。新增連接器時貼上部署好的 Worker `/mcp` 網址
-（`https://your-worker.example/mcp`），平台會自動完成 client 註冊（透過 CIMD 或
-DCR，細節見[Cloudflare 部署文件](docs/deployment/cloudflare.md)）並跳出同意畫
-面。輸入部署時設定的 `OAUTH_OWNER_PASSPHRASE` 完成授權——這是獨立於
-`GROUNDLANE_AUTH_TOKEN` 的另一組 secret，僅用來把關這個同意畫面。
+（`https://your-worker.example/mcp`）。現代 client 可透過 CIMD 註冊，不需要另外
+預註冊；DCR 相容 endpoint（`/register`）則需要 bearer token，避免未驗證流量
+累積 OAuth state。細節見[Cloudflare 部署文件](docs/deployment/cloudflare.md)。
+註冊完成後會跳出同意畫面。輸入部署時設定的 `OAUTH_OWNER_PASSPHRASE` 完成授權——
+這是獨立於 `GROUNDLANE_AUTH_TOKEN` 的另一組 secret，僅用來把關這個同意畫面。
 
 ### 第一次呼叫
 
@@ -219,7 +220,7 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 - **HTTP 優先：**普通內容不付 browser 成本；只有 rendering 與 wait condition 才動用 Chromium。
 - **確定性抽取：**CSS selector 直接產生 structured output，不加入未要求的模型推論。
 - **預設有界：**URL policy、DNS／redirect checks、單一 deadline、bytes／output caps 與 concurrency limits 都留在 Groundlane boundary。
-- **Hosted fallback 必須明確啟用：**只有 operator 主動設定時才會把 URL 傳給 Jina Reader 或 Browserless。
+- **Hosted fallback 必須明確啟用：**只有 operator 主動設定時才會把 preflight 驗證後的 public final URL 傳給 Jina Reader 或 Browserless。
 
 ## 執行 Groundlane
 
@@ -242,12 +243,12 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | News search | Brave、Serper、SerpApi |
 | Image search | Brave、Serper、SerpApi |
 | Account balance | Linkup、You.com、Firecrawl、SerpApi |
-| Quota diagnostics | Provider quota summary 與本機 search budget status |
+| Quota diagnostics | Provider quota summary 與本機 provider budget status |
 | Hosted Reader fallback | Jina Reader（opt-in） |
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
 | Cloudflare runtime | 目前支援 Worker + Container deployment；Browser Run、AI Search、AI Gateway、Agents 與 Workflows 是已查到的未來 adapter surface |
 
-自動搜尋路由可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_quota` 會整合帳戶餘額、Groundlane 本機 `web_search` budget 與 capabilities；`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup、You.com、Firecrawl 與 SerpApi。Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
+Provider-backed routing 可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_quota` 會整合帳戶餘額、Groundlane 本機 provider-dispatch budget 與 capabilities；`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup、You.com、Firecrawl 與 SerpApi。Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
 
 ### Provider selection
 

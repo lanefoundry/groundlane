@@ -8,6 +8,7 @@ export interface UrlPolicyOptions {
   lookup?: DnsLookup;
   cache?: Map<string, readonly ResolvedAddress[]>;
   allowedPorts?: ReadonlySet<number>;
+  signal?: AbortSignal | undefined;
 }
 export interface SafeDestination { url: URL; hostname: string; port: number; addresses: readonly ResolvedAddress[] }
 
@@ -30,7 +31,14 @@ export function isPublicAddress(address: string): boolean {
   return family !== 0 && !blocked.check(address, family === 4 ? "ipv4" : "ipv6");
 }
 
+export function throwIfAborted(signal: AbortSignal | undefined, stage: string, message: string): void {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof GroundlaneError) throw signal.reason;
+  throw new GroundlaneError("CANCELLED", stage, message);
+}
+
 export async function resolvePublicUrl(value: string, options: UrlPolicyOptions = {}): Promise<SafeDestination> {
+  throwIfAborted(options.signal, "url", "URL validation was cancelled");
   const url = parsePublicUrl(value, options.allowedPorts);
   const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (hostname === "localhost" || hostname.endsWith(".localhost")) throw new GroundlaneError("URL_BLOCKED", "dns", "Local destinations are not allowed");
@@ -40,6 +48,7 @@ export async function resolvePublicUrl(value: string, options: UrlPolicyOptions 
     else {
       try { addresses = await (options.lookup ?? dns.lookup)(hostname, { all: true, verbatim: true }) as readonly ResolvedAddress[]; }
       catch { throw new GroundlaneError("UPSTREAM_ERROR", "dns", "Destination hostname could not be resolved", true); }
+      throwIfAborted(options.signal, "url", "URL validation was cancelled");
     }
     options.cache?.set(hostname, addresses);
   }

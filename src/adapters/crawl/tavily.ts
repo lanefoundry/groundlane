@@ -65,6 +65,7 @@ export class TavilyCrawlProvider implements CrawlProvider {
       parseTavilyPages((raw as { results: unknown[] }).results, request.maxContentChars),
       request.maxPages,
       this.validateUrl,
+      signal,
     );
     const usage =
       typeof (raw as { usage?: unknown }).usage === "object" && (raw as { usage?: unknown }).usage !== null

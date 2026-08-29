@@ -137,7 +137,7 @@ Browserless region, and documented runtime limits into the Container. Keep that
 explicit allowlist, `src/config.ts`, and `CLOUDFLARE_SECRET_DEFINITIONS`
 synchronized when adding configuration.
 
-`SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables automatic and explicit use for that provider. Keenable may run without `KEENABLE_API_KEY` through its keyless public endpoint; set the key to use its authenticated monthly allowance. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
+`SEARCH_MONTHLY_REQUEST_BUDGETS` is a comma-separated provider-to-attempt mapping, for example `serpapi:250,firecrawl:500`. Zero disables provider-backed dispatch for that provider after routing has selected it. Keenable may run without `KEENABLE_API_KEY` through its keyless public endpoint; set the key to use its authenticated monthly allowance. Counters reset each UTC month but are in-memory per Container instance; restarts and horizontal instances do not share them. Treat this as a guardrail and configure hard limits in every provider dashboard.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars` and keep the file untracked.
 
@@ -173,12 +173,14 @@ it never changes behavior for existing static-token clients.
 ### Adding a connector
 
 In claude.ai or ChatGPT, add a custom connector using the deployed Worker's
-MCP URL (`https://your-worker.example/mcp`). The platform registers itself
-automatically — via CIMD (preferred) or Dynamic Client Registration
-(compatibility fallback, `POST /register`) — then opens `/authorize`, a
-groundlane-owned consent page. Enter `OAUTH_OWNER_PASSPHRASE` to approve.
-Registration alone (CIMD or DCR) never grants access by itself; only a
-correct passphrase does.
+MCP URL (`https://your-worker.example/mcp`). Modern clients register through
+CIMD without a separate pre-registration step. The Dynamic Client Registration
+compatibility endpoint (`POST /register`) is bearer-protected with
+`GROUNDLANE_AUTH_TOKEN`, so unsupported clients must be pre-registered by an
+operator instead of registering anonymously. After registration, the connector
+opens `/authorize`, a groundlane-owned consent page. Enter
+`OAUTH_OWNER_PASSPHRASE` to approve. Registration alone never grants access by
+itself; only a correct passphrase does.
 
 This is single-user by design: `/authorize` gates consent with one shared
 passphrase rather than a real identity provider, matching groundlane's
@@ -273,7 +275,7 @@ deployment.
 Run checks from a network outside the deployment account:
 
 1. `GET /healthz` responds without exposing configuration or secrets.
-2. Public `GET /readyz` proxies Container dependency/configuration readiness without exposing secrets.
+2. Authenticated `GET /readyz` proxies Container dependency/configuration readiness without exposing secrets.
 3. `POST /mcp` without a bearer token is rejected.
 4. A valid client can initialize MCP and list exactly the intended tools.
 5. `web_fetch` succeeds on an authorized public fixture through the HTTP path.

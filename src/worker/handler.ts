@@ -20,6 +20,21 @@ function isOAuthManagedPath(pathname: string): boolean {
   );
 }
 
+async function hasValidStaticBearerToken(
+  request: Request,
+  env: Pick<WorkerEnv, "GROUNDLANE_AUTH_TOKEN">,
+  subtle: TimingSafeSubtleCrypto,
+): Promise<boolean> {
+  return (
+    env.GROUNDLANE_AUTH_TOKEN.length > 0 &&
+    (await hasValidBearerToken(
+      request.headers.get("authorization"),
+      env.GROUNDLANE_AUTH_TOKEN,
+      subtle,
+    ))
+  );
+}
+
 function healthResponse(requestId: string): Response {
   return Response.json(
     { status: "ok", service: "groundlane-worker", requestId },
@@ -41,6 +56,16 @@ export async function handleWorkerRequest(
   }
 
   if (pathname === "/readyz" && request.method === "GET") {
+    if (!(await hasValidStaticBearerToken(request, env, subtle))) {
+      return jsonError(
+        401,
+        "unauthorized",
+        "A valid bearer token is required",
+        requestId,
+        { "www-authenticate": 'Bearer realm="groundlane"' },
+      );
+    }
+
     try {
       const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
       ensureContainerStarted(container);
@@ -55,18 +80,20 @@ export async function handleWorkerRequest(
     }
   }
 
+  if (pathname === "/register" && !(await hasValidStaticBearerToken(request, env, subtle))) {
+    return jsonError(
+      401,
+      "unauthorized",
+      "A valid bearer token is required",
+      requestId,
+      { "www-authenticate": 'Bearer realm="groundlane"' },
+    );
+  }
+
   // Headless/CLI clients (Codex, Claude Code, scheduled cloud automation):
   // unchanged static-token path, checked first so their behavior never
   // depends on the OAuth layer below.
-  if (
-    pathname === "/mcp" &&
-    env.GROUNDLANE_AUTH_TOKEN.length > 0 &&
-    (await hasValidBearerToken(
-      request.headers.get("authorization"),
-      env.GROUNDLANE_AUTH_TOKEN,
-      subtle,
-    ))
-  ) {
+  if (pathname === "/mcp" && (await hasValidStaticBearerToken(request, env, subtle))) {
     return proxyToContainer(request, env, requestId);
   }
 

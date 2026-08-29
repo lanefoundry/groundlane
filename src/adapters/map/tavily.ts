@@ -68,7 +68,7 @@ export class TavilyMapProvider implements MapProvider {
     return mapResult(
       this.id,
       request.url,
-      await normalizeMapLinks(this.id, links, this.validateUrl),
+      await normalizeMapLinks(this.id, links, this.validateUrl, signal),
       started,
       credits,
     );

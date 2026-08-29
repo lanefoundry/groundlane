@@ -103,7 +103,7 @@ export class TinyFishSearchProvider implements SearchProvider {
     return {
       query: request.query,
       provider: this.id,
-      results: (await validateItems(items, this.validateUrl)).slice(0, request.maxResults),
+      results: (await validateItems(items, this.validateUrl, signal)).slice(0, request.maxResults),
       durationMs: Math.round(performance.now() - started),
       warnings: [],
     };

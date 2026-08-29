@@ -1,9 +1,9 @@
 import type { ImageItem, ImagesProviderId, ImagesProviderResult } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type ImagesFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type ImagesUrlValidator = (url: string) => Promise<void>;
+export type ImagesUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_IMAGES_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_IMAGES_PROVIDER_CANDIDATES = 100;
@@ -93,8 +93,8 @@ export async function imagesProviderJson(
   }
 }
 
-export function defaultImagesUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultImagesUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export function optionalString(value: unknown): string | undefined {
@@ -109,15 +109,18 @@ export async function normalizeImageItems(
   provider: ImagesProviderId,
   candidates: readonly ImageItem[],
   validateUrl: ImagesUrlValidator,
+  signal?: AbortSignal,
 ): Promise<ImageItem[]> {
   const valid: ImageItem[] = [];
   for (const candidate of candidates.slice(0, MAX_IMAGES_PROVIDER_CANDIDATES)) {
+    throwIfAborted(signal, "web_images", "Images request was cancelled");
     try {
-      await validateUrl(candidate.imageUrl);
-      await validateUrl(candidate.sourceUrl);
-      if (candidate.thumbnailUrl !== undefined) await validateUrl(candidate.thumbnailUrl);
+      await validateUrl(candidate.imageUrl, signal);
+      await validateUrl(candidate.sourceUrl, signal);
+      if (candidate.thumbnailUrl !== undefined) await validateUrl(candidate.thumbnailUrl, signal);
       valid.push({ ...candidate, provider });
     } catch {
+      throwIfAborted(signal, "web_images", "Images request was cancelled");
       // Provider-returned URLs are untrusted and unsafe candidates are dropped.
     }
   }

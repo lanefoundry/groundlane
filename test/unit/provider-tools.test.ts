@@ -151,6 +151,7 @@ void test("search_budget_status tool exposes instance-local attempt guardrails",
     data?: {
       scope?: string;
       budgets?: Array<{
+        surface?: string;
         period?: string;
         provider?: string;
         limited?: boolean;
@@ -166,6 +167,7 @@ void test("search_budget_status tool exposes instance-local attempt guardrails",
   assert.deepEqual(
     envelope.data?.budgets?.map((item) => ({
       period: item.period,
+      surface: item.surface,
       provider: item.provider,
       limited: item.limited,
       limit: item.limit,
@@ -173,8 +175,8 @@ void test("search_budget_status tool exposes instance-local attempt guardrails",
       remaining: item.remaining,
     })),
     [
-      { period: "monthly", provider: "you", limited: true, limit: 3, used: 1, remaining: 2 },
-      { period: "daily", provider: "you", limited: true, limit: 2, used: 1, remaining: 1 },
+      { period: "monthly", surface: "provider_dispatch", provider: "you", limited: true, limit: 3, used: 1, remaining: 2 },
+      { period: "daily", surface: "provider_dispatch", provider: "you", limited: true, limit: 2, used: 1, remaining: 1 },
     ],
   );
 });
@@ -207,7 +209,13 @@ void test("provider_quota tool combines account balance, local budgets, and capa
       providers?: Array<{
         provider?: string;
         accountBalance?: { status?: string; balance?: number; unit?: string };
-        toolBudgets?: Array<{ tool?: string; period?: string; remaining?: number }>;
+        toolBudgets?: Array<{
+          tool?: string;
+          surface?: string;
+          appliesToTools?: string[];
+          period?: string;
+          remaining?: number;
+        }>;
         searchRouting?: {
           searchCapable?: boolean;
           credentialConfigured?: boolean;
@@ -230,12 +238,26 @@ void test("provider_quota tool combines account balance, local budgets, and capa
   assert.deepEqual(
     provider?.toolBudgets?.map((item) => ({
       tool: item.tool,
+      surface: item.surface,
+      appliesToTools: item.appliesToTools,
       period: item.period,
       remaining: item.remaining,
     })),
     [
-      { tool: "web_search", period: "monthly", remaining: 2 },
-      { tool: "web_search", period: "daily", remaining: 1 },
+      {
+        tool: "web_search",
+        surface: "provider_dispatch",
+        appliesToTools: ["web_search", "web_answer", "web_research", "web_content"],
+        period: "monthly",
+        remaining: 2,
+      },
+      {
+        tool: "web_search",
+        surface: "provider_dispatch",
+        appliesToTools: ["web_search", "web_answer", "web_research", "web_content"],
+        period: "daily",
+        remaining: 1,
+      },
     ],
   );
   assert.deepEqual(provider?.searchRouting, {
@@ -245,7 +267,7 @@ void test("provider_quota tool combines account balance, local budgets, and capa
     budgetLimited: true,
     localBudgetExhausted: false,
     nextChecks: [
-      "Inspect web_search warnings for request-level selected, attempted, and succeeded providers.",
+      "Inspect tool warnings for request-level selected, attempted, and succeeded providers.",
     ],
   });
   assert.ok(provider?.groundlaneTools?.includes("provider_quota"));

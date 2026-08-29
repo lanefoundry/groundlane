@@ -7,12 +7,14 @@ import type {
   MapResult,
 } from "./contracts.js";
 import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 import { resolvePublicUrl } from "./url-policy.js";
 
 export const MAP_PROVIDER_IDS = ["firecrawl", "tavily"] as const satisfies readonly MapProviderId[];
 
 interface MapOutcome {
   provider: MapProvider;
+  attempted: boolean;
   result?: MapProviderResult;
   warning?: string;
 }
@@ -23,6 +25,7 @@ export class MapRouter {
   constructor(
     providers: readonly MapProvider[],
     private readonly order: readonly MapProviderId[] = MAP_PROVIDER_IDS,
+    private readonly budget?: ProviderAttemptBudgetTracker,
   ) {
     this.providers = new Map(providers.map((provider) => [provider.id, provider]));
   }
@@ -96,6 +99,16 @@ export class MapRouter {
     const warnings: string[] = [];
     const attempted: MapProviderId[] = [];
     for (const provider of providers) {
+      const budgetWarning = consumeProviderAttemptBudget(
+        this.budget,
+        provider.id,
+        "provider-budget",
+        providers.length === 1,
+      );
+      if (budgetWarning !== undefined) {
+        warnings.push(budgetWarning);
+        continue;
+      }
       attempted.push(provider.id);
       try {
         const result = await provider.map(request, signal);
@@ -122,11 +135,20 @@ export class MapRouter {
   ): Promise<MapResult> {
     const outcomes = await Promise.all(
       providers.map(async (provider): Promise<MapOutcome> => {
+        const budgetWarning = consumeProviderAttemptBudget(
+          this.budget,
+          provider.id,
+          "provider-budget",
+          false,
+        );
+        if (budgetWarning !== undefined) {
+          return { provider, attempted: false, warning: budgetWarning };
+        }
         try {
-          return { provider, result: await provider.map(request, signal) };
+          return { provider, attempted: true, result: await provider.map(request, signal) };
         } catch (error) {
           toGroundlaneError(error, "web_map");
-          return { provider, warning: `${provider.id} unavailable` };
+          return { provider, attempted: true, warning: `${provider.id} unavailable` };
         }
       }),
     );
@@ -149,7 +171,9 @@ export class MapRouter {
       request,
       "parallel",
       providers,
-      providers.map((provider) => provider.id),
+      outcomes
+        .filter((outcome) => outcome.attempted)
+        .map((outcome) => outcome.provider.id),
       results,
       startedAt,
       outcomes.flatMap((outcome) => outcome.warning === undefined ? [] : [outcome.warning]),

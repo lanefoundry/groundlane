@@ -74,6 +74,7 @@ export class FirecrawlContentProvider implements ContentProvider {
       started,
       this.validateUrl,
       optionalString(value.warning) === undefined ? [] : [optionalString(value.warning) as string],
+      signal,
     );
   }
 }

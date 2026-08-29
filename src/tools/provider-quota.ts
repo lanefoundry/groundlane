@@ -28,6 +28,8 @@ const accountBalanceSchema = z.object({
 
 const budgetSchema = z.object({
   tool: z.literal("web_search"),
+  surface: z.literal("provider_dispatch"),
+  appliesToTools: z.array(z.string()),
   period: z.enum(["monthly", "daily", "minute"]),
   scope: z.literal("instance"),
   source: z.literal("groundlane_local_budget"),
@@ -85,9 +87,11 @@ function unknownBalance(provider: SearchProviderId, error: unknown): ProviderBal
   };
 }
 
-function budgetRows(snapshot: SearchBudgetSnapshot) {
+function budgetRows(snapshot: SearchBudgetSnapshot, appliesToTools: readonly string[]) {
   return {
     tool: "web_search" as const,
+    surface: "provider_dispatch" as const,
+    appliesToTools: [...appliesToTools],
     period: snapshot.period,
     scope: "instance" as const,
     source: "groundlane_local_budget" as const,
@@ -128,9 +132,9 @@ function searchRoutingDiagnostics(
     );
   }
   if (localBudgetExhausted) {
-    nextChecks.push("Groundlane's local web_search budget is exhausted for this instance.");
+    nextChecks.push("Groundlane's local provider dispatch budget is exhausted for this instance.");
   }
-  nextChecks.push("Inspect web_search warnings for request-level selected, attempted, and succeeded providers.");
+  nextChecks.push("Inspect tool warnings for request-level selected, attempted, and succeeded providers.");
 
   return {
     searchCapable,
@@ -187,7 +191,7 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
               data: {
                 checkedAt: new Date().toISOString(),
                 note:
-                  "accountBalance is provider-owned billing data when available; toolBudgets are Groundlane in-memory guardrails for this instance.",
+                  "accountBalance is provider-owned billing data when available; toolBudgets are Groundlane in-memory provider dispatch guardrails for this instance.",
                 providers: capabilities.map((capability) => {
                   const balance = balancesByProvider.get(capability.provider) ?? {
                     provider: capability.provider,
@@ -198,6 +202,9 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
                   };
                   const providerBudgets = budgets.filter(
                     (snapshot) => snapshot.provider === capability.provider,
+                  );
+                  const providerBackedTools = capability.groundlaneTools.filter(
+                    (tool) => tool.startsWith("web_"),
                   );
                   return {
                     provider: capability.provider,
@@ -210,7 +217,9 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
                       ...(balance.unit === undefined ? {} : { unit: balance.unit }),
                       warnings: balance.warnings,
                     },
-                    toolBudgets: providerBudgets.map(budgetRows),
+                    toolBudgets: providerBudgets.map((snapshot) =>
+                      budgetRows(snapshot, providerBackedTools)
+                    ),
                     searchRouting: searchRoutingDiagnostics(
                       capability.provider,
                       balance,

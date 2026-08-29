@@ -67,7 +67,7 @@ export class SerpApiNewsProvider implements NewsProvider {
     return newsResult(
       this.id,
       request.query,
-      await normalizeNewsItems(this.id, items, this.validateUrl),
+      await normalizeNewsItems(this.id, items, this.validateUrl, signal),
       started,
     );
   }

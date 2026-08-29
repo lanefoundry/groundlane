@@ -7,11 +7,13 @@ import type {
   NewsResult,
 } from "./contracts.js";
 import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 
 export const NEWS_PROVIDER_IDS = ["brave", "serper", "serpapi"] as const satisfies readonly NewsProviderId[];
 
 interface NewsOutcome {
   provider: NewsProvider;
+  attempted: boolean;
   result?: NewsProviderResult;
   warning?: string;
 }
@@ -22,6 +24,7 @@ export class NewsRouter {
   constructor(
     providers: readonly NewsProvider[],
     private readonly order: readonly NewsProviderId[] = NEWS_PROVIDER_IDS,
+    private readonly budget?: ProviderAttemptBudgetTracker,
   ) {
     this.providers = new Map(providers.map((provider) => [provider.id, provider]));
   }
@@ -91,6 +94,16 @@ export class NewsRouter {
     const warnings: string[] = [];
     const attempted: NewsProviderId[] = [];
     for (const provider of providers) {
+      const budgetWarning = consumeProviderAttemptBudget(
+        this.budget,
+        provider.id,
+        "provider-budget",
+        providers.length === 1,
+      );
+      if (budgetWarning !== undefined) {
+        warnings.push(budgetWarning);
+        continue;
+      }
       attempted.push(provider.id);
       try {
         const result = await provider.news(request, signal);
@@ -117,11 +130,20 @@ export class NewsRouter {
   ): Promise<NewsResult> {
     const outcomes = await Promise.all(
       providers.map(async (provider): Promise<NewsOutcome> => {
+        const budgetWarning = consumeProviderAttemptBudget(
+          this.budget,
+          provider.id,
+          "provider-budget",
+          false,
+        );
+        if (budgetWarning !== undefined) {
+          return { provider, attempted: false, warning: budgetWarning };
+        }
         try {
-          return { provider, result: await provider.news(request, signal) };
+          return { provider, attempted: true, result: await provider.news(request, signal) };
         } catch (error) {
           toGroundlaneError(error, "web_news");
-          return { provider, warning: `${provider.id} unavailable` };
+          return { provider, attempted: true, warning: `${provider.id} unavailable` };
         }
       }),
     );
@@ -144,7 +166,9 @@ export class NewsRouter {
       request,
       "parallel",
       providers,
-      providers.map((provider) => provider.id),
+      outcomes
+        .filter((outcome) => outcome.attempted)
+        .map((outcome) => outcome.provider.id),
       results,
       startedAt,
       outcomes.flatMap((outcome) => outcome.warning === undefined ? [] : [outcome.warning]),

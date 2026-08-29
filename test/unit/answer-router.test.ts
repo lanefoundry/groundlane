@@ -9,6 +9,7 @@ import type {
 } from "../../src/core/contracts.js";
 import { GroundlaneError } from "../../src/core/errors.js";
 import { AnswerRouter } from "../../src/core/answer-router.js";
+import { MonthlySearchBudget } from "../../src/core/search-budget.js";
 
 function answerResult(id: AnswerProviderId): AnswerProviderResult {
   return {
@@ -110,4 +111,52 @@ void test("AnswerRouter explicit provider propagates non-retryable errors", asyn
     ),
     /bad request/u,
   );
+});
+
+void test("AnswerRouter consumes provider budget before fallback dispatch", async () => {
+  const calls: AnswerProviderId[] = [];
+  const makeProvider = (id: AnswerProviderId): AnswerProvider => ({
+    id,
+    supports: () => true,
+    answer(): Promise<AnswerProviderResult> {
+      calls.push(id);
+      return Promise.resolve(answerResult(id));
+    },
+  });
+  const budget = new MonthlySearchBudget({ linkup: 0, you: 1 });
+
+  const result = await new AnswerRouter(
+    [makeProvider("linkup"), makeProvider("you")],
+    ["linkup", "you"],
+    budget,
+  ).answer({ ...request, strategy: "fallback" }, new AbortController().signal);
+
+  assert.deepEqual(calls, ["you"]);
+  assert.deepEqual(result.providersAttempted, ["you"]);
+  assert.deepEqual(result.warnings, ["linkup budget exhausted"]);
+  assert.equal(budget.remaining("you"), 0);
+});
+
+void test("AnswerRouter skips exhausted providers in parallel dispatch", async () => {
+  const calls: AnswerProviderId[] = [];
+  const makeProvider = (id: AnswerProviderId): AnswerProvider => ({
+    id,
+    supports: () => true,
+    answer(): Promise<AnswerProviderResult> {
+      calls.push(id);
+      return Promise.resolve(answerResult(id));
+    },
+  });
+
+  const result = await new AnswerRouter(
+    [makeProvider("linkup"), makeProvider("you")],
+    ["linkup", "you"],
+    new MonthlySearchBudget({ linkup: 0, you: 1 }),
+  ).answer(request, new AbortController().signal);
+
+  assert.deepEqual(calls, ["you"]);
+  assert.deepEqual(result.providersSelected, ["linkup", "you"]);
+  assert.deepEqual(result.providersAttempted, ["you"]);
+  assert.deepEqual(result.providersSucceeded, ["you"]);
+  assert.deepEqual(result.warnings, ["linkup budget exhausted"]);
 });

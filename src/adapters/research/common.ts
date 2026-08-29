@@ -1,9 +1,9 @@
 import type { ResearchCitation } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type ResearchFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type ResearchUrlValidator = (url: string) => Promise<void>;
+export type ResearchUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_RESEARCH_RESPONSE_BYTES = 4_000_000;
 const MAX_RESEARCH_CANDIDATES = 100;
@@ -106,20 +106,23 @@ export async function researchProviderJson(
   }
 }
 
-export function defaultResearchUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultResearchUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export async function validateResearchCitations(
   citations: readonly ResearchCitation[],
   validator: ResearchUrlValidator,
+  signal?: AbortSignal,
 ): Promise<ResearchCitation[]> {
   const valid: ResearchCitation[] = [];
   for (const citation of citations.slice(0, MAX_RESEARCH_CANDIDATES)) {
+    throwIfAborted(signal, "web_research", "Research request was cancelled");
     try {
-      await validator(citation.url);
+      await validator(citation.url, signal);
       valid.push(citation);
     } catch {
+      throwIfAborted(signal, "web_research", "Research request was cancelled");
       // Provider-returned URLs are untrusted and unsafe entries are dropped.
     }
   }

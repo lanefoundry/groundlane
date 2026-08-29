@@ -274,13 +274,13 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     healthTracker,
     searchBudget,
   );
-  const answerRouter = new AnswerRouter(answerProviders);
-  const researchRouter = new ResearchRouter(researchProviders);
-  const contentRouter = new ContentRouter(contentProviders);
-  const mapRouter = new MapRouter(mapProviders);
-  const crawlRouter = new CrawlRouter(crawlProviders);
-  const newsRouter = new NewsRouter(newsProviders);
-  const imagesRouter = new ImagesRouter(imagesProviders);
+  const answerRouter = new AnswerRouter(answerProviders, undefined, searchBudget);
+  const researchRouter = new ResearchRouter(researchProviders, undefined, searchBudget);
+  const contentRouter = new ContentRouter(contentProviders, undefined, searchBudget);
+  const mapRouter = new MapRouter(mapProviders, undefined, searchBudget);
+  const crawlRouter = new CrawlRouter(crawlProviders, undefined, searchBudget);
+  const newsRouter = new NewsRouter(newsProviders, undefined, searchBudget);
+  const imagesRouter = new ImagesRouter(imagesProviders, undefined, searchBudget);
   const providerBalanceRegistry = new ProviderBalanceRegistry({
     supportedProviders: config.searchProviderOrder,
     configuredProviders: Object.keys(config.providerKeys),

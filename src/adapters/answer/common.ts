@@ -1,9 +1,9 @@
 import type { AnswerCitation, AnswerResultItem } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type AnswerFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type AnswerUrlValidator = (url: string) => Promise<void>;
+export type AnswerUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_ANSWER_RESPONSE_BYTES = 2_000_000;
 const MAX_ANSWER_CANDIDATES = 100;
@@ -106,20 +106,23 @@ export async function answerProviderJson(
   }
 }
 
-export function defaultAnswerUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultAnswerUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export async function validateAnswerCitations(
   citations: readonly AnswerCitation[],
   validator: AnswerUrlValidator,
+  signal?: AbortSignal,
 ): Promise<AnswerCitation[]> {
   const valid: AnswerCitation[] = [];
   for (const citation of citations.slice(0, MAX_ANSWER_CANDIDATES)) {
+    throwIfAborted(signal, "web_answer", "Answer request was cancelled");
     try {
-      await validator(citation.url);
+      await validator(citation.url, signal);
       valid.push(citation);
     } catch {
+      throwIfAborted(signal, "web_answer", "Answer request was cancelled");
       // Provider-returned URLs are untrusted and unsafe entries are dropped.
     }
   }
@@ -129,13 +132,16 @@ export async function validateAnswerCitations(
 export async function validateAnswerItems(
   items: readonly AnswerResultItem[],
   validator: AnswerUrlValidator,
+  signal?: AbortSignal,
 ): Promise<AnswerResultItem[]> {
   const valid: AnswerResultItem[] = [];
   for (const item of items.slice(0, MAX_ANSWER_CANDIDATES)) {
+    throwIfAborted(signal, "web_answer", "Answer request was cancelled");
     try {
-      await validator(item.url);
+      await validator(item.url, signal);
       valid.push(item);
     } catch {
+      throwIfAborted(signal, "web_answer", "Answer request was cancelled");
       // Provider-returned URLs are untrusted and unsafe entries are dropped.
     }
   }

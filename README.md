@@ -35,14 +35,14 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes, with per-call output caps; no implicit LLM step |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
-| `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane `web_search` guardrails, exposed tools, keyless availability, and next checks |
-| `search_budget_status` | Inspects Groundlane's local search attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
+| `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane provider-dispatch guardrails, exposed tools, keyless availability, and next checks |
+| `search_budget_status` | Inspects Groundlane's local provider attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
 
 Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Non-explicit `web_search` fallback treats a single provider rejection, timeout, quota error, 5xx, or malformed response as a warning and continues to the next eligible provider; an explicit `provider` preserves that provider's error instead of silently switching sources. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
 
 Provider vendors expose more APIs than Groundlane currently wires into MCP. See [provider inventory](docs/operations/provider-inventory.md) for the verified feature backlog and the distinction between vendor capability, implemented Groundlane tool, live smoke, account balance evidence, and Groundlane's local attempt budgets.
 
-Use `provider_quota` as the first diagnostic view when `web_search` returns zero results: it shows provider account-balance status, Groundlane's local `web_search` budgets, implemented tools, and `searchRouting` hints together. Use `provider_balance` for provider-owned account credits only, and `search_budget_status` when you specifically need the raw local attempt counters. A balance result of `not_configured` means the runtime lacks the credential needed for that provider's balance API, not that keyless quota is exhausted.
+Use `provider_quota` as the first diagnostic view when a provider-backed tool exhausts local attempts or `web_search` returns zero results: it shows provider account-balance status, Groundlane's local provider-dispatch budgets, implemented tools, and `searchRouting` hints together. Use `provider_balance` for provider-owned account credits only, and `search_budget_status` when you specifically need the raw local attempt counters. A balance result of `not_configured` means the runtime lacks the credential needed for that provider's balance API, not that keyless quota is exhausted.
 
 ### Research compatibility
 
@@ -144,8 +144,8 @@ GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
 CI runs `pnpm run wait:container` and `pnpm run smoke:retry` after deploy, so a
 successful run means the Cloudflare Container application has left provisioning
 and the deployed MCP server responds with the expected tool contracts. At
-runtime, the Worker also starts the named Container instance before proxied
-`/readyz` and authenticated `/mcp` requests when Cloudflare reports it as not
+runtime, the Worker also starts the named Container instance before
+authenticated `/readyz` and `/mcp` requests when Cloudflare reports it as not
 running.
 
 ## Connect an MCP client
@@ -182,12 +182,14 @@ These bearer-token steps also cover headless and scheduled cloud automation
 
 Interactive cloud connectors expect OAuth, not a pasted API key. Add
 groundlane as a custom connector using your deployed Worker's `/mcp` URL
-(`https://your-worker.example/mcp`); the platform registers itself
-automatically (via CIMD or DCR — see
-[Cloudflare deployment](docs/deployment/cloudflare.md)) and opens a consent
-screen. Enter the `OAUTH_OWNER_PASSPHRASE` you configured during deployment
-to approve — this is a separate secret from `GROUNDLANE_AUTH_TOKEN`, used
-only to gate that consent screen.
+(`https://your-worker.example/mcp`). Modern clients can register through CIMD
+without a separate pre-registration step; the DCR compatibility endpoint
+(`/register`) is bearer-protected to avoid unauthenticated OAuth state growth.
+See [Cloudflare deployment](docs/deployment/cloudflare.md) for the exact flow.
+The connector opens a consent screen after registration. Enter the
+`OAUTH_OWNER_PASSPHRASE` you configured during deployment to approve — this is
+a separate secret from `GROUNDLANE_AUTH_TOKEN`, used only to gate that consent
+screen.
 
 ### Make the first call
 
@@ -225,7 +227,7 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 - **HTTP first:** ordinary reads avoid browser cost; Chromium is reserved for rendering and wait conditions.
 - **Deterministic extraction:** CSS selectors produce structured output without an unrequested model inference step.
 - **Bounded by default:** URL policy, DNS/redirect checks, one deadline, byte/output caps, and concurrency limits remain in the Groundlane boundary.
-- **Explicit hosted fallbacks:** Jina Reader and Browserless receive a URL only when the operator enables them.
+- **Explicit hosted fallbacks:** Jina Reader and Browserless receive a preflight-validated public final URL only when the operator enables them.
 
 ## Run Groundlane
 
@@ -248,12 +250,12 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | News search | Brave, Serper, SerpApi |
 | Image search | Brave, Serper, SerpApi |
 | Account balance | Linkup, You.com, Firecrawl, SerpApi |
-| Quota diagnostics | Provider quota summary and local search budget status |
+| Quota diagnostics | Provider quota summary and local provider budget status |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
 | Cloudflare runtime | Worker + Container deployment today; Browser Run, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
 
-Automatic search routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup, You.com, Firecrawl, and SerpApi. Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
+Provider-backed routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup, You.com, Firecrawl, and SerpApi. Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
 
 ### Provider selection
 

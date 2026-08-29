@@ -87,7 +87,7 @@ export class SerperSearchProvider implements SearchProvider {
     return {
       query: request.query,
       provider: this.id,
-      results: await validateItems(items, this.validateUrl),
+      results: await validateItems(items, this.validateUrl, signal),
       durationMs: Math.round(performance.now() - started),
       warnings: [],
     };

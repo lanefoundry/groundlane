@@ -85,6 +85,8 @@ export class TinyFishContentProvider implements ContentProvider {
       request.maxContentChars,
       started,
       this.validateUrl,
+      [],
+      signal,
     );
   }
 }

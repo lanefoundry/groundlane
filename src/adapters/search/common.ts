@@ -1,9 +1,9 @@
 import type { SearchRequest, SearchResultItem } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type UrlValidator = (url: string) => Promise<void>;
+export type UrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_PROVIDER_RESULT_CANDIDATES = 100;
 
@@ -52,8 +52,8 @@ export async function providerJson(fetcher: FetchLike, url: string, init: Reques
   }
 }
 
-export function defaultUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export function cleanDomains(domains: readonly string[] | undefined): string[] | undefined {
@@ -62,10 +62,17 @@ export function cleanDomains(domains: readonly string[] | undefined): string[] |
   return result.length ? result : undefined;
 }
 
-export async function validateItems(items: readonly SearchResultItem[], validator: UrlValidator): Promise<SearchResultItem[]> {
+export async function validateItems(items: readonly SearchResultItem[], validator: UrlValidator, signal?: AbortSignal): Promise<SearchResultItem[]> {
   const valid: SearchResultItem[] = [];
   for (const item of items.slice(0, MAX_PROVIDER_RESULT_CANDIDATES)) {
-    try { await validator(item.url); valid.push(item); } catch { /* untrusted provider URL is dropped */ }
+    throwIfAborted(signal, "search", "Search was cancelled");
+    try {
+      await validator(item.url, signal);
+      valid.push(item);
+    } catch {
+      throwIfAborted(signal, "search", "Search was cancelled");
+      /* untrusted provider URL is dropped */
+    }
   }
   return valid;
 }

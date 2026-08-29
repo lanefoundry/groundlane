@@ -20,6 +20,22 @@ export interface SearchBudgetTracker {
   snapshots?(providers: readonly SearchProviderId[]): readonly SearchBudgetSnapshot[];
 }
 
+export type ProviderAttemptBudgetTracker = SearchBudgetTracker;
+
+export function consumeProviderAttemptBudget(
+  budget: ProviderAttemptBudgetTracker | undefined,
+  provider: SearchProviderId,
+  source: string,
+  throwWhenExhausted: boolean,
+): string | undefined {
+  if (budget === undefined || budget.tryConsume(provider)) return undefined;
+  const message = `${provider} request budget is exhausted`;
+  if (throwWhenExhausted) {
+    throw new GroundlaneError("PROVIDER_UNAVAILABLE", source, message, true);
+  }
+  return `${provider} budget exhausted`;
+}
+
 function validateBudgets(
   budgets: Readonly<Partial<Record<string, number>>>,
   label: string,

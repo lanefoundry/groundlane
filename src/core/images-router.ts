@@ -7,11 +7,13 @@ import type {
   ImagesResult,
 } from "./contracts.js";
 import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 
 export const IMAGES_PROVIDER_IDS = ["brave", "serper", "serpapi"] as const satisfies readonly ImagesProviderId[];
 
 interface ImagesOutcome {
   provider: ImagesProvider;
+  attempted: boolean;
   result?: ImagesProviderResult;
   warning?: string;
 }
@@ -22,6 +24,7 @@ export class ImagesRouter {
   constructor(
     providers: readonly ImagesProvider[],
     private readonly order: readonly ImagesProviderId[] = IMAGES_PROVIDER_IDS,
+    private readonly budget?: ProviderAttemptBudgetTracker,
   ) {
     this.providers = new Map(providers.map((provider) => [provider.id, provider]));
   }
@@ -91,6 +94,16 @@ export class ImagesRouter {
     const warnings: string[] = [];
     const attempted: ImagesProviderId[] = [];
     for (const provider of providers) {
+      const budgetWarning = consumeProviderAttemptBudget(
+        this.budget,
+        provider.id,
+        "provider-budget",
+        providers.length === 1,
+      );
+      if (budgetWarning !== undefined) {
+        warnings.push(budgetWarning);
+        continue;
+      }
       attempted.push(provider.id);
       try {
         const result = await provider.images(request, signal);
@@ -117,10 +130,19 @@ export class ImagesRouter {
   ): Promise<ImagesResult> {
     const outcomes = await Promise.all(
       providers.map(async (provider): Promise<ImagesOutcome> => {
+        const budgetWarning = consumeProviderAttemptBudget(
+          this.budget,
+          provider.id,
+          "provider-budget",
+          false,
+        );
+        if (budgetWarning !== undefined) {
+          return { provider, attempted: false, warning: budgetWarning };
+        }
         try {
-          return { provider, result: await provider.images(request, signal) };
+          return { provider, attempted: true, result: await provider.images(request, signal) };
         } catch {
-          return { provider, warning: `${provider.id} unavailable` };
+          return { provider, attempted: true, warning: `${provider.id} unavailable` };
         }
       }),
     );
@@ -143,7 +165,9 @@ export class ImagesRouter {
       request,
       "parallel",
       providers,
-      providers.map((provider) => provider.id),
+      outcomes
+        .filter((outcome) => outcome.attempted)
+        .map((outcome) => outcome.provider.id),
       results,
       startedAt,
       outcomes.flatMap((outcome) => outcome.warning === undefined ? [] : [outcome.warning]),

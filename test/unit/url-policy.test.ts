@@ -26,6 +26,24 @@ void test("resolvePublicUrl returns validated addresses and caches DNS", async (
   assert.equal(first.addresses[0]?.address, "93.184.216.34"); assert.equal(calls, 1);
 });
 
+void test("resolvePublicUrl stops before DNS when validation is aborted", async () => {
+  const controller = new AbortController();
+  const reason = new GroundlaneError("DEADLINE_EXCEEDED", "provider-url", "Provider URL validation deadline exceeded", true);
+  controller.abort(reason);
+  let calls = 0;
+  await assert.rejects(
+    resolvePublicUrl("https://example.com/a", {
+      lookup: () => {
+        calls += 1;
+        return Promise.resolve([{ address: "93.184.216.34", family: 4 as const }]);
+      },
+      signal: controller.signal,
+    }),
+    { code: "DEADLINE_EXCEEDED" },
+  );
+  assert.equal(calls, 0);
+});
+
 void test("redirect resolution handles relative locations and rejects malformed targets", () => {
   assert.equal(resolveRedirect(new URL("https://example.com/a"), "/b"), "https://example.com/b");
   assert.throws(() => resolveRedirect(new URL("https://example.com"), "http://["), GroundlaneError);

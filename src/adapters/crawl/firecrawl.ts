@@ -84,6 +84,7 @@ export class FirecrawlCrawlProvider implements CrawlProvider {
       parseFirecrawlPages(statusObject.data, request.maxContentChars),
       request.maxPages,
       this.validateUrl,
+      signal,
     );
     const status = normalizeCrawlStatus(statusObject.status);
     const warnings = status === "completed" ? [] : ["firecrawl crawl job not completed within bounded polling"];

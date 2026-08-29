@@ -1,9 +1,9 @@
 import type { NewsItem, NewsProviderId, NewsProviderResult } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type NewsFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type NewsUrlValidator = (url: string) => Promise<void>;
+export type NewsUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_NEWS_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_NEWS_PROVIDER_CANDIDATES = 100;
@@ -93,8 +93,8 @@ export async function newsProviderJson(
   }
 }
 
-export function defaultNewsUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultNewsUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export function optionalString(value: unknown): string | undefined {
@@ -105,13 +105,16 @@ export async function normalizeNewsItems(
   provider: NewsProviderId,
   candidates: readonly NewsItem[],
   validateUrl: NewsUrlValidator,
+  signal?: AbortSignal,
 ): Promise<NewsItem[]> {
   const valid: NewsItem[] = [];
   for (const candidate of candidates.slice(0, MAX_NEWS_PROVIDER_CANDIDATES)) {
+    throwIfAborted(signal, "web_news", "News request was cancelled");
     try {
-      await validateUrl(candidate.url);
+      await validateUrl(candidate.url, signal);
       valid.push({ ...candidate, provider });
     } catch {
+      throwIfAborted(signal, "web_news", "News request was cancelled");
       // Provider-returned URLs are untrusted and unsafe candidates are dropped.
     }
   }

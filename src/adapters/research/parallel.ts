@@ -147,7 +147,7 @@ export class ParallelResearchProvider implements ResearchProvider {
     return {
       provider: this.id,
       report,
-      citations: await validateResearchCitations(citationsFromAnnotations(value, report), this.validateUrl),
+      citations: await validateResearchCitations(citationsFromAnnotations(value, report), this.validateUrl, signal),
       durationMs: Math.round(performance.now() - started),
       warnings: [],
     };

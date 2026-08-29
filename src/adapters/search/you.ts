@@ -86,6 +86,7 @@ function normalizeYouResult(
   started: number,
   validateUrl: UrlValidator,
   warning: string | undefined,
+  signal: AbortSignal,
 ): Promise<SearchResult> {
   const results =
     raw && typeof raw === "object" &&
@@ -131,7 +132,7 @@ function normalizeYouResult(
       },
     ];
   });
-  return validateItems(items, validateUrl).then((results) => ({
+  return validateItems(items, validateUrl, signal).then((results) => ({
     query: request.query,
     provider: "you",
     results,
@@ -168,6 +169,7 @@ export class YouSearchProvider implements SearchProvider {
         started,
         this.validateUrl,
         "you.com free MCP profile used",
+        signal,
       );
     }
     const raw = await providerJson(
@@ -183,6 +185,6 @@ export class YouSearchProvider implements SearchProvider {
       },
       signal,
     );
-    return normalizeYouResult(raw, request, started, this.validateUrl, undefined);
+    return normalizeYouResult(raw, request, started, this.validateUrl, undefined, signal);
   }
 }

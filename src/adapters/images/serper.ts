@@ -87,7 +87,7 @@ export class SerperImagesProvider implements ImagesProvider {
     return imagesResult(
       this.id,
       request.query,
-      await normalizeImageItems(this.id, items, this.validateUrl),
+      await normalizeImageItems(this.id, items, this.validateUrl, signal),
       started,
     );
   }

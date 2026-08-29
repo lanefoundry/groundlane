@@ -131,8 +131,8 @@ export class YouAnswerProvider implements AnswerProvider {
     return {
       provider: this.id,
       answer,
-      citations: await validateAnswerCitations(citations.slice(0, request.maxResults), this.validateUrl),
-      results: await validateAnswerItems(results.slice(0, request.maxResults), this.validateUrl),
+      citations: await validateAnswerCitations(citations.slice(0, request.maxResults), this.validateUrl, signal),
+      results: await validateAnswerItems(results.slice(0, request.maxResults), this.validateUrl, signal),
       durationMs: Math.round(performance.now() - started),
       warnings: [],
     };

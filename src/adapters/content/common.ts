@@ -4,7 +4,7 @@ import { truncateUnicode } from "../../core/limits.js";
 import { resolvePublicUrl } from "../../core/url-policy.js";
 
 export type ContentFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type ContentUrlValidator = (url: string) => Promise<void>;
+export type ContentUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_CONTENT_PROVIDER_RESPONSE_BYTES = 5_000_000;
 
@@ -109,8 +109,8 @@ export async function contentProviderJson(
   }
 }
 
-export function defaultContentUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultContentUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export function optionalString(value: unknown): string | undefined {
@@ -128,9 +128,10 @@ export async function normalizedContentResult(
   started: number,
   validateUrl: ContentUrlValidator,
   warnings: readonly string[] = [],
+  signal?: AbortSignal,
 ): Promise<ContentProviderResult> {
   const resolvedFinalUrl = finalUrl ?? requestUrl;
-  await validateUrl(resolvedFinalUrl);
+  await validateUrl(resolvedFinalUrl, signal);
   const truncated = truncateUnicode(content, maxContentChars);
   return {
     provider,

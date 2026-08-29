@@ -14,6 +14,8 @@ import type { DnsLookup } from "../../src/core/url-policy.js";
 
 const publicLookup: DnsLookup = () =>
   Promise.resolve([{ address: "93.184.216.34", family: 4 }]);
+const resolveSameUrl = (request: { url: string }): Promise<string> =>
+  Promise.resolve(request.url);
 
 void test("local browser errors retain their stage without exposing runtime details", () => {
   const raw = new Error("browserContext.newPage: Target crashed at /secret/path");
@@ -37,6 +39,7 @@ void test("Jina Reader validates the target and returns bounded Markdown provena
   let init: RequestInit | undefined;
   const reader = new JinaReaderBackend({
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: (url, requestInit) => {
       requestedUrl = url;
       init = requestInit;
@@ -79,9 +82,53 @@ void test("Jina Reader blocks unsafe targets before calling the provider", async
   assert.equal(calls, 0);
 });
 
+void test("Jina Reader sends only a preflight-validated final URL to the provider", async () => {
+  let requestedUrl = "";
+  const reader = new JinaReaderBackend({
+    lookup: publicLookup,
+    resolveRedirects: () => Promise.resolve("https://example.com/final"),
+    fetch: (url) => {
+      requestedUrl = url;
+      return Promise.resolve(new Response("# Final"));
+    },
+  });
+  const result = await reader.fetch({
+    url: "https://example.com/start",
+    maxBytes: 1_000,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.equal(requestedUrl, "https://r.jina.ai/https://example.com/final");
+  assert.equal(result.finalUrl, "https://example.com/final");
+});
+
+void test("Jina Reader does not call the provider when redirect preflight is blocked", async () => {
+  let calls = 0;
+  const reader = new JinaReaderBackend({
+    lookup: publicLookup,
+    resolveRedirects: () =>
+      Promise.reject(new GroundlaneError("URL_BLOCKED", "redirect", "Blocked")),
+    fetch: () => {
+      calls += 1;
+      return Promise.resolve(new Response("unexpected"));
+    },
+  });
+
+  await assert.rejects(
+    reader.fetch({
+      url: "https://example.com/start",
+      maxBytes: 1_000,
+      deadline: new Deadline(1_000),
+    }),
+    { code: "URL_BLOCKED" },
+  );
+  assert.equal(calls, 0);
+});
+
 void test("Jina Reader rejects declared responses above the byte budget", async () => {
   const reader = new JinaReaderBackend({
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: () =>
       Promise.resolve(
         new Response("small", { headers: { "content-length": "2000" } }),
@@ -100,6 +147,7 @@ void test("Jina Reader rejects declared responses above the byte budget", async 
 void test("Jina Reader stops a streamed response above the byte budget", async () => {
   const reader = new JinaReaderBackend({
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: () => Promise.resolve(new Response("x".repeat(1_001))),
   });
   await assert.rejects(
@@ -120,6 +168,7 @@ void test("Browserless uses a fixed regional endpoint and keeps its token out of
     token: "browserless-secret",
     region: "lon",
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: (url, init) => {
       requestedUrl = url;
       authorization = new Headers(init.headers).get("authorization") ?? "";
@@ -179,10 +228,61 @@ void test("Browserless endpoint and selector helpers reject unsupported input", 
   });
 });
 
+void test("Browserless sends only a preflight-validated final URL to the provider", async () => {
+  let body: unknown;
+  const backend = new BrowserlessBackend({
+    token: "browserless-secret",
+    lookup: publicLookup,
+    resolveRedirects: () => Promise.resolve("https://example.com/final"),
+    fetch: (_url, init) => {
+      if (typeof init.body !== "string") throw new Error("expected JSON body");
+      body = JSON.parse(init.body) as unknown;
+      return Promise.resolve(
+        new Response("<main>final</main>", {
+          headers: { "x-response-url": "https://example.com/final" },
+        }),
+      );
+    },
+  });
+  const result = await backend.fetch({
+    url: "https://example.com/start",
+    maxBytes: 10_000,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.equal((body as { url: string }).url, "https://example.com/final");
+  assert.equal(result.finalUrl, "https://example.com/final");
+});
+
+void test("Browserless does not call the provider when redirect preflight is blocked", async () => {
+  let calls = 0;
+  const backend = new BrowserlessBackend({
+    token: "browserless-secret",
+    lookup: publicLookup,
+    resolveRedirects: () =>
+      Promise.reject(new GroundlaneError("URL_BLOCKED", "redirect", "Blocked")),
+    fetch: () => {
+      calls += 1;
+      return Promise.resolve(new Response("unexpected"));
+    },
+  });
+
+  await assert.rejects(
+    backend.fetch({
+      url: "https://example.com/start",
+      maxBytes: 10_000,
+      deadline: new Deadline(1_000),
+    }),
+    { code: "URL_BLOCKED" },
+  );
+  assert.equal(calls, 0);
+});
+
 void test("Browserless rejects private final URLs reported by the provider", async () => {
   const backend = new BrowserlessBackend({
     token: "browserless-secret",
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: () =>
       Promise.resolve(
         new Response("<main>unexpected</main>", {
@@ -204,6 +304,7 @@ void test("Browserless maps quota errors without exposing its token", async () =
   const backend = new BrowserlessBackend({
     token: "browserless-secret",
     lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
     fetch: () => Promise.resolve(new Response("quota details", { status: 429 })),
   });
   await assert.rejects(

@@ -1,9 +1,9 @@
 import type { CrawlPage, CrawlProviderId, CrawlProviderResult } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { resolvePublicUrl } from "../../core/url-policy.js";
+import { resolvePublicUrl, throwIfAborted } from "../../core/url-policy.js";
 
 export type CrawlFetchLike = (input: string, init: RequestInit) => Promise<Response>;
-export type CrawlUrlValidator = (url: string) => Promise<void>;
+export type CrawlUrlValidator = (url: string, signal?: AbortSignal) => Promise<void>;
 
 const MAX_CRAWL_PROVIDER_RESPONSE_BYTES = 4_000_000;
 const MAX_CRAWL_PROVIDER_CANDIDATES = 2_000;
@@ -97,8 +97,8 @@ export async function crawlProviderJson(
   }
 }
 
-export function defaultCrawlUrlValidator(url: string): Promise<void> {
-  return resolvePublicUrl(url).then(() => undefined);
+export function defaultCrawlUrlValidator(url: string, signal?: AbortSignal): Promise<void> {
+  return resolvePublicUrl(url, { signal }).then(() => undefined);
 }
 
 export function optionalString(value: unknown): string | undefined {
@@ -147,13 +147,16 @@ export async function normalizeCrawlPages(
   candidates: readonly CrawlPage[],
   maxPages: number,
   validateUrl: CrawlUrlValidator,
+  signal?: AbortSignal,
 ): Promise<CrawlPage[]> {
   const valid: CrawlPage[] = [];
   for (const candidate of candidates.slice(0, MAX_CRAWL_PROVIDER_CANDIDATES)) {
+    throwIfAborted(signal, "web_crawl", "Crawl request was cancelled");
     try {
-      await validateUrl(candidate.url);
+      await validateUrl(candidate.url, signal);
       valid.push({ ...candidate, provider });
     } catch {
+      throwIfAborted(signal, "web_crawl", "Crawl request was cancelled");
       // Provider-returned URLs are untrusted and unsafe candidates are dropped.
     }
     if (valid.length >= maxPages) break;
@@ -188,4 +191,3 @@ export function crawlResult(
     warnings: fields.warnings ?? [],
   };
 }
-

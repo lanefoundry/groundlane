@@ -74,6 +74,8 @@ export class TavilyContentProvider implements ContentProvider {
       request.maxContentChars,
       started,
       this.validateUrl,
+      [],
+      signal,
     );
   }
 }

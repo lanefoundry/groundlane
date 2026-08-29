@@ -13,6 +13,7 @@ export const searchBudgetStatusInputSchema = z.object({
 });
 
 const searchBudgetSnapshotSchema = z.object({
+  surface: z.literal("provider_dispatch"),
   period: z.enum(["monthly", "daily", "minute"]),
   provider: z.string(),
   limited: z.boolean(),
@@ -37,14 +38,15 @@ export interface SearchBudgetStatusModuleOptions {
 function snapshotsFor(
   budget: SearchBudgetTracker,
   providers: readonly SearchProviderId[],
-): readonly SearchBudgetSnapshot[] {
-  return budget.snapshots?.(providers) ?? providers.map((provider) => ({
+): ReadonlyArray<SearchBudgetSnapshot & { surface: "provider_dispatch" }> {
+  const snapshots = budget.snapshots?.(providers) ?? providers.map((provider) => ({
     period: "monthly",
     provider,
     limited: false,
     used: 0,
     exhausted: false,
   }));
+  return snapshots.map((snapshot) => ({ ...snapshot, surface: "provider_dispatch" as const }));
 }
 
 export function createSearchBudgetStatusModule(
@@ -57,7 +59,7 @@ export function createSearchBudgetStatusModule(
         "search_budget_status",
         {
           description:
-            "Return instance-local search attempt budget status for automatic provider routing.",
+            "Return instance-local provider attempt budget status for automatic provider routing.",
           inputSchema: searchBudgetStatusInputSchema,
           outputSchema: resultEnvelopeSchema(searchBudgetStatusDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: false },
@@ -71,7 +73,7 @@ export function createSearchBudgetStatusModule(
                 checkedAt: new Date().toISOString(),
                 scope: "instance",
                 note:
-                  "These are Groundlane in-memory attempt guardrails, not provider billing balances. Restarts and horizontal instances do not share counters.",
+                  "These are Groundlane in-memory provider dispatch guardrails, not provider billing balances. Restarts and horizontal instances do not share counters.",
                 budgets: snapshotsFor(options.budget, providers),
               },
             });

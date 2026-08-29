@@ -13,7 +13,7 @@ export class TavilySearchProvider implements SearchProvider {
     const raw = await providerJson(this.fetcher, "https://api.tavily.com/search", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` }, body: JSON.stringify({ query: request.query, max_results: request.maxResults, include_domains: cleanDomains(request.domains), exclude_domains: cleanDomains(request.excludeDomains), time_range: request.timeRange }) }, signal);
     if (!raw || typeof raw !== "object" || !Array.isArray((raw as { results?: unknown }).results)) throw new GroundlaneError("UPSTREAM_ERROR", "search", "Tavily returned a malformed response", true);
     const items: SearchResultItem[] = (raw as { results: unknown[] }).results.flatMap((value) => { if (!value || typeof value !== "object") return []; const item = value as Record<string, unknown>; return typeof item.title === "string" && typeof item.url === "string" && typeof item.content === "string" ? [{ title: item.title, url: item.url, snippet: item.content, ...(typeof item.published_date === "string" ? { publishedAt: item.published_date } : {}), ...(typeof item.score === "number" ? { score: item.score } : {}), provider: this.id }] : []; });
-    return { query: request.query, provider: this.id, results: await validateItems(items, this.validateUrl), durationMs: Math.round(performance.now() - started), warnings: [] };
+    return { query: request.query, provider: this.id, results: await validateItems(items, this.validateUrl, signal), durationMs: Math.round(performance.now() - started), warnings: [] };
   }
 }
 export { TavilySearchProvider as TavilyProvider };

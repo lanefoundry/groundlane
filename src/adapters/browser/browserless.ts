@@ -11,9 +11,14 @@ import {
   resolvePublicUrl,
   type DnsLookup,
 } from "../../core/url-policy.js";
+import { resolveFinalHttpUrl } from "../http/undici-fetcher.js";
 import { readBoundedResponse } from "../shared/bounded-response.js";
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+type RedirectResolver = (
+  request: BrowserFetchRequest,
+  parent?: AbortSignal,
+) => Promise<string>;
 export type BrowserlessRegion = "sfo" | "lon" | "ams";
 
 export interface BrowserlessOptions {
@@ -21,6 +26,7 @@ export interface BrowserlessOptions {
   region?: BrowserlessRegion;
   fetch?: FetchLike;
   lookup?: DnsLookup;
+  resolveRedirects?: RedirectResolver;
 }
 
 export function browserlessContentEndpoint(region: BrowserlessRegion): string {
@@ -77,6 +83,14 @@ export class BrowserlessBackend implements BrowserBackend {
       parent,
       "browser-url",
     );
+    const providerUrl =
+      this.options.resolveRedirects === undefined
+        ? await resolveFinalHttpUrl(
+            { url: target.url.href, maxRedirects: 5, deadline: request.deadline },
+            policy,
+            parent,
+          )
+        : await this.options.resolveRedirects(request, parent);
     const response = await withinDeadline(
       (signal) =>
         this.fetcher(this.endpoint, {
@@ -88,7 +102,7 @@ export class BrowserlessBackend implements BrowserBackend {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            url: target.url.href,
+            url: providerUrl,
             bestAttempt: false,
             gotoOptions: {
               waitUntil: "domcontentloaded",
@@ -151,7 +165,7 @@ export class BrowserlessBackend implements BrowserBackend {
       );
     }
 
-    const responseUrl = response.headers.get("x-response-url") ?? target.url.href;
+    const responseUrl = response.headers.get("x-response-url") ?? providerUrl;
     const finalTarget = await withinDeadline(
       () => resolvePublicUrl(responseUrl, policy),
       request.deadline,

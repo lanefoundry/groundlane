@@ -72,6 +72,8 @@ export class ExaContentProvider implements ContentProvider {
       request.maxContentChars,
       started,
       this.validateUrl,
+      [],
+      signal,
     );
   }
 }
