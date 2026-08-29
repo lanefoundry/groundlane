@@ -272,10 +272,19 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 行為：
 
 - 使用與 `web_fetch` 相同的 retrieval、安全與 deadline pipeline。
+- 目前唯一實作 engine 是 `selector`，以 CSS selector 從固定 DOM 抽取資料；未來 `pattern`、`schema` 與 `llm` engines 必須透過明確 engine boundary 加入。
 - 驗證 field name uniqueness、selector syntax/count、attribute requirement、per-field result count 與 total output size。
 - 單值欄位找不到時在 `missingFields` 明確列出，不以空字串偽裝成功。
 - `many=true` 固定回傳陣列；單值欄位固定回傳單值或明確缺失。
 - 不呼叫 LLM；相同 DOM 與 input 應產生相同結果。
+
+Extractor engine boundary：
+
+- `selector`：已實作，deterministic DOM extraction；支援 `text`、`html`、`attribute`、`many`、missing fields 與 output cap。
+- `pattern`：未實作，未來可針對 fetched text/HTML 做 deterministic pattern extraction；必須定義 pattern 語法、match bounds、capture group normalization 與 failure shape。
+- `schema`：未實作，未來可做 structured validation/normalization；不得自行發網路請求或隱藏呼叫 provider。
+- `llm`：未實作，未來若加入必須 opt-in，回傳 engine/provider provenance、confidence 或 validation metadata，且不得標示為 deterministic。
+- Selector baseline 由 `test/fixtures/extract` 固定；新增 engine 前需補 fixture 或 benchmark，證明未破壞現有 selector semantics。
 
 ### 5.9 `parse`
 

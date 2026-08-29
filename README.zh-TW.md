@@ -300,7 +300,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
 - 已完成：十個 Web access MCP tools、一個 parser MCP tool、四個 provider 診斷 MCP tools、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
-- 下一步：將開源 search/scraping/document-parsing 專案拆成明確的 Groundlane 能力線：crawler policy、extractor engines、Reader quality、search aggregation、browser/render policy、document ingestion backends、benchmark/eval fixtures、async research job tools、finance research、durable quota ledger、cache policy 與營運 telemetry。
+- 下一步：將開源 search/scraping/document-parsing 專案拆成明確的 Groundlane 能力線：crawler policy、extractor engines、Reader quality、search aggregation、browser/render policy、document ingestion backends、benchmark/eval fixtures、async research job tools、finance research、durable quota ledger、cache policy 與營運 telemetry。`web_extract` 目前只 expose deterministic `selector` engine；未來 `pattern`、`schema` 與 `llm` engines 必須明確 opt-in。
 - 開源參考來源已在產品需求文件分成 primary references 與 watchlist/discovery sources，避免低維護度候選專案預設變成 runtime 優先項。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。

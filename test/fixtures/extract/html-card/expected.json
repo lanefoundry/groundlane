@@ -1,0 +1,11 @@
+{
+  "fields": [
+    { "name": "cardHtml", "selector": "#card", "value": "html" },
+    { "name": "emptyText", "selector": "#empty span", "value": "text" }
+  ],
+  "data": {
+    "cardHtml": "\n        <h1>Extractor Fixture</h1>\n        <p>HTML mode preserves child markup.</p>\n        <a href=\"/docs/extract\">Read docs</a>\n      ",
+    "emptyText": null
+  },
+  "missingFields": ["emptyText"]
+}

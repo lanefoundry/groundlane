@@ -176,7 +176,11 @@ Implemented image paths are Brave Image Search, Serper Images, and SerpApi Googl
 3. Extract text, HTML, or attribute values deterministically from the DOM.
 4. Return structured data and an explicit `missingFields` list.
 
-There is no hidden LLM extraction step. A future semantic extractor must be opt-in and identify its provider in output metadata.
+The current extractor engine is `selector` only. Future `pattern`, `schema`, or
+`llm` engines must be explicit engine choices with separate validation,
+provenance, bounds, fixtures, and failure shapes. There is no hidden LLM
+extraction step. A future semantic extractor must be opt-in and identify its
+provider in output metadata.
 
 ### Provider diagnostics
 

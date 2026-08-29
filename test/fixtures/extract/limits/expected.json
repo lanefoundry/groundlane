@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "name": "items", "selector": "li", "value": "text", "many": true }
+  ],
+  "limits": {
+    "maxFields": 5,
+    "maxValuesPerField": 2,
+    "maxOutputChars": 1000
+  },
+  "data": {
+    "items": ["one", "two"]
+  },
+  "missingFields": []
+}

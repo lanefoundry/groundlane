@@ -307,7 +307,7 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
 - Implemented: ten web access MCP tools, one parser MCP tool, four provider diagnostic MCP tools, thirteen search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
-- Next: decompose open-source search/scraping/document-parsing projects into explicit Groundlane capability tracks: crawler policy, extractor engines, Reader quality, search aggregation, browser/render policy, document ingestion backends, benchmark/eval fixtures, async research job tools, finance research, durable quota ledgers, cache policy, and operational telemetry.
+- Next: decompose open-source search/scraping/document-parsing projects into explicit Groundlane capability tracks: crawler policy, extractor engines, Reader quality, search aggregation, browser/render policy, document ingestion backends, benchmark/eval fixtures, async research job tools, finance research, durable quota ledgers, cache policy, and operational telemetry. `web_extract` currently exposes only the deterministic `selector` engine; future `pattern`, `schema`, and `llm` engines must be explicit.
 - Open-source references are split into primary references and watchlist/discovery sources in the product requirements so low-maintenance candidates do not become runtime priorities by default.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).

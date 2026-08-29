@@ -1,0 +1,20 @@
+{
+  "fields": [
+    { "name": "firstProduct", "selector": ".product h2", "value": "text" },
+    { "name": "summaries", "selector": ".product .summary", "value": "text", "many": true },
+    { "name": "skus", "selector": ".product", "value": "attribute", "attribute": "data-sku", "many": true },
+    { "name": "firstDetailsHref", "selector": ".product .details", "value": "attribute", "attribute": "href" },
+    { "name": "missingBadge", "selector": ".badge", "value": "text" }
+  ],
+  "data": {
+    "firstProduct": "Groundlane Core",
+    "summaries": [
+      "Trusted fetch, search, and extraction for agents.",
+      "Document, metadata, link, media, and table parsing."
+    ],
+    "skus": ["GL-001", "GL-002"],
+    "firstDetailsHref": "/products/core",
+    "missingBadge": null
+  },
+  "missingFields": ["missingBadge"]
+}
