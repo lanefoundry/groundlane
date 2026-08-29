@@ -40,6 +40,12 @@ Fetch/extract results report retrieval provenance such as `engine`, `backend`, `
 
 Provider vendors expose more APIs than Groundlane currently wires into MCP. See [provider inventory](docs/operations/provider-inventory.md) for the verified feature backlog and the distinction between vendor capability, implemented Groundlane tool, live smoke, and account balance evidence.
 
+### Research compatibility
+
+`web_research` deliberately keeps one synchronous MCP contract even when an upstream provider is asynchronous. You.com Research and Parallel Responses return synchronously. Linkup Research creates an upstream task with `POST /v1/research`, then Groundlane polls `GET /v1/research/{id}` inside the same request deadline and returns the completed report when available.
+
+Long Linkup research jobs can outlive the MCP request. In that case Groundlane returns a bounded timeout/cancellation error instead of blocking indefinitely; the upstream provider task may still continue outside Groundlane. Use `effort=lite`, `strategy=fallback`, and `provider=linkup` when you want the cheapest bounded Linkup path.
+
 ## Quick start
 
 Requirements: Node.js 22+, pnpm 10, and Git. Chromium is needed only when the local browser backend is enabled.
@@ -123,6 +129,12 @@ to verify health, readiness, authentication, and MCP behavior.
 Pushes to `main` automatically deploy after the CI quality job succeeds. The
 repository must have `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` GitHub
 Actions secrets; see [Continuous deployment](docs/deployment/cloudflare.md#continuous-deployment-from-github).
+
+Cloudflare Container deploys build a Docker image locally before upload. If `pnpm run deploy` stalls while loading Docker Hub metadata or pulling `node:22-bookworm-slim`, check the local Docker credential helper first; this is a local Docker/registry problem, not a Worker or TypeScript build result. The production smoke test remains the final deployment proof:
+
+```bash
+GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
+```
 
 ## Connect an MCP client
 
@@ -213,15 +225,40 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 
 ## Supported adapters
 
-| Capability | Adapters |
+| Groundlane capability | Implemented adapters |
 | --- | --- |
 | Search | Linkup, Keenable, Parallel, Browserbase, Brave, SerpApi, Tavily, Exa, Firecrawl, Serper, You.com |
-| News search | Brave, Serper, SerpApi |
+| Grounded answer | Linkup, You.com |
+| Research report | Linkup, You.com, Parallel |
+| URL content API | Linkup, You.com, Exa, Tavily, Firecrawl, Keenable |
 | Site map discovery | Firecrawl, Tavily |
+| Bounded site crawl | Firecrawl, Tavily |
+| News search | Brave, Serper, SerpApi |
+| Image search | Brave, Serper, SerpApi |
+| Account balance | Linkup, You.com |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
+| Cloudflare runtime | Worker + Container deployment today; Browser Run, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
 
-Automatic search routing can apply conservative per-instance monthly attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status and capability matrix.
+Automatic search routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup and You.com. Firecrawl and SerpApi have verified account-level API candidates; Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
+
+### Provider selection
+
+Automatic `web_search` uses the configured `SEARCH_PROVIDER_ORDER`, capability filtering, provider health, and attempt budgets. The default order favors renewable or account-backed providers first, keeps keyless Keenable and You.com available as low-friction fallback paths, and keeps finite-trial providers opt-in when their free allowance is not renewable or not measurable through an API. Explicit `provider` calls bypass automatic selection but still require credentials, capability support, URL safety checks, and configured budgets.
+
+For provider-backed tools other than `web_search`, `strategy=parallel` returns attributed results from every selected provider; `strategy=fallback` stops at the first successful provider to reduce spend.
+
+### Runtime and billing boundaries
+
+Cloudflare is Groundlane's production runtime today, and it also exposes adjacent capabilities that could become future Groundlane adapters. AI Search is a managed search service for operator-provided data with Workers, REST, and MCP access. Browser Run / Browser Rendering exposes content, markdown, screenshot, PDF, accessibility tree, links, crawl, and structured JSON browser actions through REST APIs or Workers bindings. Agents and Workflows provide durable agent sessions, scheduled work, WebSockets, recoverable steps, and tool orchestration. AI Gateway can add model observability, caching, retries, rate limiting, and fallback.
+
+Those services are not the same thing as the public-web search providers in the provider router. Cloudflare is therefore not listed under `provider_balance`: that tool is reserved for web-data provider account balances exposed by official provider APIs, currently Linkup credits and You.com API credits.
+
+Cloudflare usage must be tracked through the Cloudflare dashboard, billing exports, logs, metrics, or future Cloudflare-specific diagnostics. Container cost is based on active runtime resources such as vCPU, memory, disk, egress, Workers, Durable Objects, and logs; those units are separate from search-provider requests or credits. Groundlane local budgets do not cap Cloudflare runtime spend.
+
+Potential Cloudflare-specific Groundlane work should stay separate from search-provider routing: a Browser Run backend for rendered `web_fetch` / `web_content`, an AI Search adapter for private/operator-owned indexes, Cloudflare diagnostics for runtime usage, and Workflows-based async tools for long research or crawl jobs.
+
+Large generated documentation sites need source-aware parsing instead of raw page extraction. Cloudflare's docs publish Markdown pages, scoped `llms.txt` / `llms-full.txt` indexes, and OpenAPI schemas for the API reference. Groundlane should prefer those machine-readable sources for Cloudflare docs and other similar sites, then slice by product, endpoint, heading, or schema operation. Raising `maxBytes` or selecting the whole `main` element is a last resort because it can exceed output limits before the useful section is isolated.
 
 ## How it works
 
@@ -230,6 +267,7 @@ MCP client
     |
     v
 Worker / Node HTTP edge       authentication, request identity
+                              Cloudflare hosts this layer in production
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
@@ -251,8 +289,8 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 ## Project status
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: three core web MCP tools, two provider diagnostic MCP tools, eleven search adapters, self-hosted Reader, optional Jina/Browserless backends, Cloudflare Worker + Container deployment.
-- Next: compatibility fixtures, cache/health-aware routing, operational telemetry, and opt-in bounded crawl primitives.
+- Implemented: ten web MCP tools, two provider diagnostic MCP tools, eleven search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
+- Next: async research job tools, structured extraction providers, finance research, durable quota ledgers, broader compatibility fixtures, cache policy, and operational telemetry.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).
 

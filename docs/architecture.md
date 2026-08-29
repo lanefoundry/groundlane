@@ -234,6 +234,8 @@ The absence of every search provider should make search unready, not disable fet
 
 ## Design evolution
 
-The architecture intentionally leaves ports for cache backends, new search providers, alternate browser execution, and future semantic extraction. Crawl queues, research synthesis, and stateful sessions require separate designs rather than expanding the three MVP handlers indefinitely.
+The architecture intentionally leaves ports for cache backends, new search providers, alternate browser execution, source-aware documentation parsing, and future semantic extraction. Crawl queues, research synthesis, and stateful sessions require separate designs rather than expanding the three MVP handlers indefinitely.
+
+Large generated documentation sites should not be handled by raising output limits or selecting the whole `main` element. A future source-aware parser should first discover machine-readable sources such as `llms.txt`, scoped `llms-full.txt`, Markdown endpoints, OpenAPI schemas, and sitemaps. It should then fetch only the relevant page, heading range, schema path, or operation before falling back to bounded HTML selectors. This keeps token use and output bytes predictable while preserving deterministic provenance.
 
 For a future bounded crawl primitive, Crawlee is the first TypeScript implementation candidate. It must remain behind Groundlane's existing URL, deadline, byte, output, concurrency, queue, and cancellation policies rather than becoming a parallel security boundary.

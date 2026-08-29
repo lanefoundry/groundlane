@@ -40,6 +40,12 @@ Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`tru
 
 各 provider vendor 自家還有更多 API，Groundlane 目前沒有全部接成 MCP tool。請看 [provider inventory](docs/operations/provider-inventory.md) 的已查證 backlog，以及 vendor capability、已實作 Groundlane tool、live smoke、帳號餘額證據之間的區分。
 
+### Research 相容性
+
+`web_research` 刻意維持一個同步 MCP contract，即使 upstream provider 本身是 async。You.com Research 與 Parallel Responses 是同步回應；Linkup Research 則由 Groundlane 先以 `POST /v1/research` 建立 upstream task，再在同一個 request deadline 內輪詢 `GET /v1/research/{id}`，完成時回傳 report 與 citations。
+
+較長的 Linkup research job 可能超過 MCP request。這時 Groundlane 會回有界的 timeout/cancellation error，不會無限等待；upstream provider task 仍可能在 Groundlane 之外繼續執行。想走最低成本的有界 Linkup path 時，使用 `effort=lite`、`strategy=fallback`、`provider=linkup`。
+
 ## 快速開始
 
 需求：Node.js 22+、pnpm 10 與 Git。只有啟用 local browser backend 時才需要 Chromium。
@@ -120,6 +126,12 @@ readiness、authentication 與 MCP 行為。
 push 到 `main` 後，GitHub Actions 會在 CI quality job 成功後自動部署。Repo
 必須設定 `CLOUDFLARE_ACCOUNT_ID` 與 `CLOUDFLARE_API_TOKEN` Actions secrets；
 詳見[GitHub 持續部署](docs/deployment/cloudflare.md#continuous-deployment-from-github)。
+
+Cloudflare Container deploy 會先在本機 build Docker image 再上傳。如果 `pnpm run deploy` 卡在讀取 Docker Hub metadata 或拉取 `node:22-bookworm-slim`，先檢查本機 Docker credential helper；這是本機 Docker／registry 問題，不是 Worker 或 TypeScript build 的結果。production smoke 才是最終部署證據：
+
+```bash
+GROUNDLANE_MCP_URL="https://your-worker.example/mcp" pnpm smoke
+```
 
 ## 連接 MCP client
 
@@ -208,15 +220,40 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 ## 支援的 adapters
 
-| 能力 | Adapters |
+| Groundlane 能力 | 已實作 adapters |
 | --- | --- |
 | Search | Linkup、Keenable、Parallel、Browserbase、Brave、SerpApi、Tavily、Exa、Firecrawl、Serper、You.com |
-| News search | Brave、Serper、SerpApi |
+| Grounded answer | Linkup、You.com |
+| Research report | Linkup、You.com、Parallel |
+| URL content API | Linkup、You.com、Exa、Tavily、Firecrawl、Keenable |
 | Site map discovery | Firecrawl、Tavily |
+| Bounded site crawl | Firecrawl、Tavily |
+| News search | Brave、Serper、SerpApi |
+| Image search | Brave、Serper、SerpApi |
+| Account balance | Linkup、You.com |
 | Hosted Reader fallback | Jina Reader（opt-in） |
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
+| Cloudflare runtime | 目前支援 Worker + Container deployment；Browser Run、AI Search、AI Gateway、Agents 與 Workflows 是已查到的未來 adapter surface |
 
-自動搜尋路由可套用保守的 per-instance 每月嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態與功能矩陣請看 [Provider inventory](docs/operations/provider-inventory.md)。
+自動搜尋路由可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup 與 You.com。Firecrawl 與 SerpApi 已查到 account-level API 候選；Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
+
+### Provider selection
+
+自動 `web_search` 會依 `SEARCH_PROVIDER_ORDER`、capability filtering、provider health 與 attempt budgets 選 provider。預設順序優先放 renewable 或 account-backed provider，保留 keyless Keenable 與 You.com 作為低摩擦 fallback，並讓不可續用或無法用 API 量測餘額的 finite-trial provider 維持 opt-in。明確指定 `provider` 會跳過自動排序，但仍必須通過 credential、capability、URL safety 與 budget 檢查。
+
+`web_search` 以外的 provider-backed tools 若使用 `strategy=parallel`，會回傳每個 selected provider 的 attributed results；若使用 `strategy=fallback`，會在第一個成功 provider 停下來以降低花費。
+
+### Runtime 與帳務邊界
+
+Cloudflare 目前是 Groundlane 的 production runtime，同時也有可成為未來 Groundlane adapter 的相關能力。AI Search 是給 operator-provided data 用的 managed search service，支援 Workers、REST 與 MCP。Browser Run / Browser Rendering 透過 REST API 或 Workers binding 提供 content、markdown、screenshot、PDF、accessibility tree、links、crawl 與 structured JSON browser actions。Agents 與 Workflows 提供 durable agent sessions、scheduled work、WebSockets、可恢復 steps 與 tool orchestration。AI Gateway 可提供 model observability、caching、retries、rate limiting 與 fallback。
+
+這些服務和 provider router 裡的 public-web search providers 不是同一層。因此 Cloudflare 不會列在 `provider_balance`：這個 tool 只查詢 web-data provider 官方 API 暴露的 account balance，目前是 Linkup credits 與 You.com API credits。
+
+Cloudflare usage 需要透過 Cloudflare dashboard、billing exports、logs、metrics，或未來獨立的 Cloudflare diagnostics 追蹤。Container 成本看的是 active runtime resource，例如 vCPU、memory、disk、egress、Workers、Durable Objects 與 logs；這些單位和 search-provider requests/credits 是不同帳。Groundlane 的 local budgets 不會限制 Cloudflare runtime 花費。
+
+未來 Cloudflare-specific Groundlane work 應該和 search-provider routing 分開：例如 Browser Run backend 給 rendered `web_fetch` / `web_content`、AI Search adapter 給 private/operator-owned indexes、Cloudflare diagnostics 查 runtime usage，以及用 Workflows 支撐長時間 research 或 crawl jobs。
+
+大型 generated documentation sites 需要 source-aware parsing，而不是直接抽整頁 HTML。Cloudflare docs 有 Markdown pages、scoped `llms.txt` / `llms-full.txt` indexes，以及 API reference 的 OpenAPI schemas。Groundlane 對 Cloudflare docs 和類似網站應優先使用這些 machine-readable sources，再依 product、endpoint、heading 或 schema operation 切段。單純提高 `maxBytes` 或抽整個 `main` 是最後手段，因為還沒切到有用段落前就可能先撞到 output limits。
 
 ## 運作方式
 
@@ -225,6 +262,7 @@ MCP client
     |
     v
 Worker / Node HTTP edge       authentication, request identity
+                              production 由 Cloudflare 承載
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl | web_news | web_images | web_fetch | web_extract
@@ -246,8 +284,8 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：三個核心 Web MCP tools、兩個 provider 診斷 MCP tools、十一個 search adapters、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment。
-- 下一步：compatibility fixtures、cache／health-aware routing、營運 telemetry 與 opt-in bounded crawl primitives。
+- 已完成：十個 Web MCP tools、兩個 provider 診斷 MCP tools、十一個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
+- 下一步：async research job tools、structured extraction providers、finance research、durable quota ledger、更完整的 compatibility fixtures、cache policy 與營運 telemetry。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。
 

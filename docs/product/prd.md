@@ -440,6 +440,9 @@ MVP 明確不包含：
 ### Phase 3：Bounded expansion
 
 - opt-in crawl/batch queue、dedupe、robots/budget controls。
+- source-aware documentation parser：優先使用 `llms.txt`、scoped `llms-full.txt`、
+  Markdown endpoints、OpenAPI schemas 與 sitemap，再依 heading/path/operation
+  切片；不要靠提高整頁 HTML output limit 解決大型 generated docs。
 - query-aware chunking/rerank provider。
 - 另案評估 stateful browser sessions，先定義 ownership、isolation、expiry、cleanup 與 billing。
 
