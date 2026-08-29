@@ -1,0 +1,21 @@
+{
+  "baseUrl": "https://fixtures.example/limits",
+  "requiredText": [
+    "Groundlane keeps provider limits distinct from local attempt budgets."
+  ],
+  "metadata": {
+    "title": "Table Fixture",
+    "description": "Table extraction benchmark fixture."
+  },
+  "tables": [
+    {
+      "caption": "Provider limits",
+      "headers": ["Provider", "Limit"],
+      "rows": [
+        ["Provider", "Limit"],
+        ["TinyFish", "150 fetch URLs/minute"],
+        ["You.com", "100 keyless searches/day"]
+      ]
+    }
+  ]
+}

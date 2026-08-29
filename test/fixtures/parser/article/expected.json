@@ -1,0 +1,25 @@
+{
+  "baseUrl": "https://fixtures.example/articles/parser",
+  "requiredText": [
+    "Groundlane parses article pages into reusable document structures.",
+    "avoid navigation chrome"
+  ],
+  "rejectedText": [
+    "Pricing Login",
+    "Subscribe now"
+  ],
+  "metadata": {
+    "title": "Article Fixture",
+    "description": "A focused article fixture for parser benchmarking.",
+    "author": "Groundlane",
+    "publishedAt": "2026-08-30T00:00:00Z",
+    "canonicalUrl": "https://fixtures.example/articles/parser"
+  },
+  "links": [
+    {
+      "url": "https://fixtures.example/docs/parser",
+      "text": "Parser docs",
+      "internal": true
+    }
+  ]
+}

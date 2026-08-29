@@ -507,6 +507,7 @@ GitHub Topics 與各 provider docs；這些先用來補 taxonomy、fixtures 或�
   - browser/render policy：render mode、wait strategy、browser time budget、challenge boundary、snapshot/screenshot provenance。
   - document ingestion backends：PDF text/layout/table/image/OCR、page ranges、source spans、confidence、fallback engine。
   - benchmark/eval fixtures：HTML/PDF/table/metadata golden corpus、quality metrics、cost/latency、failure taxonomy。
+- parser benchmark fixtures：以 repo 內建 HTML corpus 追蹤 required text、noise rejection、metadata、links、media、tables 與 latency；新增 engine 前需先補 fixture 或說明既有 corpus 為何足夠。
 - source-aware documentation parser：優先使用 `llms.txt`、scoped `llms-full.txt`、
   Markdown endpoints、OpenAPI schemas 與 sitemap，再依 heading/path/operation
   切片；不要靠提高整頁 HTML output limit 解決大型 generated docs。

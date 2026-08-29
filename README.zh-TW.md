@@ -312,6 +312,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 - [Cloudflare 部署](docs/deployment/cloudflare.md)
 - [開源技術基礎](docs/open-source-foundations.zh-TW.md)
 - [Reader benchmark](docs/research/reader-benchmark.md)
+- [Parser benchmark](docs/research/parser-benchmark.md)
 - [研究封存](docs/research/README.md)
 
 ## 參與貢獻與支援

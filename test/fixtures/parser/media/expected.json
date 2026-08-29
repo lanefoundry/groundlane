@@ -1,0 +1,27 @@
+{
+  "baseUrl": "https://fixtures.example/media/",
+  "requiredText": [
+    "Groundlane resolves relative media URLs and drops unsafe schemes."
+  ],
+  "metadata": {
+    "title": "Media Fixture",
+    "description": "Media and link parser fixture."
+  },
+  "links": [
+    {
+      "url": "https://fixtures.example/security",
+      "text": "Security",
+      "internal": true
+    }
+  ],
+  "images": [
+    {
+      "url": "https://fixtures.example/assets/diagram.png",
+      "alt": "Parser pipeline diagram",
+      "title": "Pipeline"
+    },
+    {
+      "url": "https://fixtures.example/assets/hero.webp"
+    }
+  ]
+}

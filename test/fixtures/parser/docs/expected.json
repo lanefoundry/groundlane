@@ -1,0 +1,27 @@
+{
+  "baseUrl": "https://fixtures.example/docs/parser-api",
+  "requiredText": [
+    "The parse tool accepts either a public URL or caller-provided HTML.",
+    "{\"purpose\":\"metadata\"}"
+  ],
+  "rejectedText": [
+    "Docs nav Overview API Changelog"
+  ],
+  "metadata": {
+    "title": "Groundlane Parser API",
+    "description": "Parser API documentation fixture.",
+    "canonicalUrl": "https://fixtures.example/docs/parser-api"
+  },
+  "links": [
+    {
+      "url": "https://fixtures.example/docs/parser-api#tables",
+      "text": "Tables",
+      "internal": true
+    },
+    {
+      "url": "https://external.example/reference",
+      "text": "External reference",
+      "internal": false
+    }
+  ]
+}

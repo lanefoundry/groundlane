@@ -319,6 +319,7 @@ The detailed direction and acceptance criteria live in the [product requirements
 - [Cloudflare deployment](docs/deployment/cloudflare.md)
 - [Open-source foundations](docs/open-source-foundations.md)
 - [Reader benchmark](docs/research/reader-benchmark.md)
+- [Parser benchmark](docs/research/parser-benchmark.md)
 - [Research archive](docs/research/README.md)
 
 ## Contributing and support

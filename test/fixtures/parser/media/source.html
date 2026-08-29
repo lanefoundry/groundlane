@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Media Fixture</title>
+    <meta name="description" content="Media and link parser fixture.">
+  </head>
+  <body>
+    <main>
+      <h1>Media Fixture</h1>
+      <p>Groundlane resolves relative media URLs and drops unsafe schemes.</p>
+      <img src="/assets/diagram.png" alt="Parser pipeline diagram" title="Pipeline">
+      <picture>
+        <source srcset="/assets/hero.webp 1x, /assets/hero@2x.webp 2x">
+      </picture>
+      <a href="mailto:security@example.com">Email</a>
+      <a href="javascript:alert(1)">Bad link</a>
+      <a href="/security">Security</a>
+    </main>
+  </body>
+</html>
