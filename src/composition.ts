@@ -20,6 +20,7 @@ import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
 import { YouBalanceChecker } from "./adapters/balance/you.js";
+import { LinkupResearchProvider } from "./adapters/research/linkup.js";
 import { ParallelResearchProvider } from "./adapters/research/parallel.js";
 import { YouResearchProvider } from "./adapters/research/you.js";
 import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwright.js";
@@ -123,6 +124,9 @@ export function createAnswerProviders(config: GroundlaneConfig): AnswerProvider[
 
 export function createResearchProviders(config: GroundlaneConfig): ResearchProvider[] {
   const providers: ResearchProvider[] = [];
+  if (config.providerKeys.linkup !== undefined) {
+    providers.push(new LinkupResearchProvider({ apiKey: config.providerKeys.linkup }));
+  }
   if (config.providerKeys.you !== undefined) {
     providers.push(new YouResearchProvider({ apiKey: config.providerKeys.you }));
   }

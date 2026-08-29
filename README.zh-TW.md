@@ -26,7 +26,7 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
 | `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十一個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
 | `web_answer` | 從支援 answer 的 provider 取得 grounded answer | 並行 fan-out 或 fallback 到 You.com Answer 與 Linkup sourced answer，保留 provider attribution 與 citations |
-| `web_research` | 從支援 research 的 provider 取得研究報告 | 並行 fan-out 或 fallback 到 You.com Research 與 Parallel Responses，保留 citations |
+| `web_research` | 從支援 research 的 provider 取得研究報告 | 並行 fan-out 或 fallback 到 Linkup Research、You.com Research 與 Parallel Responses，保留 citations |
 | `web_content` | 透過 provider content API 抓取 URL 內容 | 並行 fan-out 或 fallback 到 Linkup Fetch、You.com Contents、Exa Contents、Tavily Extract、Firecrawl Scrape、Keenable Fetch |
 | `web_map` | 從公開網站探索 URL | 並行 fan-out 或 fallback 到 Firecrawl Map 與 Tavily Map，保留 provider attribution |
 | `web_crawl` | 對公開網站做有界 crawl | 並行 fan-out 或 fallback 到 Firecrawl Crawl 與 Tavily Crawl，限制頁數與內容大小 |

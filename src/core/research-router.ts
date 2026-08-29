@@ -7,7 +7,7 @@ import type {
 } from "./contracts.js";
 import { GroundlaneError, toGroundlaneError } from "./errors.js";
 
-export const RESEARCH_PROVIDER_IDS = ["you", "parallel"] as const satisfies readonly ResearchProviderId[];
+export const RESEARCH_PROVIDER_IDS = ["linkup", "you", "parallel"] as const satisfies readonly ResearchProviderId[];
 
 interface ResearchOutcome {
   provider: ResearchProvider;

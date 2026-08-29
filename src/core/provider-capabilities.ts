@@ -13,10 +13,10 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
   linkup: {
     provider: "linkup",
     vendorFeatures: ["Search", "Fetch", "Research", "Tasks", "Extract"],
-    groundlaneTools: ["web_search", "web_answer", "web_content", "provider_balance"],
+    groundlaneTools: ["web_search", "web_answer", "web_research", "web_content", "provider_balance"],
     filterSupport: "include domains, exclude domains, date range",
     balanceSupport: "api",
-    notes: ["web_answer uses Linkup /v1/search with outputType=sourcedAnswer.", "web_content uses Linkup /v1/fetch.", "Balance uses Linkup /v1/credits/balance."],
+    notes: ["web_answer uses Linkup /v1/search with outputType=sourcedAnswer.", "web_research uses Linkup /v1/research and polls the async task inside the MCP deadline.", "web_content uses Linkup /v1/fetch.", "Balance uses Linkup /v1/credits/balance."],
   },
   keenable: {
     provider: "keenable",

@@ -116,7 +116,7 @@ The first implemented answer providers are You.com Answer and Linkup sourced ans
 3. `strategy=parallel` fans out to selected provider research APIs under one abort signal and deadline. `strategy=fallback` returns the first successful provider report.
 4. Return each provider report separately with citations, selected providers, attempted providers, and successful providers. Groundlane does not synthesize provider reports with an LLM.
 
-Implemented research paths are You.com Research and Parallel's synchronous OpenAI-compatible Responses API. Linkup Research remains outside this synchronous tool because the checked docs describe an async minutes-scale workflow.
+Implemented research paths are Linkup Research, You.com Research, and Parallel's synchronous OpenAI-compatible Responses API. Linkup is asynchronous upstream; Groundlane wraps it as a bounded synchronous MCP call by creating the task and polling at a conservative interval until completion, failure, cancellation, or the shared request deadline.
 
 ### `web_content`
 

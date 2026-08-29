@@ -389,7 +389,7 @@ MVP 明確不包含：
 - residential proxy network、通用 CAPTCHA solving 或「undetectable」保證；
 - persistent login profiles 與 stateful browser sessions；
 - crawl queue、scheduled monitoring、async batch jobs；
-- LLM-based semantic extraction、answer synthesis 或 research agent；
+- Groundlane 自行執行的 LLM-based semantic extraction、answer synthesis 或 research agent；
 - reranker model、knowledge graph、marketplace 或 site-specific scrapers；
 - 對 robots、網站條款或存取授權做法律判定。
 
@@ -416,7 +416,7 @@ MVP 明確不包含：
 | Crawlee | 未來 crawl queue、retry、session pool、autoscaling 參考 | 單頁 MVP 不加入 crawler framework | [Crawlee](https://github.com/apify/crawlee) |
 | Browserless | Container/browser operations、queue、crash recovery、同 API 跨部署的參考 | 不依賴或複製 SSPL/commercial code；不承諾其 proxy/CAPTCHA breadth | [Browserless](https://github.com/browserless/browserless) |
 | Tavily / Exa / Jina / Firecrawl / SerpApi | Search/contents/reader/rerank 能力拆分、provider adapter 與 normalized contract | 不複製其 index；MVP 不做 rerank/research synthesis | [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [Exa Search](https://docs.exa.ai/reference/search), [Jina Reader](https://jina.ai/reader/), [Firecrawl Search](https://docs.firecrawl.dev/api-reference/endpoint/search), [SerpApi Google Search](https://serpapi.com/search-api) |
-| Parallel / Linkup | vendor-neutral web intelligence control-plane 願景、structured/cited result 方向 | MVP 不做 deep research、monitor、FindAll 或自己的 web index | [Parallel](https://parallel.ai/), [Linkup](https://docs.linkup.so/) |
+| Parallel / Linkup | vendor-neutral web intelligence control-plane 願景、structured/cited result 方向 | MVP 可轉接 provider research API，但不做自家 deep-research agent、monitor、FindAll 或自己的 web index | [Parallel](https://parallel.ai/), [Linkup](https://docs.linkup.so/) |
 | Cloudflare Containers | Worker control plane + isolated Node/Playwright browser workload、self-controlled deployment | core contracts 不依賴 Cloudflare；不把 Container instance 當持久 browser session | [Cloudflare Containers](https://developers.cloudflare.com/containers/) |
 
 授權與功能會變動；採用第三方 code 前必須鎖定版本、閱讀完整 LICENSE/NOTICE 並完成 dependency review。上表只描述設計影響，不表示包含對方程式碼。
