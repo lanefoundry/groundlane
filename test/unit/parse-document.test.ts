@@ -83,6 +83,45 @@ void test("parseDocument can return a purpose-specific subset", () => {
   assert.equal(parsed.links?.some((link) => link.url.startsWith("mailto:")), false);
 });
 
+void test("parseDocument prefers explicit metadata titles", () => {
+  const parsed = parseDocument(`<!doctype html>
+    <html><head>
+      <title>Page Title - Site</title>
+      <meta name="twitter:title" content="Twitter Title">
+      <meta property="og:title" content="OpenGraph Title">
+    </head><body><main><h1>Main Heading</h1></main></body></html>`, {
+    purpose: "metadata",
+    baseUrl: "https://example.com/",
+    maxOutputChars: 20_000,
+  });
+
+  assert.equal(parsed.title, "OpenGraph Title");
+});
+
+void test("parseDocument uses h1 before a site-suffixed page title", () => {
+  const parsed = parseDocument(`<!doctype html>
+    <html><head><title>Article Fixture - Site</title></head>
+    <body><main><h1>Article Fixture</h1><p>Body</p></main></body></html>`, {
+    purpose: "metadata",
+    baseUrl: "https://example.com/",
+    maxOutputChars: 20_000,
+  });
+
+  assert.equal(parsed.title, "Article Fixture");
+});
+
+void test("parseDocument falls back to cleaned page title", () => {
+  const parsed = parseDocument(`<!doctype html>
+    <html><head><title>Standalone Documentation | Groundlane</title></head>
+    <body><p>Body</p></body></html>`, {
+    purpose: "metadata",
+    baseUrl: "https://example.com/",
+    maxOutputChars: 20_000,
+  });
+
+  assert.equal(parsed.title, "Standalone Documentation");
+});
+
 void test("parseDocument rejects empty input and bounds large parsed output", () => {
   assert.throws(
     () => parseDocument("   ", {

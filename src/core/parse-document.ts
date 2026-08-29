@@ -94,6 +94,47 @@ function addMetadata(
   }
 }
 
+function stripTitleSuffix(title: string): string {
+  const separators = [" - ", " | ", " – ", " — ", " :: "];
+  for (const separator of separators) {
+    const index = title.lastIndexOf(separator);
+    if (index <= 0) continue;
+    const candidate = title.slice(0, index).trim();
+    const suffix = title.slice(index + separator.length).trim();
+    if (candidate.length >= 8 && suffix.length >= 2 && suffix.length <= 80) {
+      return candidate;
+    }
+  }
+  return title;
+}
+
+function equivalentTitle(left: string, right: string): boolean {
+  return left.localeCompare(right, "en-US", { sensitivity: "base" }) === 0;
+}
+
+function selectTitle(source: string): string | undefined {
+  const $ = load(source);
+  const explicitTitle = cleanText(
+    $('meta[property="og:title"]').first().attr("content") ??
+      $('meta[name="twitter:title"]').first().attr("content"),
+    500,
+  );
+  if (explicitTitle !== undefined) return explicitTitle;
+
+  const pageTitle = cleanText($("title").first().text(), 500);
+  const headingTitle = cleanText($("article h1, main h1, h1").first().text(), 500);
+  if (pageTitle === undefined) return headingTitle;
+  const strippedTitle = stripTitleSuffix(pageTitle);
+  if (
+    headingTitle !== undefined &&
+    !equivalentTitle(strippedTitle, pageTitle) &&
+    equivalentTitle(strippedTitle, headingTitle)
+  ) {
+    return headingTitle;
+  }
+  return strippedTitle;
+}
+
 function parseMetadata(source: string, baseUrl: string): Pick<
   ParsedDocument,
   "title" | "description" | "author" | "publishedAt" | "canonicalUrl" | "metadata"
@@ -111,11 +152,7 @@ function parseMetadata(source: string, baseUrl: string): Pick<
   });
   const canonicalUrl = httpUrl($("link[rel='canonical']").first().attr("href"), baseUrl);
   if (canonicalUrl !== undefined) addMetadata(metadata, "canonical", canonicalUrl);
-  const title = cleanText(
-    $('meta[property="og:title"]').first().attr("content") ??
-      $("title").first().text(),
-    500,
-  );
+  const title = selectTitle(source);
   const description = cleanText(
     $('meta[name="description"]').first().attr("content") ??
       $('meta[property="og:description"]').first().attr("content"),
@@ -242,7 +279,7 @@ export function parseDocument(source: string, options: ParseDocumentOptions): Pa
     const readable = extractReadableDocument(source, options.baseUrl);
     const content = truncateUnicode(readable.html, options.maxOutputChars);
     const text = truncateUnicode(readable.text.replace(/[ \t]+\n/gu, "\n").replace(/\n{3,}/gu, "\n\n").trim(), options.maxOutputChars);
-    if (readable.title !== undefined) result.title = readable.title;
+    if (result.title === undefined && readable.title !== undefined) result.title = readable.title;
     if (readable.description !== undefined) result.description = readable.description;
     if (readable.author !== undefined) result.author = readable.author;
     if (readable.publishedAt !== undefined) result.publishedAt = readable.publishedAt;

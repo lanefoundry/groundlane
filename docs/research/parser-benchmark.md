@@ -29,12 +29,12 @@ baseline；latency 只代表這台機器上的 local run。
 
 | Fixtures | Required text | Rejected text | Metadata | Links | Images | Tables | Median | p95 | Failures |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 4 | 6 / 6 | 3 / 3 | 11 / 12 | 4 / 4 | 2 / 2 | 1 / 1 | 3.03 ms | 12.78 ms | 0 |
+| 4 | 6 / 6 | 3 / 3 | 12 / 12 | 4 / 4 | 2 / 2 | 1 / 1 | 3.30 ms | 19.74 ms | 0 |
 
-目前唯一未滿分項是 article fixture 的 title：parser 取 `<title>` 的
-`Article Fixture - Site`，fixture 期望文章標題 `Article Fixture`。這不是安全問題，
-但代表後續若要改善 metadata quality，應把 title heuristic 納入明確 contract，
-例如比較 `og:title`、`h1`、`<title>` 與 site suffix。
+Title heuristic 的目前 contract 是：優先使用 `og:title` 或 `twitter:title`；
+若 `<title>` 明顯是 `Article Title - Site` 這類 site suffix 且與 `h1` 相符，使用
+`h1`；否則保留清理後的 `<title>`。這避免 article fixture 把 site suffix 當成文章標題，
+也避免 documentation/table 頁面被較短的 `h1` 覆寫。
 
 ## Fixture 覆蓋
 
