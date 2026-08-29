@@ -42,6 +42,26 @@ The first implementation is intentionally narrow:
   `engine=http` provenance with a source-specific backend marker.
 - If every candidate fails, Groundlane returns the original bounded failure.
 
+## Phase 2 Runtime Slice
+
+The second implementation extends discovery without changing public tool
+schemas:
+
+- After direct Markdown candidates fail, Groundlane checks scoped `llms.txt`
+  before root `/llms.txt`.
+- `llms.txt` is treated as a discovery manifest, not a content body.
+- Only same-origin HTTP(S) links are eligible for automatic selection.
+- Discovered link parsing is capped at 500 links per manifest.
+- Candidate selection compares normalized documentation paths and prefers the
+  nearest parent page for the requested URL.
+- Markdown hash fragments can slice an ATX heading range before normal output
+  truncation.
+
+OpenAPI support starts as pure JSON slicing helpers for exact path/method or
+unique `operationId` matches. It is not automatically wired into `web_fetch`
+yet, because Cloudflare's canonical OpenAPI files are large monoliths and need
+metadata-first or range-aware retrieval before runtime use.
+
 ## References
 
 - `https://llmstxt.org/`

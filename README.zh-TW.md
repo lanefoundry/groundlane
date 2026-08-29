@@ -253,7 +253,7 @@ Cloudflare usage 需要透過 Cloudflare dashboard、billing exports、logs、me
 
 未來 Cloudflare-specific Groundlane work 應該和 search-provider routing 分開：例如 Browser Run backend 給 rendered `web_fetch` / `web_content`、AI Search adapter 給 private/operator-owned indexes、Cloudflare diagnostics 查 runtime usage，以及用 Workflows 支撐長時間 research 或 crawl jobs。
 
-大型 generated documentation sites 需要 source-aware parsing，而不是直接抽整頁 HTML。Cloudflare docs 有 Markdown pages、scoped `llms.txt` / `llms-full.txt` indexes，以及 API reference 的 OpenAPI schemas。Groundlane 對 Cloudflare docs 和類似網站應優先使用這些 machine-readable sources，再依 product、endpoint、heading 或 schema operation 切段。單純提高 `maxBytes` 或抽整個 `main` 是最後手段，因為還沒切到有用段落前就可能先撞到 output limits。第一個 runtime slice 會在 Markdown/text `web_fetch` 的 direct HTTP 撞到 `OUTPUT_LIMIT` 時，先用同 URL 的 `Accept: text/markdown` 重試，再嘗試 Cloudflare-style `/index.md` source，最後才回原本的有界失敗。
+大型 generated documentation sites 需要 source-aware parsing，而不是直接抽整頁 HTML。Cloudflare docs 有 Markdown pages、scoped `llms.txt` / `llms-full.txt` indexes，以及 API reference 的 OpenAPI schemas。Groundlane 對 Cloudflare docs 和類似網站應優先使用這些 machine-readable sources，再依 product、endpoint、heading 或 schema operation 切段。單純提高 `maxBytes` 或抽整個 `main` 是最後手段，因為還沒切到有用段落前就可能先撞到 output limits。目前 runtime path 會在 Markdown/text `web_fetch` 的 direct HTTP 撞到 `OUTPUT_LIMIT` 時，先用同 URL 的 `Accept: text/markdown` 重試，再嘗試 Cloudflare-style `/index.md` source，接著查 same-origin scoped/root `llms.txt` manifest 找最接近的 Markdown page，最後才回原本的有界失敗。OpenAPI slicing 目前是純 JSON logic，等大型 schema discovery 有明確邊界後再自動接入 runtime fetch。
 
 ## 運作方式
 

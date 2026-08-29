@@ -4,7 +4,7 @@ import type { BrowserBackend, BrowserFetchRequest, HttpFetcher, HttpFetchRequest
 import { GroundlaneError } from "../../src/core/errors.js";
 import { FetchPipeline, validateFetchPipelineRequest } from "../../src/core/fetch-pipeline.js";
 import { Deadline } from "../../src/core/limits.js";
-import { markdownSourceCandidates, SourceAwareDocsResolver } from "../../src/core/source-aware-docs.js";
+import { SourceAwareDocsResolver } from "../../src/core/source-aware-docs.js";
 
 function raw(body: string, engine: "http" | "reader" | "browser" = "http", status = 200): RawDocument {
   return { requestedUrl: "https://example.com", finalUrl: "https://example.com", status, headers: {}, contentType: engine === "reader" ? "text/markdown" : "text/html", body: new TextEncoder().encode(body), engine, backend: engine === "http" ? "direct" : engine };
@@ -250,34 +250,64 @@ void test("FetchPipeline does not use source-aware docs for selectors", async ()
   );
 });
 
-void test("markdownSourceCandidates maps docs URLs to index markdown", () => {
-  assert.deepEqual(
-    markdownSourceCandidates("https://developers.cloudflare.com/workers/get-started/"),
-    [
-      {
-        url: "https://developers.cloudflare.com/workers/get-started/",
-        backend: "source:accept-markdown",
-      },
-      {
-        url: "https://developers.cloudflare.com/workers/get-started/index.md",
-        backend: "source:index.md",
-      },
-    ],
-  );
-  assert.deepEqual(
-    markdownSourceCandidates("https://developers.cloudflare.com/workers/get-started"),
-    [
-      {
-        url: "https://developers.cloudflare.com/workers/get-started",
-        backend: "source:accept-markdown",
-      },
-      {
-        url: "https://developers.cloudflare.com/workers/get-started/index.md",
-        backend: "source:index.md",
-      },
-    ],
-  );
-  assert.deepEqual(markdownSourceCandidates("https://developers.cloudflare.com/workers/index.md"), []);
+void test("FetchPipeline resolves Markdown through scoped llms.txt when direct candidates fail", async () => {
+  const requested: string[] = [];
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(request.url);
+      if (request.url === "https://developers.cloudflare.com/api/resources/accounts/methods/list/") {
+        return Promise.reject(new GroundlaneError("OUTPUT_LIMIT", "response", "too large"));
+      }
+      if (request.url === "https://developers.cloudflare.com/api/resources/accounts/methods/list/index.md") {
+        return Promise.resolve(raw("Not found", "http", 404));
+      }
+      if (request.url === "https://developers.cloudflare.com/api/llms.txt") {
+        return Promise.resolve({
+          requestedUrl: request.url,
+          finalUrl: request.url,
+          status: 200,
+          headers: {},
+          contentType: "text/plain",
+          body: new TextEncoder().encode("# Cloudflare API\n\n## API Reference\n\n- [Accounts](/api/resources/accounts/index.md)\n- [DNS](/api/resources/dns/index.md)\n"),
+          engine: "http",
+          backend: "direct",
+        });
+      }
+      if (request.url === "https://developers.cloudflare.com/api/resources/accounts/index.md") {
+        return Promise.resolve({
+          requestedUrl: request.url,
+          finalUrl: request.url,
+          status: 200,
+          headers: {},
+          contentType: "text/markdown",
+          body: new TextEncoder().encode("# Accounts\n\nAccount API overview."),
+          engine: "http",
+          backend: "direct",
+        });
+      }
+      return Promise.reject(new Error(`unexpected URL ${request.url}`));
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, [
+    "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
+    "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
+    "https://developers.cloudflare.com/api/resources/accounts/methods/list/index.md",
+    "https://developers.cloudflare.com/api/llms.txt",
+    "https://developers.cloudflare.com/api/resources/accounts/index.md",
+  ]);
+  assert.equal(result.raw.backend, "source:llms.txt");
+  assert.match(result.content, /Account API overview/u);
 });
 
 void test("validateFetchPipelineRequest enforces byte, output, redirect and selector bounds", () => {
