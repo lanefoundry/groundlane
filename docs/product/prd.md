@@ -2,13 +2,13 @@
 
 狀態：Draft for implementation  
 日期：2026-08-21  
-範圍：`web_fetch`、`web_search`、`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news`、`web_images`、`web_extract`，provider diagnostics，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
+範圍：`web_fetch`、`web_search`、`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news`、`web_images`、`web_extract`、`parse`，provider diagnostics，以及支撐它們的 remote MCP、security policy 與 Cloudflare deployment
 
 ## 1. 摘要
 
-Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、取得 provider-attributed research reports 的 `web_research`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、有界 crawl 公開網站的 `web_crawl`、搜尋 news-specific indexes 的 `web_news`、搜尋 image-specific indexes 的 `web_images`、以及依 DOM 規則抽取欄位的 `web_extract`。部署也可以暴露 provider diagnostics，例如 `provider_balance`、`provider_capabilities`、`provider_quota` 與 `search_budget_status`，分別用來檢查帳號餘額、已實作功能邊界、整合 quota 狀態與 Groundlane 本機 provider-dispatch attempt guardrail。
+Groundlane 是供 AI agent 使用的 vendor-neutral web access layer。MVP 的核心 Web primitives 是 stateless tools：讀取頁面的 `web_fetch`、代理多家搜尋服務的 `web_search`、取得 provider-grounded answers 的 `web_answer`、取得 provider-attributed research reports 的 `web_research`、透過 provider content APIs 抓 URL 內容的 `web_content`、探索網站 URL 的 `web_map`、有界 crawl 公開網站的 `web_crawl`、搜尋 news-specific indexes 的 `web_news`、搜尋 image-specific indexes 的 `web_images`、依 DOM 規則抽取欄位的 `web_extract`，以及把 URL 或 raw HTML 解析成 document/metadata/links/media/tables 的 `parse`。部署也可以暴露 provider diagnostics，例如 `provider_balance`、`provider_capabilities`、`provider_quota` 與 `search_budget_status`，分別用來檢查帳號餘額、已實作功能邊界、整合 quota 狀態與 Groundlane 本機 provider-dispatch attempt guardrail。
 
-系統以便宜、容易觀測的 HTTP retrieval 為優先；只有在明確需要 render 時，才升級到內部 **Groundlane Browser** engine。搜尋透過可替換 provider adapters，不自建全網 index。Extraction 必須 deterministic，不以隱藏的 LLM call 假裝穩定 structured output。
+系統以便宜、容易觀測的 HTTP retrieval 為優先；只有在明確需要 render 時，才升級到內部 **Groundlane Browser** engine。搜尋透過可替換 provider adapters，不自建全網 index。Extraction 與 parser 必須 deterministic，不以隱藏的 LLM call 假裝穩定 structured output。Parser 第一版參考 Readability、Trafilatura、Crawl4AI、MarkItDown、anydoc、Docling 等開源專案的分層與 contract，但 runtime 先維持 Groundlane 自寫 parser layer；外部專案只能透過明確 adapter/engine 邊界逐步加入。
 
 ## 2. 問題
 
@@ -53,6 +53,7 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 - 「用同一工具並行詢問多個 answer-capable providers，保留各自答案與 citations，不做不可審計的隱藏合成。」
 - 「用同一工具並行呼叫多個 provider content APIs，對照不同 provider 對同一 URL 的抽取品質與成功率。」
 - 「從固定頁面 DOM 抽出具名欄位，結果可重現、缺失欄位可判斷。」
+- 「把 URL 或 raw HTML 解析成 document、metadata、links、media 或 tables，供後續 ingestion、引用與抽取流程重用。」
 
 ## 5. MVP 功能需求
 
@@ -60,7 +61,7 @@ AI agent 若直接依賴模型廠商的 Web Search、單一 search API 或無限
 
 - 提供 authenticated `POST /mcp` Streamable HTTP endpoint。
 - 提供 unauthenticated `GET /healthz` liveness endpoint，但不得洩漏設定。
-- 提供 `GET /readyz` readiness endpoint，確認 Container reachability 與必要 service configuration；MVP 不用 live provider call 作 readiness probe。
+- 提供 authenticated `GET /readyz` readiness endpoint，確認 Container reachability 與必要 service configuration；MVP 不用 live provider call 作 readiness probe。
 - MVP tools 為 stateless；transport session identifier 不得當成 browser session。
 - 每次 request 有 request ID、單一 deadline 與一致 public error envelope。
 
@@ -276,7 +277,32 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 - `many=true` 固定回傳陣列；單值欄位固定回傳單值或明確缺失。
 - 不呼叫 LLM；相同 DOM 與 input 應產生相同結果。
 
-### 5.9 Provider diagnostics
+### 5.9 `parse`
+
+預期 input：
+
+- `url` 或 `html` 二選一；`url` 必須是 HTTP(S)，`html` 模式必須提供 HTTP(S) `baseUrl` 供相對 URL 解析。
+- `purpose`：`document | metadata | links | media | tables | all`，預設 `all`。
+- URL 模式共用 `render`、`waitFor`、`timeoutMs`、`maxBytes` 與 `maxOutputChars` 控制。
+
+預期 output：
+
+```text
+requestedUrl?, finalUrl?, purpose, title?, description?, author?, publishedAt?, canonicalUrl?,
+content?, text?, metadata?, links?, images?, tables?, engine?, backend?,
+truncated, bytes, durationMs, warnings[], fallbackReason?
+```
+
+行為：
+
+- URL input 使用與 `web_fetch` 相同的 retrieval、安全與 deadline pipeline；raw HTML input 不連網。
+- Parser layer 先由 Groundlane 自寫 deterministic engines 組成，參考開源專案的能力拆解與 benchmark 方法，不直接照搬大型 runtime dependency。
+- 開源專案拆解軸線包括：fetch/render、DOM cleanup、正文候選 scoring、metadata extraction、link/media/table extraction、PDF/OCR/layout recovery、輸出 contract、錯誤分類與成本模型。
+- 第一版支援 HTML document、metadata、links、media 與 tables；document parser 可沿用 Readability-style article heuristics，但輸出仍由 Groundlane contract 約束。
+- 後續 Trafilatura、Crawl4AI、MarkItDown、anydoc、Docling、MinerU 或 OCR engine 只能作為明確 adapter/engine 加入，且必須通過同一 corpus、required spans、structure preservation、noise、metadata 與 latency/cost gate。
+- `parse` 不呼叫 LLM；若未來加入 LLM parser，必須是明確 opt-in engine，且輸出不得假裝 deterministic。
+
+### 5.10 Provider diagnostics
 
 `provider_capabilities` 回傳靜態 provider matrix，明確分開 vendor 自家功能、Groundlane 目前 expose 的 tools、filter support 與 balance support。這個工具不呼叫第三方 API。
 
@@ -410,22 +436,49 @@ MVP 明確不包含：
 | Anti-bot 宣稱過度 | 使用者期待落差與濫用 | 不承諾 universal bypass；browser 只作 fallback；記錄 engine/reason |
 | Output/content injection | agent 接收惡意頁面指令 | 將內容標為不可信資料、固定結構、bounded output；不宣稱內容安全 |
 | 網站與隱私合規 | 法律與信任風險 | self-controlled deployment、metadata-only logs、operator responsibility、retention minimization |
-| Tool contract 過早膨脹 | 相容性與維護成本 | MVP 固定三工具；session/crawl/research 分開設計 |
+| Tool contract 過早膨脹 | 相容性與維護成本 | 將 tool surface 維持在明確 contract；parser、session、crawl、research 與 provider diagnostics 分階段設計 |
 
 ## 11. Design influences
+
+本輪 reference shortlist 以「能力互補、維護訊號、近期活躍、可被 Groundlane contract
+隔離」為主，不以 GitHub stars 單點排序。Primary references 暫定：
+Scrapy、Crawlee、Mozilla Readability、htmlparser2/parse5、Trafilatura、
+Crawl4AI、Scrapling、SearXNG、MarkItDown、Docling、Unstructured、PaddleOCR、
+OCRmyPDF、Apache Tika、PyMuPDF、pdfplumber、pypdf。Watchlist/discovery
+保留 AutoScraper、searcharvester、YaCy、Marginalia Search、MinerU、Marker、
+GitHub Topics 與各 provider docs；這些先用來補 taxonomy、fixtures 或特殊格式能力，
+不列為 adapter/runtime 優先候選。
 
 | 參考來源 | 採用的影響 | 明確不採用／延後 | 證據 |
 | --- | --- | --- | --- |
 | Steel | browser lifecycle port、stateless 與 stateful surface 分離、可自架思路 | 不 fork 完整 UI/session platform；MVP 不公開 session handles | [Steel](https://github.com/steel-dev/steel-browser) |
 | Playwright MCP | Streamable HTTP、tool registration、client isolation、accessibility/DOM-first、output bounds | 不把 origin allow/block flags當成 SSRF security boundary | [Playwright MCP](https://github.com/microsoft/playwright-mcp) |
 | Stagehand | 未來 schema validation 與 agent-friendly extract/observe API 參考 | MVP 不引入 LLM act/observe/extract 或 self-healing action | [Stagehand](https://github.com/browserbase/stagehand) |
+| Scrapy | spider/crawler lifecycle、request/response middleware、item pipeline 與 retry policy 參考 | 不引入 Python crawler runtime；不把 batch crawl 變成預設 web_fetch 行為 | [Scrapy](https://github.com/scrapy/scrapy) |
 | Crawlee | 未來 crawl queue、retry、session pool、autoscaling 參考 | 單頁 MVP 不加入 crawler framework | [Crawlee](https://github.com/apify/crawlee) |
 | Browserless | Container/browser operations、queue、crash recovery、同 API 跨部署的參考 | 不依賴或複製 SSPL/commercial code；不承諾其 proxy/CAPTCHA breadth | [Browserless](https://github.com/browserless/browserless) |
+| Mozilla Readability | article candidate scoring、boilerplate removal、selector-less Reader fallback | 不把 Reader heuristics 當成 deterministic DOM extraction；selector extraction 維持 DOM semantics | [Readability](https://github.com/mozilla/readability) |
+| htmlparser2 / parse5 | TS/JS HTML parsing substrate、forgiving parser 與 spec-compliant parser 的取捨、selector engine 邊界 | parser substrate 只作低階 DOM/AST；不得取代 Groundlane 的 URL policy、output bounds 或 extraction contract | [htmlparser2](https://github.com/fb55/htmlparser2), [parse5](https://github.com/inikulin/parse5) |
+| Trafilatura | text/metadata/comment extraction、multi-format output、crawl/download/extract 分層 | 不引入 Python runtime；先拆能力與 fixtures，再評估 adapter | [Trafilatura](https://github.com/adbar/trafilatura) |
+| Crawl4AI | LLM-friendly crawling、Markdown output、structured extraction 與 crawl policy 參考 | 不把 LLM extraction 併入 deterministic parser；不複製 crawler/runtime stack | [Crawl4AI](https://github.com/unclecode/crawl4ai) |
+| Scrapling / AutoScraper | resilient selector、pattern-based scraping、example-driven extraction 參考；Scrapling 作 primary，AutoScraper 先作 watchlist | 不先承諾 self-healing selector；pattern/schema engine 需獨立 contract 與 fixtures | [Scrapling](https://github.com/D4Vinci/Scrapling), [AutoScraper](https://github.com/alirezamika/autoscraper) |
+| SearXNG | metasearch engine、provider categories、result normalization 與 privacy-first routing 參考 | 不自架公開 metasearch service；Groundlane adapters 仍以 operator-configured providers 為界 | [SearXNG](https://github.com/searxng/searxng) |
+| searcharvester / YaCy / Marginalia Search | watchlist：搜尋來源聚合、self-hosted search/index 邊界、alternative index 思路 | 不在 MVP 自建全網 index；維護訊號與產品邊界需重查，只作 provider taxonomy 與 future self-hosted index 研究 | [searcharvester](https://github.com/StevenBlack/searcharvester), [YaCy](https://github.com/yacy/yacy_search_server), [Marginalia Search](https://github.com/MarginaliaSearch/MarginaliaSearch) |
+| GitHub Topics discovery | 持續追蹤 `web-scraping`、`web-crawler`、`html-parser`、`search-engine`、`metasearch-engine`、`document-parsing`、`pdf-parser`、`pdf-text-extraction`、`ocr` 等 topic，補齊 crawler、parser、OCR、search/index 候選專案 | topic 排名只當候選來源；採用前仍需逐一做 license/security/dependency review 與 bounded fixture 驗證 | [web-scraping](https://github.com/topics/web-scraping), [web-crawler](https://github.com/topics/web-crawler), [html-parser](https://github.com/topics/html-parser), [search-engine](https://github.com/topics/search-engine), [metasearch-engine](https://github.com/topics/metasearch-engine), [document-parsing](https://github.com/topics/document-parsing), [pdf-parser](https://github.com/topics/pdf-parser), [pdf-text-extraction](https://github.com/topics/pdf-text-extraction), [ocr](https://github.com/topics/ocr) |
+| MarkItDown | Office/PDF/HTML/image/audio 等多格式轉 Markdown、LLM ingestion output 參考 | 不讓本機檔案轉換繼承任意 process 權限；遠端 URL 與 local file ingestion 必須分開 threat model | [MarkItDown](https://github.com/microsoft/markitdown) |
+| Docling | document conversion pipeline、layout-aware parsing、table/figure handling、GenAI-ready output 參考 | 不先引入 heavyweight model/runtime；PDF/OCR/layout backends 需 opt-in 且 bounded | [Docling](https://github.com/docling-project/docling) |
+| Unstructured | document ETL、partition/chunk/enrich pipeline、multi-format structured output 參考 | 不引入 enterprise workflow assumptions；local/remote execution、file permissions 與 heavyweight dependencies 需獨立 threat model | [Unstructured](https://github.com/Unstructured-IO/unstructured) |
+| PaddleOCR | OCR 與 document parsing、多語辨識、PDF/image 到 Markdown/JSON 的能力參考 | 不把 OCR/model inference 當預設 parser；需明確 cost、latency、confidence、model artifact 與 fallback metadata | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) |
+| OCRmyPDF / Tesseract | scanned PDF OCR layer、searchable PDF、OCR engine packaging 與 deterministic preprocessing 參考 | 不直接處理本機檔案或寫回文件；OCR 必須受 byte/page/time limits 與 sandbox policy 約束 | [OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF), [Tesseract](https://github.com/tesseract-ocr/tesseract) |
+| MinerU / Marker | watchlist：PDF layout recovery、OCR、formula/table extraction 與 benchmark corpus 參考 | 不列為第一批 runtime candidate；需重查維護度、模型重量、license 與 deployment boundary | [MinerU](https://github.com/opendatalab/MinerU), [Marker](https://github.com/VikParuchuri/marker) |
+| Apache Tika / PyMuPDF / pdfplumber / pypdf | MIME detection、PDF text/layout/table extraction、page range 與 low-level document adapters | 不直接暴露 host filesystem；parser input、byte/page limits 與 sandbox policy 先定義 | [Apache Tika](https://github.com/apache/tika), [PyMuPDF](https://github.com/pymupdf/PyMuPDF), [pdfplumber](https://github.com/jsvine/pdfplumber), [pypdf](https://github.com/py-pdf/pypdf) |
 | Tavily / Exa / Jina / Firecrawl / SerpApi / SearchAPI.io / TinyFish | Search/contents/reader/rerank 能力拆分、provider adapter 與 normalized contract | 不複製其 index；MVP 不做 rerank/research synthesis | [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [Exa Search](https://docs.exa.ai/reference/search), [Jina Reader](https://jina.ai/reader/), [Firecrawl Search](https://docs.firecrawl.dev/api-reference/endpoint/search), [SerpApi Google Search](https://serpapi.com/search-api), [SearchAPI.io Google Search](https://www.searchapi.io/docs/google), [TinyFish Search API](https://docs.tinyfish.ai/search-api/reference) |
 | Parallel / Linkup | vendor-neutral web intelligence control-plane 願景、structured/cited result 方向 | MVP 可轉接 provider research API，但不做自家 deep-research agent、monitor、FindAll 或自己的 web index | [Parallel](https://parallel.ai/), [Linkup](https://docs.linkup.so/) |
 | Cloudflare Containers | Worker control plane + isolated Node/Playwright browser workload、self-controlled deployment | core contracts 不依賴 Cloudflare；不把 Container instance 當持久 browser session | [Cloudflare Containers](https://developers.cloudflare.com/containers/) |
 
 授權與功能會變動；採用第三方 code 前必須鎖定版本、閱讀完整 LICENSE/NOTICE 並完成 dependency review。上表只描述設計影響，不表示包含對方程式碼。
+
+候選專案進入 reference table 前需通過基本維護度檢查。GitHub stars、forks、近期 release、最近 commit、issue/PR 回應、CI/test 狀態、文件完整度與 dependency 重量都要一起看；stars 高但邊界不合、license 不清或 security posture 差，不能直接採用。反過來，stars 少且近期更新少的專案只能當歷史或概念參考，不應列為 adapter/runtime 優先候選，除非它提供獨特演算法、格式支援或可重用 benchmark corpus，且 Groundlane 能用小型 deterministic fixtures 驗證其價值。
 
 ## 12. Roadmap
 
@@ -446,6 +499,14 @@ MVP 明確不包含：
 ### Phase 3：Bounded expansion
 
 - opt-in crawl/batch queue、dedupe、robots/budget controls。
+- 開源專案拆解後的 Groundlane 能力線：
+  - crawler policy：queue、retry、depth、dedupe、robots、concurrency、deadline、cancel。
+  - extractor engines：selector、pattern、schema、LLM opt-in extraction；deterministic 與 LLM output 分開標示。
+  - Reader quality：main-content scoring、boilerplate removal、metadata fallback、language hints、tables/code block preservation。
+  - search aggregation：query planning、provider capability matrix、normalization、freshness policy、vertical search。
+  - browser/render policy：render mode、wait strategy、browser time budget、challenge boundary、snapshot/screenshot provenance。
+  - document ingestion backends：PDF text/layout/table/image/OCR、page ranges、source spans、confidence、fallback engine。
+  - benchmark/eval fixtures：HTML/PDF/table/metadata golden corpus、quality metrics、cost/latency、failure taxonomy。
 - source-aware documentation parser：優先使用 `llms.txt`、scoped `llms-full.txt`、
   Markdown endpoints、OpenAPI schemas 與 sitemap，再依 heading/path/operation
   切片；不要靠提高整頁 HTML output limit 解決大型 generated docs。

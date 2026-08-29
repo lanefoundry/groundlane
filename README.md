@@ -33,12 +33,13 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | `web_news` | Searches news-specific provider indexes | Parallel fan-out or fallback across Brave News, Serper News, and SerpApi Google News |
 | `web_images` | Searches image-specific provider indexes | Parallel fan-out or fallback across Brave Images, Serper Images, and SerpApi Google Images |
 | `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes, with per-call output caps; no implicit LLM step |
+| `parse` | Parses a URL or raw HTML into reusable structures | Local document, metadata, link, media, and table parsers; URL inputs use the bounded fetch pipeline |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 | `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane provider-dispatch guardrails, exposed tools, keyless availability, and next checks |
 | `search_budget_status` | Inspects Groundlane's local provider attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
 
-Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Non-explicit `web_search` fallback treats a single provider rejection, timeout, quota error, 5xx, or malformed response as a warning and continues to the next eligible provider; an explicit `provider` preserves that provider's error instead of silently switching sources. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
+Fetch/extract/parse results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated` when they fetch a URL. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Non-explicit `web_search` fallback treats a single provider rejection, timeout, quota error, 5xx, or malformed response as a warning and continues to the next eligible provider; an explicit `provider` preserves that provider's error instead of silently switching sources. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch`, `web_extract`, and URL-backed `parse` work without a search-provider key.
 
 Provider vendors expose more APIs than Groundlane currently wires into MCP. See [provider inventory](docs/operations/provider-inventory.md) for the verified feature backlog and the distinction between vendor capability, implemented Groundlane tool, live smoke, account balance evidence, and Groundlane's local attempt budgets.
 
@@ -286,7 +287,7 @@ Worker / Node HTTP edge       authentication, request identity
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
-                              web_news | web_images | web_fetch | web_extract
+                              web_news | web_images | web_fetch | web_extract | parse
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities
     |
     +-- provider router       replaceable search adapters
@@ -305,8 +306,9 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 ## Project status
 
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: ten web MCP tools, two provider diagnostic MCP tools, thirteen search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
-- Next: async research job tools, structured extraction providers, finance research, durable quota ledgers, broader compatibility fixtures, cache policy, and operational telemetry.
+- Implemented: ten web access MCP tools, one parser MCP tool, four provider diagnostic MCP tools, thirteen search adapters, provider-backed answer/research/content/map/crawl/news/images paths, self-hosted Reader, optional Jina/Browserless backends, and Cloudflare Worker + Container deployment.
+- Next: decompose open-source search/scraping/document-parsing projects into explicit Groundlane capability tracks: crawler policy, extractor engines, Reader quality, search aggregation, browser/render policy, document ingestion backends, benchmark/eval fixtures, async research job tools, finance research, durable quota ledgers, cache policy, and operational telemetry.
+- Open-source references are split into primary references and watchlist/discovery sources in the product requirements so low-maintenance candidates do not become runtime priorities by default.
 
 The detailed direction and acceptance criteria live in the [product requirements](docs/product/prd.md).
 

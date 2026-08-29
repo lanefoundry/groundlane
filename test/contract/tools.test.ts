@@ -46,6 +46,7 @@ import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
 import { createProviderQuotaModule } from "../../src/tools/provider-quota.js";
+import { createParseModule } from "../../src/tools/parse.js";
 import { createSearchBudgetStatusModule } from "../../src/tools/search-budget-status.js";
 import { createWebAnswerModule } from "../../src/tools/web-answer.js";
 import { createWebContentModule } from "../../src/tools/web-content.js";
@@ -343,6 +344,13 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       maxResponseBytes: 100_000,
       maxOutputChars: 10_000,
     }),
+    createParseModule({
+      pipeline,
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxResponseBytes: 100_000,
+      maxOutputChars: 10_000,
+    }),
   ];
   const app = createContainerApp({
     authToken: "test-token-that-is-long-enough-for-tests",
@@ -365,6 +373,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
       [
+        "parse",
         "provider_balance",
         "provider_capabilities",
         "provider_quota",
@@ -654,6 +663,33 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       assert.fail("expected extracted body to be a string");
     }
     assert.match(extractedBody, /Groundlane/u);
+
+    const parseResult = await client.callTool({
+      name: "parse",
+      arguments: {
+        url: "https://example.com",
+        render: "never",
+        purpose: "all",
+      },
+    });
+    const parseEnvelope = parseResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        title?: string;
+        description?: string;
+        links?: Array<{ url?: string; text?: string; internal?: boolean }>;
+        text?: string;
+      };
+    };
+    assert.equal(parseEnvelope.ok, true);
+    assert.equal(parseEnvelope.data?.title, "Groundlane");
+    assert.equal(parseEnvelope.data?.description, "Trusted web access");
+    assert.match(parseEnvelope.data?.text ?? "", /readable web content/u);
+    assert.deepEqual(parseEnvelope.data?.links?.[0], {
+      url: "https://example.com/docs",
+      text: "Docs",
+      internal: true,
+    });
   } finally {
     await client.close();
     await new Promise<void>((resolve, reject) =>

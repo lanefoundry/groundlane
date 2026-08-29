@@ -33,12 +33,13 @@ Groundlane 是開源的遠端 MCP server，讓 AI agent 透過同一套受控介
 | `web_news` | 搜尋 news-specific provider index | 並行 fan-out 或 fallback 到 Brave News、Serper News、SerpApi Google News |
 | `web_images` | 搜尋 image-specific provider index | 並行 fan-out 或 fallback 到 Brave Images、Serper Images、SerpApi Google Images |
 | `web_extract` | 抽取具名欄位為結構化 JSON | CSS selector 的 text、HTML 或 attribute，可設定單次 output cap；不暗中呼叫 LLM |
+| `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
 | `search_budget_status` | 檢查 Groundlane 本機 provider attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
 
-Fetch/extract 結果會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch` 與 `web_extract` 仍可運作。
+Fetch/extract/parse 在抓 URL 時會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch`、`web_extract` 與 URL-backed `parse` 仍可運作。
 
 各 provider vendor 自家還有更多 API，Groundlane 目前沒有全部接成 MCP tool。請看 [provider inventory](docs/operations/provider-inventory.md) 的已查證 backlog，以及 vendor capability、已實作 Groundlane tool、live smoke、帳號餘額證據與 Groundlane 本機 attempt budget 之間的區分。
 
@@ -279,7 +280,7 @@ Worker / Node HTTP edge       authentication, request identity
     |
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
-                              web_news | web_images | web_fetch | web_extract
+                              web_news | web_images | web_fetch | web_extract | parse
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities
     |
     +-- provider router       可替換的 search adapters
@@ -298,8 +299,9 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：十個 Web MCP tools、兩個 provider 診斷 MCP tools、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
-- 下一步：async research job tools、structured extraction providers、finance research、durable quota ledger、更完整的 compatibility fixtures、cache policy 與營運 telemetry。
+- 已完成：十個 Web access MCP tools、一個 parser MCP tool、四個 provider 診斷 MCP tools、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
+- 下一步：將開源 search/scraping/document-parsing 專案拆成明確的 Groundlane 能力線：crawler policy、extractor engines、Reader quality、search aggregation、browser/render policy、document ingestion backends、benchmark/eval fixtures、async research job tools、finance research、durable quota ledger、cache policy 與營運 telemetry。
+- 開源參考來源已在產品需求文件分成 primary references 與 watchlist/discovery sources，避免低維護度候選專案預設變成 runtime 優先項。
 
 詳細方向與 acceptance criteria 位於[產品需求文件](docs/product/prd.md)。
 

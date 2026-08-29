@@ -62,6 +62,7 @@ import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
 import { createProviderQuotaModule } from "./tools/provider-quota.js";
+import { createParseModule } from "./tools/parse.js";
 import { createSearchBudgetStatusModule } from "./tools/search-budget-status.js";
 import { createWebAnswerModule } from "./tools/web-answer.js";
 import { createWebContentModule } from "./tools/web-content.js";
@@ -372,6 +373,13 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxOutputChars: config.maxOutputChars,
     }),
     createWebExtractModule({
+      pipeline: fetchPipeline,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxResponseBytes: config.maxResponseBytes,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createParseModule({
       pipeline: fetchPipeline,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
