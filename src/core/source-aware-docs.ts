@@ -9,6 +9,8 @@ export interface SourceAwareResolution {
 
 export interface SourceResolver {
   resolve(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined>;
+  resolveProactively?(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined>;
+  resolveManifests?(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined>;
 }
 
 interface SourceCandidate {
@@ -46,6 +48,62 @@ function normalizeComparablePath(url: string): string {
 
 function sameOrigin(first: string, second: string): boolean {
   return new URL(first).origin === new URL(second).origin;
+}
+
+function isMarkdownDocument(raw: RawDocument): boolean {
+  const source = new TextDecoder().decode(raw.body.slice(0, 256));
+  const contentType = raw.contentType.toLowerCase();
+  if (/^\s*<!doctype\s+html|^\s*<html[\s>]/iu.test(source)) return false;
+  return (
+    contentType.includes("markdown") ||
+    contentType.includes("text/plain") ||
+    /\.md(?:$|[?#])/iu.test(raw.finalUrl) ||
+    /\/llms(?:-full)?\.txt(?:$|[?#])/iu.test(raw.finalUrl)
+  );
+}
+
+export function isLikelyDocumentationUrl(url: string): boolean {
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.toLowerCase();
+  const pathSegments = parsed.pathname.toLowerCase().split("/").filter(Boolean);
+  if (
+    hostname === "developers.cloudflare.com" ||
+    hostname.endsWith(".readthedocs.io") ||
+    hostname.startsWith("docs.") ||
+    hostname.startsWith("developer.") ||
+    hostname.startsWith("developers.")
+  ) {
+    return true;
+  }
+  return pathSegments.some((segment) =>
+    ["api", "reference", "references", "docs", "documentation", "guide", "guides"].includes(segment),
+  );
+}
+
+export function cleanSourceMarkdown(markdown: string): string {
+  const lines = markdown.replace(/\r\n?/gu, "\n").split("\n");
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    for (let index = 1; index < lines.length; index += 1) {
+      if (lines[index]?.trim() === "---") {
+        start = index + 1;
+        break;
+      }
+    }
+  }
+  const cleaned: string[] = [];
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+    if (/^\[Skip to content\]\(/iu.test(trimmed)) continue;
+    if (/^Copy Markdown$/iu.test(trimmed)) continue;
+    if (/^On this page$/iu.test(trimmed)) continue;
+    if (/^(Edit this page|Was this helpful\?|Feedback)$/iu.test(trimmed)) continue;
+    cleaned.push(line);
+  }
+  const firstHeading = cleaned.findIndex((line) => /^#{1,6}\s+\S/u.test(line.trim()));
+  const contentLines = firstHeading >= 0 && firstHeading <= 40 ? cleaned.slice(firstHeading) : cleaned;
+  return contentLines.join("\n").replace(/\n{3,}/gu, "\n\n").trim();
 }
 
 function resolvePublicLink(baseUrl: string, href: string): string | undefined {
@@ -258,13 +316,34 @@ export function canUseSourceAwareDocs(request: FetchPipelineRequest): boolean {
 export class SourceAwareDocsResolver implements SourceResolver {
   constructor(private readonly http: HttpFetcher) {}
 
+  async resolveProactively(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined> {
+    if (!canUseSourceAwareDocs(request) || !isLikelyDocumentationUrl(request.url)) return undefined;
+    return this.resolveFromCandidates(request, signal, { directCandidates: true, manifests: false });
+  }
+
   async resolve(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined> {
     if (!canUseSourceAwareDocs(request)) return undefined;
+    return this.resolveFromCandidates(request, signal, { directCandidates: true, manifests: true });
+  }
 
-    for (const candidate of markdownSourceCandidates(request.url)) {
-      const resolved = await this.tryFetchMarkdownCandidate(request, candidate, signal);
-      if (resolved !== undefined) return resolved;
+  async resolveManifests(request: FetchPipelineRequest, signal?: AbortSignal): Promise<SourceAwareResolution | undefined> {
+    if (!canUseSourceAwareDocs(request)) return undefined;
+    return this.resolveFromCandidates(request, signal, { directCandidates: false, manifests: true });
+  }
+
+  private async resolveFromCandidates(
+    request: FetchPipelineRequest,
+    signal: AbortSignal | undefined,
+    options: { directCandidates: boolean; manifests: boolean },
+  ): Promise<SourceAwareResolution | undefined> {
+    if (options.directCandidates) {
+      for (const candidate of markdownSourceCandidates(request.url)) {
+        const resolved = await this.tryFetchMarkdownCandidate(request, candidate, signal);
+        if (resolved !== undefined) return resolved;
+      }
     }
+
+    if (!options.manifests) return undefined;
 
     for (const llmsUrl of llmsTxtCandidates(request.url)) {
       try {
@@ -294,7 +373,8 @@ export class SourceAwareDocsResolver implements SourceResolver {
     try {
       const raw = await this.fetchMarkdown(request, candidate.url, signal);
       if (raw.status >= 400) return undefined;
-      const sliced = sliceMarkdownByHash(new TextDecoder().decode(raw.body), request.url);
+      if (!isMarkdownDocument(raw)) return undefined;
+      const sliced = sliceMarkdownByHash(cleanSourceMarkdown(new TextDecoder().decode(raw.body)), request.url);
       return {
         raw: {
           ...raw,

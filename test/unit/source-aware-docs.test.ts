@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  cleanSourceMarkdown,
+  isLikelyDocumentationUrl,
   llmsTxtCandidates,
   markdownSourceCandidates,
   parseLlmsTxtLinks,
@@ -46,6 +48,20 @@ void test("llmsTxtCandidates checks scoped docs index before root index", () => 
     "https://developers.cloudflare.com/api/llms.txt",
     "https://developers.cloudflare.com/llms.txt",
   ]);
+});
+
+void test("isLikelyDocumentationUrl recognizes common docs surfaces", () => {
+  assert.equal(isLikelyDocumentationUrl("https://developers.cloudflare.com/api/resources/accounts/"), true);
+  assert.equal(isLikelyDocumentationUrl("https://docs.example.com/reference/search"), true);
+  assert.equal(isLikelyDocumentationUrl("https://example.com/products"), false);
+});
+
+void test("cleanSourceMarkdown removes bounded documentation chrome", () => {
+  const markdown = "---\ntitle: Example\n---\n\n[Skip to content](#_top)\n\n[API Reference](https://example.com/api)\n\nOpen in **Claude**\n\nCopy Markdown\n\n# Page\n\nUseful body.\n\nOn this page\n\n## Keep\n\nCode:\n\n```ts\nconsole.log(\"keep\");\n```\n\nWas this helpful?\n";
+  assert.equal(
+    cleanSourceMarkdown(markdown),
+    "# Page\n\nUseful body.\n\n## Keep\n\nCode:\n\n```ts\nconsole.log(\"keep\");\n```",
+  );
 });
 
 void test("parseLlmsTxtLinks extracts public Markdown links with sections", () => {

@@ -62,6 +62,20 @@ unique `operationId` matches. It is not automatically wired into `web_fetch`
 yet, because Cloudflare's canonical OpenAPI files are large monoliths and need
 metadata-first or range-aware retrieval before runtime use.
 
+## Phase 3 Runtime Slice
+
+Likely documentation URLs are now resolved proactively for Markdown/text
+`web_fetch` requests without selectors, `waitFor`, or `render=always`.
+
+- Groundlane tries source Markdown before broad HTML for likely docs URLs.
+- Candidate responses must actually be Markdown/text source; HTML returned by a
+  server that ignores `Accept: text/markdown` is rejected and normal direct HTTP
+  continues.
+- Source Markdown cleanup removes YAML front matter, leading docs chrome before
+  the first ATX heading, and common controls such as `Skip to content`,
+  `Copy Markdown`, `On this page`, and feedback/edit labels.
+- Ordinary URLs still use the existing direct HTTP path first.
+
 ## References
 
 - `https://llmstxt.org/`

@@ -135,6 +135,106 @@ void test("FetchPipeline falls through from a retryable Reader failure to browse
   assert.equal(browserCalls, 1);
 });
 
+void test("FetchPipeline proactively uses source-aware Markdown for documentation URLs", async () => {
+  const requested: string[] = [];
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(`${request.url} ${request.headers?.accept ?? ""}`.trim());
+      assert.equal(request.url, "https://developers.cloudflare.com/api/resources/accounts/methods/list/");
+      assert.equal(request.headers?.accept, "text/markdown,text/plain;q=0.9,*/*;q=0.1");
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: {},
+        contentType: "text/markdown",
+        body: new TextEncoder().encode("---\ntitle: List Accounts\n---\n\n[Skip to content](#_top)\n\n# List Accounts\n\nUseful API docs."),
+        engine: "http",
+        backend: "direct",
+      });
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, ["https://developers.cloudflare.com/api/resources/accounts/methods/list/ text/markdown,text/plain;q=0.9,*/*;q=0.1"]);
+  assert.equal(result.raw.backend, "source:accept-markdown");
+  assert.equal(result.fallbackReason, "source_aware_markdown");
+  assert.match(result.content, /List Accounts/u);
+  assert.doesNotMatch(result.content, /Skip to content|title:/u);
+});
+
+void test("FetchPipeline does not proactively use source-aware docs for ordinary URLs", async () => {
+  const requested: string[] = [];
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(request.url);
+      return Promise.resolve(raw("<main>Ordinary page content that should use the normal HTTP path.</main>"));
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: "https://example.com/products",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, ["https://example.com/products"]);
+  assert.equal(result.raw.backend, "direct");
+});
+
+void test("FetchPipeline rejects proactive source candidates that return HTML", async () => {
+  const requested: string[] = [];
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push(request.url);
+      if (request.headers?.accept === "text/markdown,text/plain;q=0.9,*/*;q=0.1") {
+        return Promise.resolve({
+          requestedUrl: request.url,
+          finalUrl: request.url,
+          status: 200,
+          headers: {},
+          contentType: "text/html",
+          body: new TextEncoder().encode("<html><body>Not markdown</body></html>"),
+          engine: "http",
+          backend: "direct",
+        });
+      }
+      return Promise.resolve(raw("<main>Fallback direct HTML content.</main>"));
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: "https://developers.cloudflare.com/api/resources/accounts/",
+    format: "markdown",
+    render: "auto",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, [
+    "https://developers.cloudflare.com/api/resources/accounts/",
+    "https://developers.cloudflare.com/api/resources/accounts/index.md",
+    "https://developers.cloudflare.com/api/resources/accounts/",
+  ]);
+  assert.equal(result.raw.backend, "direct");
+  assert.match(result.content, /Fallback direct HTML content/u);
+});
+
 void test("FetchPipeline uses source-aware Markdown when broad HTML exceeds byte limit", async () => {
   const requested: string[] = [];
   const deadline = new Deadline(1_000);
@@ -177,7 +277,6 @@ void test("FetchPipeline uses source-aware Markdown when broad HTML exceeds byte
   });
 
   assert.deepEqual(requested, [
-    "https://developers.cloudflare.com/api/resources/accounts/",
     "https://developers.cloudflare.com/api/resources/accounts/",
   ]);
   assert.equal(result.raw.backend, "source:accept-markdown");
@@ -222,7 +321,6 @@ void test("FetchPipeline falls back to index markdown when content negotiation i
   });
 
   assert.deepEqual(requested, [
-    "https://developers.cloudflare.com/api/resources/accounts/",
     "https://developers.cloudflare.com/api/resources/accounts/",
     "https://developers.cloudflare.com/api/resources/accounts/index.md",
   ]);
@@ -301,8 +399,8 @@ void test("FetchPipeline resolves Markdown through scoped llms.txt when direct c
 
   assert.deepEqual(requested, [
     "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
-    "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
     "https://developers.cloudflare.com/api/resources/accounts/methods/list/index.md",
+    "https://developers.cloudflare.com/api/resources/accounts/methods/list/",
     "https://developers.cloudflare.com/api/llms.txt",
     "https://developers.cloudflare.com/api/resources/accounts/index.md",
   ]);

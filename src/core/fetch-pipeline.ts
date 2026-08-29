@@ -3,7 +3,7 @@ import { GroundlaneError } from "./errors.js";
 import { normalizeDocument } from "./normalize-document.js";
 import type { Deadline } from "./limits.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
-import type { SourceResolver } from "./source-aware-docs.js";
+import { canUseSourceAwareDocs, isLikelyDocumentationUrl, type SourceResolver } from "./source-aware-docs.js";
 
 export interface FetchPipelineRequest { url: string; format: FetchFormat; render: RenderMode; selector?: string; waitFor?: string; maxBytes: number; maxOutputChars: number; maxRedirects: number; deadline: Deadline }
 export interface FetchPipelineResult extends NormalizedDocument { raw: RawDocument; fallbackReason?: string }
@@ -34,12 +34,26 @@ export class FetchPipeline {
   async fetch(request: FetchPipelineRequest, signal?: AbortSignal): Promise<FetchPipelineResult> {
     validateFetchPipelineRequest(request);
     if (request.render === "always") return this.browserFetch(request, signal);
+    const triedProactiveSource =
+      this.sourceResolver?.resolveProactively !== undefined &&
+      canUseSourceAwareDocs(request) &&
+      isLikelyDocumentationUrl(request.url);
+    const proactiveSource = await this.sourceResolver?.resolveProactively?.(request, signal);
+    if (proactiveSource !== undefined) {
+      return {
+        ...normalizeDocument(proactiveSource.raw, request.format, request.maxOutputChars),
+        raw: proactiveSource.raw,
+        fallbackReason: proactiveSource.reason,
+      };
+    }
     let raw: RawDocument;
     try {
       raw = await this.http.fetch({ url: request.url, maxBytes: request.maxBytes, maxRedirects: request.maxRedirects, deadline: request.deadline }, signal);
     } catch (error) {
       if (error instanceof GroundlaneError && error.code === "OUTPUT_LIMIT") {
-        const sourceAware = await this.sourceResolver?.resolve(request, signal);
+        const sourceAware = triedProactiveSource && this.sourceResolver?.resolveManifests !== undefined
+          ? await this.sourceResolver.resolveManifests(request, signal)
+          : await this.sourceResolver?.resolve(request, signal);
         if (sourceAware !== undefined) {
           return {
             ...normalizeDocument(sourceAware.raw, request.format, request.maxOutputChars),

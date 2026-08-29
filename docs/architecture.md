@@ -238,9 +238,12 @@ The architecture intentionally leaves ports for cache backends, new search provi
 
 Large generated documentation sites should not be handled by raising output limits or selecting the whole `main` element. A future source-aware parser should first discover machine-readable sources such as `llms.txt`, scoped `llms-full.txt`, Markdown endpoints, OpenAPI schemas, and sitemaps. It should then fetch only the relevant page, heading range, schema path, or operation before falling back to bounded HTML selectors. This keeps token use and output bytes predictable while preserving deterministic provenance.
 
-The first runtime slice is implemented as a conservative `web_fetch` fallback:
-Markdown/text requests without selectors, `waitFor`, or `render=always` retry
-the same URL with `Accept: text/markdown`, then try documentation Markdown
-candidates when the broad direct HTTP response exceeds the byte limit.
+The first runtime slice started as a conservative `web_fetch` fallback, and now
+proactively handles likely documentation URLs. Markdown/text requests without
+selectors, `waitFor`, or `render=always` try source Markdown before broad HTML
+for likely docs URLs. If direct HTTP later exceeds the byte limit, Groundlane can
+still consult scoped/root `llms.txt` manifests for a nearest same-origin
+Markdown page. Candidate source responses must be Markdown/text; HTML returned
+by a server that ignores content negotiation falls back to the normal path.
 
 For a future bounded crawl primitive, Crawlee is the first TypeScript implementation candidate. It must remain behind Groundlane's existing URL, deadline, byte, output, concurrency, queue, and cancellation policies rather than becoming a parallel security boundary.
