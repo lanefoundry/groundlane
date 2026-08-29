@@ -19,6 +19,8 @@ import { TavilyCrawlProvider } from "./adapters/crawl/tavily.js";
 import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
+import { FirecrawlBalanceChecker } from "./adapters/balance/firecrawl.js";
+import { SerpApiBalanceChecker } from "./adapters/balance/serpapi.js";
 import { YouBalanceChecker } from "./adapters/balance/you.js";
 import { LinkupResearchProvider } from "./adapters/research/linkup.js";
 import { ParallelResearchProvider } from "./adapters/research/parallel.js";
@@ -270,6 +272,12 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     checkers: [
       new LinkupBalanceChecker(
         config.providerKeys.linkup === undefined ? {} : { apiKey: config.providerKeys.linkup },
+      ),
+      new FirecrawlBalanceChecker(
+        config.providerKeys.firecrawl === undefined ? {} : { apiKey: config.providerKeys.firecrawl },
+      ),
+      new SerpApiBalanceChecker(
+        config.providerKeys.serpapi === undefined ? {} : { apiKey: config.providerKeys.serpapi },
       ),
       new YouBalanceChecker(
         config.providerKeys.you === undefined ? {} : { apiKey: config.providerKeys.you },

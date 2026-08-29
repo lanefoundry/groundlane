@@ -76,12 +76,30 @@ Likely documentation URLs are now resolved proactively for Markdown/text
   `Copy Markdown`, `On this page`, and feedback/edit labels.
 - Ordinary URLs still use the existing direct HTTP path first.
 
+## Phase 4 Design Slice
+
+OpenAPI runtime discovery should be metadata-first and cache-backed. GitHub
+contents and tree metadata can identify Cloudflare schema files, sizes, raw
+URLs, and blob SHAs without downloading the 18-24 MB monolith, but they do not
+provide a bounded operation slice by themselves. Direct raw or Git blob fetches
+must stay out of the interactive `web_fetch` path until range behavior,
+deadline propagation, byte limits, and structural offset validation are proven.
+
+The proposed path is documented in
+[`openapi-bounded-discovery.md`](openapi-bounded-discovery.md): build a compact
+OpenAPI index outside the interactive request path, key it by source blob SHA,
+and let runtime requests resolve exact path/method or unique `operationId`
+matches from the index. If no complete matching index exists, Groundlane should
+fall back to existing Markdown/HTML source-aware discovery rather than
+downloading the schema monolith.
+
 ## References
 
 - `https://llmstxt.org/`
 - `https://developers.cloudflare.com/docs-for-agents/`
 - `https://blog.cloudflare.com/markdown-for-agents/`
 - `https://github.com/cloudflare/api-schemas`
+- `openapi-bounded-discovery.md`
 - `https://docling.ai/`
 - `https://arxiv.org/html/2501.17887v1`
 - `https://github.com/Unstructured-IO/unstructured`

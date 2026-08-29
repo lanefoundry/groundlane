@@ -284,6 +284,8 @@ truncated, bytes, blockedSubrequests?, durationMs, warnings[], fallbackReason?
 
 - You.com：`GET https://api.you.com/v1/billing/account_balance`，回傳 cents。
 - Linkup：`GET https://api.linkup.so/v1/credits/balance`，回傳 credits。
+- Firecrawl：`GET https://api.firecrawl.dev/v2/team/credit-usage`，回傳 remaining credits。
+- SerpApi：`GET https://serpapi.com/account.json`，回傳 searches left。
 
 沒有 key、沒有已實作 balance API、或 upstream 拒絕時，必須回傳 sanitized status，不得洩漏 secret、raw provider body 或 provider-specific error payload。它不是 durable billing ledger，也不取代 provider dashboard。
 

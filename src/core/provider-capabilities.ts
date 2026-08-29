@@ -61,10 +61,10 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
   serpapi: {
     provider: "serpapi",
     vendorFeatures: ["Google organic SERP", "Vertical SERP engines"],
-    groundlaneTools: ["web_search", "web_news", "web_images"],
+    groundlaneTools: ["web_search", "web_news", "web_images", "provider_balance"],
     filterSupport: "include/exclude domains mapped to Google query operators, date range",
-    balanceSupport: "not_implemented",
-    notes: ["web_images uses SerpApi Google Images."],
+    balanceSupport: "api",
+    notes: ["web_images uses SerpApi Google Images.", "Balance uses SerpApi Account API and reports total searches left."],
   },
   tavily: {
     provider: "tavily",
@@ -85,10 +85,10 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
   firecrawl: {
     provider: "firecrawl",
     vendorFeatures: ["Search", "Scrape", "Crawl", "Map", "Extract"],
-    groundlaneTools: ["web_search", "web_content", "web_map", "web_crawl"],
+    groundlaneTools: ["web_search", "web_content", "web_map", "web_crawl", "provider_balance"],
     filterSupport: "include or exclude domains; not both together",
-    balanceSupport: "not_implemented",
-    notes: ["web_content uses Firecrawl /scrape. Latest search production smoke was rejected by upstream."],
+    balanceSupport: "api",
+    notes: ["web_content uses Firecrawl /scrape. Latest search production smoke was rejected by upstream.", "Balance uses Firecrawl /v2/team/credit-usage and reports remaining credits."],
   },
   serper: {
     provider: "serper",

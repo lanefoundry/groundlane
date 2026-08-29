@@ -33,7 +33,7 @@ Groundlane is an open-source remote MCP server that gives AI agents one controll
 | `web_news` | Searches news-specific provider indexes | Parallel fan-out or fallback across Brave News, Serper News, and SerpApi Google News |
 | `web_images` | Searches image-specific provider indexes | Parallel fan-out or fallback across Brave Images, Serper Images, and SerpApi Google Images |
 | `web_extract` | Extracts named fields into structured JSON | CSS selectors for text, HTML, or attributes, with per-call output caps; no implicit LLM step |
-| `provider_balance` | Checks provider account-balance APIs when available | You.com keyed credits and Linkup credits; unsupported providers return explicit diagnostic status |
+| `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 
 Fetch/extract results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated`. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch` and `web_extract` work without a search-provider key.
@@ -235,12 +235,12 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | Bounded site crawl | Firecrawl, Tavily |
 | News search | Brave, Serper, SerpApi |
 | Image search | Brave, Serper, SerpApi |
-| Account balance | Linkup, You.com |
+| Account balance | Linkup, You.com, Firecrawl, SerpApi |
 | Hosted Reader fallback | Jina Reader (opt-in) |
 | Browser rendering | Local Playwright or Browserless (opt-in) |
 | Cloudflare runtime | Worker + Container deployment today; Browser Run, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
 
-Automatic search routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup and You.com. Firecrawl and SerpApi have verified account-level API candidates; Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
+Automatic search routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup, You.com, Firecrawl, and SerpApi. Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
 
 ### Provider selection
 
@@ -252,7 +252,7 @@ For provider-backed tools other than `web_search`, `strategy=parallel` returns a
 
 Cloudflare is Groundlane's production runtime today, and it also exposes adjacent capabilities that could become future Groundlane adapters. AI Search is a managed search service for operator-provided data with Workers, REST, and MCP access. Browser Run / Browser Rendering exposes content, markdown, screenshot, PDF, accessibility tree, links, crawl, and structured JSON browser actions through REST APIs or Workers bindings. Agents and Workflows provide durable agent sessions, scheduled work, WebSockets, recoverable steps, and tool orchestration. AI Gateway can add model observability, caching, retries, rate limiting, and fallback.
 
-Those services are not the same thing as the public-web search providers in the provider router. Cloudflare is therefore not listed under `provider_balance`: that tool is reserved for web-data provider account balances exposed by official provider APIs, currently Linkup credits and You.com API credits.
+Those services are not the same thing as the public-web search providers in the provider router. Cloudflare is therefore not listed under `provider_balance`: that tool is reserved for web-data provider account balances exposed by official provider APIs, currently Linkup credits, You.com API credits, Firecrawl remaining credits, and SerpApi searches left.
 
 Cloudflare usage must be tracked through the Cloudflare dashboard, billing exports, logs, metrics, or future Cloudflare-specific diagnostics. Container cost is based on active runtime resources such as vCPU, memory, disk, egress, Workers, Durable Objects, and logs; those units are separate from search-provider requests or credits. Groundlane local budgets do not cap Cloudflare runtime spend.
 
