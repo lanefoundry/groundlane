@@ -8,6 +8,7 @@ import {
 } from "../../src/adapters/browser/browserless.js";
 import { mapLocalBrowserError } from "../../src/adapters/browser/local-playwright.js";
 import { JinaReaderBackend } from "../../src/adapters/reader/jina.js";
+import { DEFAULT_BROWSER_CHALLENGE_TIMEOUT_MS, waitForChallengeToClear } from "../../src/core/browser-policy.js";
 import { GroundlaneError } from "../../src/core/errors.js";
 import { Deadline } from "../../src/core/limits.js";
 import type { DnsLookup } from "../../src/core/url-policy.js";
@@ -16,6 +17,10 @@ const publicLookup: DnsLookup = () =>
   Promise.resolve([{ address: "93.184.216.34", family: 4 }]);
 const resolveSameUrl = (request: { url: string }): Promise<string> =>
   Promise.resolve(request.url);
+
+void test("local browser challenge wait defaults to five seconds", () => {
+  assert.equal(DEFAULT_BROWSER_CHALLENGE_TIMEOUT_MS, 5_000);
+});
 
 void test("local browser errors retain their stage without exposing runtime details", () => {
   const raw = new Error("browserContext.newPage: Target crashed at /secret/path");
@@ -32,6 +37,57 @@ void test("local browser errors retain their stage without exposing runtime deta
     "Blocked by URL policy",
   );
   assert.equal(mapLocalBrowserError(policyError, "browser"), policyError);
+});
+
+void test("local browser stops waiting when a challenge remains unresolved", async () => {
+  const requestDeadline = new Deadline(1_000);
+  await assert.rejects(
+    waitForChallengeToClear(
+      () => Promise.resolve(true),
+      requestDeadline,
+      undefined,
+      { timeoutMs: 10, pollIntervalMs: 1 },
+    ),
+    { code: "UPSTREAM_ERROR", stage: "browser-challenge" },
+  );
+  assert.ok(requestDeadline.remainingMs("test") > 0);
+});
+
+void test("local browser continues after a challenge clears", async () => {
+  let checks = 0;
+  await waitForChallengeToClear(
+    () => Promise.resolve(++checks < 3),
+    new Deadline(1_000),
+    undefined,
+    { timeoutMs: 100, pollIntervalMs: 1 },
+  );
+  assert.equal(checks, 3);
+});
+
+void test("local browser preserves the end-to-end deadline when it expires first", async () => {
+  await assert.rejects(
+    waitForChallengeToClear(
+      () => Promise.resolve(true),
+      new Deadline(10),
+      undefined,
+      { timeoutMs: 100, pollIntervalMs: 1 },
+    ),
+    { code: "DEADLINE_EXCEEDED", stage: "browser-challenge" },
+  );
+});
+
+void test("local browser challenge waiting propagates cancellation", async () => {
+  const controller = new AbortController();
+  const waiting = waitForChallengeToClear(
+    () => Promise.resolve(true),
+    new Deadline(1_000),
+    controller.signal,
+    { timeoutMs: 100, pollIntervalMs: 10 },
+  );
+  setImmediate(() => controller.abort());
+  await assert.rejects(waiting,
+    { code: "CANCELLED", stage: "browser-challenge" },
+  );
 });
 
 void test("Jina Reader validates the target and returns bounded Markdown provenance", async () => {

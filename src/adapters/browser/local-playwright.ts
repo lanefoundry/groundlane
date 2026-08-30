@@ -2,7 +2,7 @@ import type { Browser, BrowserContext } from "playwright";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import type { BrowserBackend, BrowserFetchRequest, RawDocument } from "../../core/contracts.js";
-import { detectChallenge } from "../../core/browser-policy.js";
+import { detectChallenge, waitForChallengeToClear } from "../../core/browser-policy.js";
 import { GroundlaneError } from "../../core/errors.js";
 import { withinDeadline } from "../../core/limits.js";
 import { resolvePublicUrl, type DnsLookup, type ResolvedAddress } from "../../core/url-policy.js";
@@ -76,12 +76,14 @@ export class LocalPlaywrightBrowserBackend implements BrowserBackend {
       let response;
       try { response = await withinDeadline(() => page.goto(request.url, { waitUntil: "domcontentloaded", timeout: request.deadline.remainingMs("browser-navigate") }), request.deadline, parent, "browser-navigate"); }
       catch (error) { if (blockedNavigation) throw blockedNavigation; throw error; }
-      while (await withinDeadline(() => Promise.all([page.title(), page.locator("body").innerText({ timeout: request.deadline.remainingMs("browser-challenge") })]).then(([title, body]) => detectChallenge(title, body.slice(0, 1_000))), request.deadline, parent, "browser-challenge")) {
-        await withinDeadline((signal) => new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 250);
-          signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason instanceof Error ? signal.reason : new GroundlaneError("CANCELLED", "browser-challenge", "The request was cancelled")); }, { once: true });
-        }), request.deadline, parent, "browser-challenge");
-      }
+      await waitForChallengeToClear(
+        () => Promise.all([
+          page.title(),
+          page.locator("body").innerText({ timeout: request.deadline.remainingMs("browser-challenge") }),
+        ]).then(([title, body]) => detectChallenge(title, body.slice(0, 1_000))),
+        request.deadline,
+        parent,
+      );
       if (request.waitFor) {
         try { await page.locator(request.waitFor).first().waitFor({ state: "attached", timeout: request.deadline.remainingMs("browser-selector") }); }
         catch (error) { if (error instanceof GroundlaneError) throw error; throw new GroundlaneError("INVALID_INPUT", "browser-selector", "The selector was invalid or did not appear"); }

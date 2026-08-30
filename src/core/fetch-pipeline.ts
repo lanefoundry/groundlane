@@ -1,4 +1,5 @@
 import type { BrowserBackend, FetchFormat, HttpFetcher, NormalizedDocument, RawDocument, ReaderBackend, RenderMode } from "./contracts.js";
+import { detectChallenge } from "./browser-policy.js";
 import { GroundlaneError } from "./errors.js";
 import { normalizeDocument } from "./normalize-document.js";
 import type { Deadline } from "./limits.js";
@@ -17,9 +18,16 @@ export function validateFetchPipelineRequest(request: FetchPipelineRequest): voi
 }
 
 function fallbackReason(raw: RawDocument, normalized: NormalizedDocument, request: FetchPipelineRequest): string | undefined {
-  if ([403, 429, 503].includes(raw.status) && /cloudflare|captcha|challenge|just a moment/i.test(normalized.content)) return "challenge_response";
+  const source = new TextDecoder().decode(raw.body);
+  if (
+    [403, 429, 503].includes(raw.status) &&
+    detectChallenge(
+      normalized.title ?? "",
+      `${normalized.content.slice(0, 1_000)}\n${source.slice(0, 4_000)}`,
+    )
+  ) return "challenge_response";
   if (request.waitFor || request.selector) return undefined;
-  if (raw.contentType.includes("html") && normalized.content.trim().length < 80 && /<script\b/i.test(new TextDecoder().decode(raw.body))) return "js_empty_document";
+  if (raw.contentType.includes("html") && normalized.content.trim().length < 80 && /<script\b/i.test(source)) return "js_empty_document";
   return undefined;
 }
 

@@ -301,7 +301,7 @@ Core policies do not depend on a search provider or browser runtime. Groundlane 
 
 Web retrieval is SSRF-sensitive. Groundlane treats user URLs, redirects, provider-returned URLs, browser subresources, WebSockets, and DNS answers as untrusted. Keep authentication enabled, preserve the default limits, and apply an outbound network policy in production.
 
-Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or access to content the operator is not authorized to retrieve. Rendering JavaScript is not proof of anti-bot bypass. See [SECURITY.md](SECURITY.md) for the threat model and private vulnerability reporting.
+Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or access to content the operator is not authorized to retrieve. Rendering JavaScript is not proof of anti-bot bypass. The local browser gives a detected access challenge at most five seconds to clear; if the original request deadline has not expired first, a persistent challenge returns retryable `UPSTREAM_ERROR` at `browser-challenge`. `web_fetch` does not automatically spend provider credits by switching to `web_content`; callers must opt into provider-backed retrieval explicitly. See [SECURITY.md](SECURITY.md) for the threat model and private vulnerability reporting.
 
 ## Project status
 

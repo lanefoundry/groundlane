@@ -26,6 +26,43 @@ void test("FetchPipeline browser fallback consumes the original Deadline", async
   assert.equal(result.raw.engine, "browser"); assert.equal(result.fallbackReason, "js_empty_document"); assert.equal(sameDeadline, true);
 });
 
+void test("FetchPipeline classifies a raw HTTP challenge before browser fallback", async () => {
+  for (const source of [
+    '<html><head><title>Just a moment...</title><script src="https://challenges.cloudflare.com/challenge.js"></script></head><body></body></html>',
+    "<html><head><script></script></head><body>Checking your browser before accessing this site.</body></html>",
+  ]) {
+    const http: HttpFetcher = {
+      fetch: () => Promise.resolve({
+        requestedUrl: "https://example.com/docs",
+        finalUrl: "https://example.com/docs",
+        status: 403,
+        headers: {},
+        contentType: "text/html",
+        body: new TextEncoder().encode(source),
+        engine: "http",
+        backend: "direct",
+      }),
+    };
+    const browser: BrowserBackend = {
+      ready: () => Promise.resolve(true),
+      fetch: () => Promise.resolve(raw("<main>Rendered documentation content.</main>", "browser")),
+    };
+
+    const result = await new FetchPipeline(http, browser).fetch({
+      url: "https://example.com/docs",
+      format: "markdown",
+      render: "auto",
+      maxBytes: 10_000,
+      maxOutputChars: 10_000,
+      maxRedirects: 3,
+      deadline: new Deadline(1_000),
+    });
+
+    assert.equal(result.raw.engine, "browser");
+    assert.equal(result.fallbackReason, "challenge_response");
+  }
+});
+
 void test("FetchPipeline render never surfaces an unmet selector without browser retry", async () => {
   const http: HttpFetcher = { fetch: () => Promise.resolve(raw("<main>content</main>")) };
   const browser: BrowserBackend = { ready: () => Promise.resolve(true), fetch: () => Promise.reject(new Error("must not run")) };

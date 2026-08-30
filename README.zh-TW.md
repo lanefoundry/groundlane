@@ -294,7 +294,7 @@ tool registry                 web_search | web_answer | web_research | web_conte
 
 Web retrieval 具有 SSRF 風險。Groundlane 將使用者 URL、redirect、provider 回傳 URL、browser subresource、WebSocket 與 DNS answer 全部視為不可信輸入。正式環境應保持 authentication、保留預設 limits，並套用 outbound network policy。
 
-Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 operator 原本無權存取的內容。能 render JavaScript 不代表已證明可繞過反爬。Threat model 與私下通報漏洞的方式請看 [SECURITY.md](SECURITY.md)。
+Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 operator 原本無權存取的內容。能 render JavaScript 不代表已證明可繞過反爬。Local browser 最多等待偵測到的 access challenge 五秒；若原始 request deadline 沒有先到期，持續存在的 challenge 會回傳 retryable `UPSTREAM_ERROR`，stage 為 `browser-challenge`。`web_fetch` 不會自行花費 provider credits 轉用 `web_content`，caller 必須明確選擇 provider-backed retrieval。Threat model 與私下通報漏洞的方式請看 [SECURITY.md](SECURITY.md)。
 
 ## 專案狀態
 

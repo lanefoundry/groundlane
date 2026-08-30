@@ -216,6 +216,7 @@ Raw upstream bodies, stack traces, authorization headers, and credentials do not
 - Prevent DNS validation/connection time-of-check-to-time-of-use gaps through pinning or an equivalent safe dispatcher.
 - Apply destination policy to browser navigations, subresources, workers, and WebSockets.
 - Share one abort deadline across HTTP, provider, and browser work.
+- Bound local-browser challenge inspection to five seconds without extending the shared request deadline. A persistent challenge maps to retryable `UPSTREAM_ERROR` at `browser-challenge`; provider-backed `web_content` remains a separate caller opt-in.
 - Bound redirects, inbound bytes, output size, search results, extracted values, concurrency, and queue length.
 - Log metadata needed to operate the service, not bodies, secrets, authorization headers, or full queries.
 
