@@ -16,6 +16,7 @@ export class GroundlaneError extends Error {
     message: string,
     readonly retryable = false,
     options?: ErrorOptions,
+    readonly hint: string | undefined = undefined,
   ) {
     super(message, options);
     this.name = "GroundlaneError";

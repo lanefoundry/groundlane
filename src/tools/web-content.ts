@@ -9,6 +9,23 @@ import type { McpModule } from "../mcp/registry.js";
 import { structuredToolResult } from "../mcp/results.js";
 import { resultEnvelopeSchema, toolError, withConcurrency } from "./common.js";
 
+// Suffixes the content providers cannot meaningfully parse: PDFs / archives / images
+// return base64 garbage and burn tokens before hitting OUTPUT_LIMIT. Bail early and
+// tell the caller to use web_fetch + local OCR / image tooling instead.
+const BINARY_URL_SUFFIXES = [".pdf", ".zip", ".tar", ".gz", ".png", ".jpg", ".jpeg", ".webp"] as const;
+
+function detectBinarySuffix(url: string): string | undefined {
+  try {
+    // Match either ".pdf" (typical file name) or a bare "pdf" trailing segment
+    // (e.g. /patent/.../en/pdf used by Google Patents). Excluding the query string
+    // is important — ?file=whitepaper.pdf must not be treated as a PDF request.
+    const lastSegment = new URL(url).pathname.split("/").pop()?.toLowerCase() ?? "";
+    return BINARY_URL_SUFFIXES.find((suffix) => lastSegment.endsWith(suffix) || lastSegment === suffix.slice(1));
+  } catch {
+    return undefined;
+  }
+}
+
 export const webContentInputSchema = z.object({
   url: z.string().trim().url().max(2_048),
   maxContentChars: z.number().int().min(1).max(200_000).default(20_000),
@@ -19,11 +36,7 @@ export const webContentInputSchema = z.object({
   timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
 }).superRefine((value, context) => {
   if (value.provider !== "auto" && value.providers !== undefined) {
-    context.addIssue({
-      code: "custom",
-      message: "provider and providers cannot be used together",
-      path: ["providers"],
-    });
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Specify either provider or providers, not both" });
   }
 });
 
@@ -57,7 +70,14 @@ export interface WebContentModuleOptions {
 
 export function assertContentOutputWithinLimit(result: ContentResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_content", "Content output exceeds the configured limit");
+    throw new GroundlaneError(
+      "OUTPUT_LIMIT",
+      "web_content",
+      "Content output exceeds the configured limit",
+      true,
+      undefined,
+      "Lower maxContentChars, drop to a single provider, or switch strategy to 'fallback'. The current call aggregated output from multiple providers which exceeded the bound.",
+    );
   }
 }
 
@@ -77,6 +97,17 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
         async (input, extra) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
+            const binarySuffix = detectBinarySuffix(input.url);
+            if (binarySuffix !== undefined) {
+              throw new GroundlaneError(
+                "INVALID_INPUT",
+                "web_content",
+                `URL targets a binary resource (${binarySuffix}); web_content cannot parse it`,
+                false,
+                undefined,
+                "Use web_fetch for HTML pages, or download the file directly with curl + local OCR / image tooling for PDFs and images.",
+              );
+            }
             const result = await withConcurrency(
               options.limiter,
               deadline,

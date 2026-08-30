@@ -26,7 +26,7 @@ const patternFieldSchema = z.object({
   engine: z.literal("pattern"),
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/u),
   pattern: z.string().min(1).max(500),
-  flags: z.string().regex(/^[imu]*$/u).optional(),
+  flags: z.string().regex(/^[imus]*$/u).optional(),
   group: z.union([z.string().trim().min(1).max(128), z.number().int().min(0).max(100)]).optional(),
   many: z.boolean().default(false),
 });

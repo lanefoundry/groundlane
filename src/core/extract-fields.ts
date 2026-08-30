@@ -28,21 +28,60 @@ function compilePattern(field: ExtractionField): RegExp {
   ) {
     throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern uses unsupported high-risk regex syntax");
   }
-  const flags = field.flags ?? "";
-  if (!/^[imu]*$/.test(flags) || new Set(flags).size !== flags.length) {
-    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern flags must be unique i, m, or u flags");
+  // Extract inline flag modifier (?is) etc. JS regex parser rejects inline flag syntax,
+  // so we peel it off the source and merge into the flags string. Recognised modifiers:
+  // i, s, m, u — anything else triggers an explicit error so users see the supported set.
+  const inlineMatch = /^\(\?([imus]+)\)/u.exec(field.pattern);
+  const inlineFlags = inlineMatch?.[1] ?? "";
+  const patternSource = inlineMatch ? field.pattern.slice(inlineMatch[0].length) : field.pattern;
+  const inlineUnsupported = inlineFlags.split("").filter((flag) => !"imus".includes(flag));
+  if (inlineUnsupported.length > 0) {
+    throw new GroundlaneError(
+      "INVALID_INPUT",
+      "extract",
+      `Inline modifier flags ${inlineUnsupported.join("")} are not supported`,
+      false,
+      undefined,
+      "Use only i, s, m, u inline. Cross-line matching with '.': prefix (?s) or use [\\s\\S] in the pattern body.",
+    );
   }
+  const explicitFlags = field.flags ?? "";
+  if (!/^[imus]*$/u.test(explicitFlags) || new Set(explicitFlags).size !== explicitFlags.length) {
+    throw new GroundlaneError(
+      "INVALID_INPUT",
+      "extract",
+      "Pattern flags must be unique i, s, m, or u flags",
+      false,
+      undefined,
+      "Allowed: i (case-insensitive), s (dotAll / cross-line '.'), m (multiline), u (unicode). For cross-line matching use 's' or the (?s) inline modifier.",
+    );
+  }
+  const mergedFlags = (inlineFlags + explicitFlags).split("").filter((flag, index, all) => all.indexOf(flag) === index).join("");
   try {
-    return new RegExp(field.pattern, flags.includes("g") ? flags : `${flags}g`);
+    return new RegExp(patternSource, mergedFlags.includes("g") ? mergedFlags : `${mergedFlags}g`);
   } catch {
-    throw new GroundlaneError("INVALID_INPUT", "extract", `Invalid pattern for field ${field.name}`);
+    throw new GroundlaneError(
+      "INVALID_INPUT",
+      "extract",
+      `Invalid pattern for field ${field.name}`,
+      false,
+      undefined,
+      "Check the regex with a local engine (regex101.com) — common causes: unbalanced groups, bad escape sequences, or incompatible flag combinations.",
+    );
   }
 }
 
 function extractPatternValues(html: string, field: ExtractionField, limits: ExtractionLimits): string[] {
   if (field.engine !== "pattern") return [];
   if (Array.from(html).length > maxPatternInputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "extract", "Pattern input exceeds the configured limit");
+    throw new GroundlaneError(
+      "OUTPUT_LIMIT",
+      "extract",
+      "Pattern input exceeds the configured limit",
+      false,
+      undefined,
+      "Lower maxBytes on the request, or switch to a narrower selector field for HTML-only input.",
+    );
   }
   const pattern = compilePattern(field);
   const values: string[] = [];
@@ -89,6 +128,15 @@ export function extractFields(html: string, fields: readonly ExtractionField[], 
     data[field.name] = field.many ? values : values[0] ?? null;
   }
   const serialized = JSON.stringify(data);
-  if (Array.from(serialized).length > limits.maxOutputChars) throw new GroundlaneError("OUTPUT_LIMIT", "extract", "Extracted output exceeds the configured limit");
+  if (Array.from(serialized).length > limits.maxOutputChars) {
+    throw new GroundlaneError(
+      "OUTPUT_LIMIT",
+      "extract",
+      "Extracted output exceeds the configured limit",
+      false,
+      undefined,
+      "Lower maxOutputChars on the request, or reduce the number of fields / many: true values.",
+    );
+  }
   return { data, missingFields, truncated: false };
 }

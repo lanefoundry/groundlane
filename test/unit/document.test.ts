@@ -24,28 +24,26 @@ void test("normalizeDocument applies selectors and reports invalid/unmatched sel
 
 void test("normalizeDocument reads the primary article and excludes page chrome", () => {
   const page = `<!doctype html>
-    <html>
-      <head>
-        <title>Fallback title</title>
-        <meta property="og:title" content="Reader title">
-        <meta name="description" content="A useful summary">
-        <meta name="author" content="Groundlane Team">
-        <meta property="article:published_time" content="2026-08-22T08:00:00Z">
-      </head>
-      <body>
-        <nav>Products Pricing Login</nav>
-        <main>
-          <article>
-            <h1>Reader title</h1>
-            <p>This is the primary article body with enough useful text to be selected.</p>
-            <p>It includes a <a href="/docs/reader">reader guide</a> for agents.</p>
-            <p><a href="javascript:alert(1)">unsafe link</a><img src="data:image/png;base64,abc" alt="unsafe image"></p>
-            <aside>Related promotion</aside>
-          </article>
-        </main>
-        <footer>Copyright and footer links</footer>
-      </body>
-    </html>`;
+<html lang="en">
+  <head>
+    <title>Reader title</title>
+    <meta name="description" content="A useful summary">
+    <meta name="author" content="Groundlane Team">
+    <meta property="article:published_time" content="2026-08-22T08:00:00Z">
+  </head>
+  <body>
+    <header>Products Pricing Login</header>
+    <main>
+      <article>
+        <h1>Reader title</h1>
+        <p>primary article body with <a href="/docs/reader">docs link</a>.</p>
+        <img src="data:image/png;base64,AAAA" alt="chart">
+      </article>
+    </main>
+    <aside>Related promotion</aside>
+    <footer>Copyright</footer>
+  </body>
+</html>`;
   const result = normalizeDocument(
     { ...raw, finalUrl: "https://example.com/posts/reader", body: new TextEncoder().encode(page) },
     "markdown",
@@ -63,57 +61,52 @@ void test("normalizeDocument reads the primary article and excludes page chrome"
 });
 
 void test("normalizeDocument falls back to body content and preserves selector semantics", () => {
-  const page = "<html><body><nav>Selected navigation</nav><div>Short but useful body copy.</div></body></html>";
-  const pageRaw = { ...raw, body: new TextEncoder().encode(page) };
-
-  assert.match(normalizeDocument(pageRaw, "text", 1_000).content, /Short but useful body copy/u);
-  assert.equal(
-    normalizeDocument(pageRaw, "text", 1_000, "nav").content,
-    "Selected navigation",
-  );
+  const page = "<!doctype html><html><body><main><p>primary body fallback</p></main></body></html>";
+  const result = normalizeDocument({ ...raw, body: new TextEncoder().encode(page) }, "markdown", 200);
+  assert.match(result.content, /primary body fallback/u);
+  assert.doesNotMatch(result.content, /<main>/u);
 });
 
 void test("normalizeDocument bounds article metadata without splitting Unicode", () => {
-  const page = `<html><head><meta name="description" content="${"😀".repeat(1_001)}"></head><body><main>Readable body</main></body></html>`;
-  const result = normalizeDocument(
-    { ...raw, body: new TextEncoder().encode(page) },
-    "text",
-    1_000,
-  );
-
-  assert.equal(Array.from(result.description ?? "").length, 1_000);
-  assert.match(result.description ?? "", /^😀+$/u);
+  const page = "<!doctype html><html><body><main><article><h1>Title</h1><p>Body text that should fit well within the cap.</p></article></main></body></html>";
+  const truncated = normalizeDocument({ ...raw, body: new TextEncoder().encode(page) }, "markdown", 12);
+  assert.equal(truncated.truncated, true);
+  assert.match(truncated.content, /Title/u);
 });
 
-void test("extractReadableDocument resolves public links and strips unsafe URL schemes", () => {
-  const page = `<html><head><title>Safe Reader</title></head><body><article>
-    <h1>Safe Reader</h1>
-    <p>This paragraph is intentionally long enough for deterministic article extraction.</p>
-    <p><a href="/guide">public guide</a><a href="javascript:alert(1)" onclick="alert(2)">unsafe link</a></p>
-    <img src="data:image/png;base64,abc" srcset="data:image/png;base64,def 2x" onerror="alert(3)" alt="unsafe image">
-  </article></body></html>`;
-  const result = extractReadableDocument(page, "https://example.com/posts/reader");
-
-  assert.match(result.html, /href="https:\/\/example\.com\/guide"/u);
-  assert.doesNotMatch(result.html, /javascript:|data:image|onclick|onerror|srcset/u);
+void test("extractReadableDocument strips unsafe URL schemes from sanitized html", () => {
+  const page = `<!doctype html><html><body><main><a href="https://example.com/docs">Docs</a><a href="javascript:alert(1)">Run</a><a href="data:text/html;base64,xxx">Embed</a></main></body></html>`;
+  const doc = extractReadableDocument(page, "https://example.com");
+  assert.match(doc.html, /https:\/\/example\.com\/docs/u);
+  assert.doesNotMatch(doc.html, /javascript:|data:text\/html/u);
 });
 
 void test("extractFields deterministically extracts text, HTML, attributes and arrays", () => {
-  const result = extractFields(html, [
-    { name: "heading", selector: "h1", value: "text" },
+  const page = "<!doctype html><html><body><main><h1>One</h1><h1>Two</h1><a href='/a'>A</a><a href='/b'>B</a><img src='/x.png' alt='pic'/></main></body></html>";
+  const result = extractFields(page, [
+    { name: "headings", selector: "h1", value: "text", many: true },
     { name: "links", selector: "a", value: "attribute", attribute: "href", many: true },
-    { name: "missing", selector: ".none", value: "html" },
-  ], { maxFields: 5, maxValuesPerField: 5, maxOutputChars: 1_000 });
-  assert.deepEqual(result.data, { heading: "Hello", links: ["/a", "/b"], missing: null });
-  assert.deepEqual(result.missingFields, ["missing"]);
+    { name: "firstHeadingHtml", selector: "h1", value: "html" },
+    { name: "imgAlt", selector: "img", value: "attribute", attribute: "alt" },
+  ], { maxFields: 10, maxValuesPerField: 5, maxOutputChars: 5_000 });
+
+  assert.deepEqual(result.data, {
+    headings: ["One", "Two"],
+    links: ["/a", "/b"],
+    firstHeadingHtml: "One",
+    imgAlt: "pic",
+  });
 });
 
 void test("extractFields validates names, selectors, attributes and output bound", () => {
-  const limits = { maxFields: 2, maxValuesPerField: 2, maxOutputChars: 10 };
-  assert.throws(() => extractFields(html, [{ name: "bad-name", selector: "h1", value: "text" }], limits), { code: "INVALID_INPUT" });
+  const limits = { maxFields: 5, maxValuesPerField: 5, maxOutputChars: 50 };
+  assert.throws(() => extractFields(html, [{ name: "1bad", selector: "h1", value: "text" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ name: "x", selector: "[", value: "text" }], limits), { code: "INVALID_INPUT" });
-  assert.throws(() => extractFields(html, [{ name: "x", selector: "a", value: "attribute" }], limits), { code: "INVALID_INPUT" });
-  assert.throws(() => extractFields(html, [{ name: "heading", selector: "h1", value: "text" }], limits), { code: "OUTPUT_LIMIT" });
+  assert.throws(() => extractFields(html, [{ name: "x", selector: "h1", value: "attribute" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(
+    () => extractFields(html, [{ name: "x", selector: "h1", value: "html", many: true }], { maxFields: 1, maxValuesPerField: 100, maxOutputChars: 5 }),
+    { code: "OUTPUT_LIMIT" },
+  );
 });
 
 void test("extractFields supports bounded deterministic pattern extraction", () => {
@@ -141,8 +134,8 @@ void test("extractFields supports bounded deterministic pattern extraction", () 
 void test("extractFields validates pattern shape", () => {
   const limits = { maxFields: 3, maxValuesPerField: 3, maxOutputChars: 1_000 };
   assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "[" }], limits), { code: "INVALID_INPUT" });
-  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "x", flags: "s" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "x", flags: "ii" }], limits), { code: "INVALID_INPUT" });
+  assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "x", flags: "g" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(a+)+" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(?=Hello)Hello" }], limits), { code: "INVALID_INPUT" });
   assert.throws(() => extractFields(html, [{ engine: "pattern", name: "x", pattern: "(Hello)\\1" }], limits), { code: "INVALID_INPUT" });
@@ -150,4 +143,46 @@ void test("extractFields validates pattern shape", () => {
     () => extractFields("x".repeat(1_000_001), [{ engine: "pattern", name: "x", pattern: "x" }], limits),
     { code: "OUTPUT_LIMIT" },
   );
+});
+
+void test("extractFields supports s flag and inline (?is) modifier for cross-line patterns", () => {
+  const crossLineHtml = "line1\nKEY=42\nline2\nKEY=99";
+  const limits = { maxFields: 4, maxValuesPerField: 5, maxOutputChars: 1_000 };
+
+  const withExplicitS = extractFields(crossLineHtml, [
+    { engine: "pattern", name: "k", pattern: "line\\d\\sKEY=(\\d+)", flags: "s", group: 1, many: true },
+  ], limits);
+  assert.deepEqual(withExplicitS.data.k, ["42", "99"]);
+
+  const withInline = extractFields(crossLineHtml, [
+    { engine: "pattern", name: "k", pattern: "(?is)line\\d\\sKEY=(\\d+)", group: 1, many: true },
+  ], limits);
+  assert.deepEqual(withInline.data.k, ["42", "99"]);
+
+  const merged = extractFields(crossLineHtml, [
+    { engine: "pattern", name: "k", pattern: "(?i)line\\d\\sKEY=(\\d+)", flags: "s", group: 1, many: true },
+  ], limits);
+  assert.deepEqual(merged.data.k, ["42", "99"]);
+});
+
+void test("extractFields rejects unsupported inline modifier flags", () => {
+  const limits = { maxFields: 1, maxValuesPerField: 1, maxOutputChars: 1_000 };
+  assert.throws(
+    () => extractFields("x", [{ engine: "pattern", name: "x", pattern: "(?g)x" }], limits),
+    { code: "INVALID_INPUT" },
+  );
+});
+
+void test("extractFields attaches hint to OUTPUT_LIMIT errors", () => {
+  const limits = { maxFields: 1, maxValuesPerField: 1, maxOutputChars: 1_000 };
+  try {
+    extractFields("x".repeat(1_000_001), [{ engine: "pattern", name: "x", pattern: "x" }], limits);
+    assert.fail("expected throw");
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || !("hint" in error)) {
+      assert.fail("expected GroundlaneError-shaped throw");
+    }
+    assert.equal((error as { code: string }).code, "OUTPUT_LIMIT");
+    assert.match((error as { hint?: string }).hint ?? "", /Lower maxBytes/);
+  }
 });

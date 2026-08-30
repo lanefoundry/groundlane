@@ -9,6 +9,7 @@ export const publicErrorSchema = z.object({
   stage: z.string(),
   message: z.string(),
   retryable: z.boolean(),
+  hint: z.string().optional(),
 });
 
 export function resultEnvelopeSchema<T extends z.ZodType>(dataSchema: T) {
@@ -28,6 +29,7 @@ export function toolError(error: unknown) {
       stage: safe.stage,
       message: safe.message,
       retryable: safe.retryable,
+      ...(safe.hint === undefined ? {} : { hint: safe.hint }),
     },
   };
   return structuredToolError(value);
