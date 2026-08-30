@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 import TurndownService from "turndown";
 import type { FetchFormat, NormalizedDocument, RawDocument } from "./contracts.js";
-import { GroundlaneError } from "./errors.js";
+import { GroundlaneError, hint } from "./errors.js";
 import { truncateUnicode } from "./limits.js";
 import { extractReadableDocument } from "./readable-document.js";
 
@@ -32,8 +32,9 @@ export function normalizeDocument(raw: RawDocument, format: FetchFormat, maxChar
     let selectedText: string;
     if (selector) {
       let selected;
-      try { selected = $(selector).first(); } catch { throw new GroundlaneError("INVALID_INPUT", "selector", "The CSS selector is invalid"); }
-      if (selected.length === 0) throw new GroundlaneError("INVALID_INPUT", "selector", "The CSS selector did not match");
+      try { selected = $(selector).first(); }
+      catch { throw new GroundlaneError("INVALID_INPUT", "selector", "The CSS selector is invalid", false, undefined, hint("selector.invalid", "Check the CSS selector syntax. cheerio supports a jQuery-like subset; exotic pseudo-classes or invalid nesting will throw.")); }
+      if (selected.length === 0) throw new GroundlaneError("INVALID_INPUT", "selector", "The CSS selector did not match", false, undefined, hint("selector.no_match", "The selector parsed but matched no elements. Inspect the page in a browser, or relax the selector (e.g. h1 instead of h1.specific-class) and rely on web_extract to filter further."));
       selectedHtml = selected.html() ?? "";
       selectedText = selected.text();
     } else if (format === "text" || format === "markdown") {

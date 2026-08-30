@@ -6,7 +6,7 @@ import type {
   CrawlRequest,
   CrawlResult,
 } from "./contracts.js";
-import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { GroundlaneError, hint, toGroundlaneError } from "./errors.js";
 import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 import { resolvePublicUrl } from "./url-policy.js";
 
@@ -40,6 +40,8 @@ export class CrawlRouter {
         "web_crawl",
         "No configured crawl provider supports this request",
         true,
+        undefined,
+        hint("web_crawl.no_provider", "No configured crawl provider matched the request. provider_quota should show firecrawl and/or tavily as enabled."),
       );
     }
     const strategy =
@@ -79,6 +81,9 @@ export class CrawlRouter {
         "INVALID_INPUT",
         "web_crawl",
         "Crawl URL, limits, instructions, polling, or provider selection is invalid",
+        false,
+        undefined,
+        hint("web_crawl.invalid_input", "Check the request: url must be a public http(s) URL, maxPages 1-100, maxContentChars 0-20000, maxDepth 1-5, maxBreadth 1-500, maxPolls 1-5, pollIntervalMs 250-5000, instructions <= 500 chars, provider/providers mutually exclusive."),
       );
     }
     await resolvePublicUrl(request.url);
@@ -131,6 +136,8 @@ export class CrawlRouter {
       "web_crawl",
       "All selected crawl providers were unavailable",
       true,
+      undefined,
+      hint("web_crawl.all_providers_failed", "Every selected crawl provider errored. Inspect warnings for per-provider reasons. Try a different provider or wait for upstream to recover."),
     );
   }
 
@@ -161,7 +168,7 @@ export class CrawlRouter {
     );
     if (signal.aborted) {
       if (signal.reason instanceof GroundlaneError) throw signal.reason;
-      throw new GroundlaneError("CANCELLED", "web_crawl", "The request was cancelled");
+      throw new GroundlaneError("CANCELLED", "web_crawl", "The request was cancelled", false, undefined, hint("web_crawl.cancelled", "The caller aborted the request before completion. Issue a fresh call if you still need this crawl."));
     }
     const results = outcomes
       .map((outcome) => outcome.result)

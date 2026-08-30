@@ -1,6 +1,6 @@
 import { load } from "cheerio";
 import type { ExtractedValue, ExtractionField } from "./contracts.js";
-import { GroundlaneError } from "./errors.js";
+import { GroundlaneError, hint } from "./errors.js";
 
 export interface ExtractionLimits { maxFields: number; maxValuesPerField: number; maxOutputChars: number }
 export interface ExtractionResult { data: Record<string, ExtractedValue>; missingFields: string[]; truncated: boolean }
@@ -9,24 +9,24 @@ const maxPatternInputChars = 1_000_000;
 
 function validateFieldName(name: string, names: Set<string>): void {
   if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name) || names.has(name)) {
-    throw new GroundlaneError("INVALID_INPUT", "extract", "Field names must be unique identifiers");
+    throw new GroundlaneError("INVALID_INPUT", "extract", "Field names must be unique identifiers", false, undefined, hint("extract.invalid_field_name", "Field names must start with a letter, use only letters/digits/underscore, be unique within the request, and stay under 64 characters."));
   }
   names.add(name);
 }
 
 function compilePattern(field: ExtractionField): RegExp {
   if (field.engine !== "pattern") {
-    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern fields require pattern engine");
+    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern fields require pattern engine", false, undefined, hint("extract.pattern.wrong_engine", "This field is declared with engine: 'selector' but the schema selected pattern. Switch the engine or split into two fields."));
   }
   if (field.pattern.length === 0 || field.pattern.length > 500) {
-    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern length is outside the allowed range");
+    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern length is outside the allowed range", false, undefined, hint("extract.pattern.length_out_of_range", "Pattern source must be 1-500 characters. Trim repeated captures, or split into multiple pattern fields."));
   }
   if (
     /\\[1-9]/u.test(field.pattern) ||
     /\(\?<?[=!]/u.test(field.pattern) ||
     /\([^)]*[+*][^)]*\)[+*{]/u.test(field.pattern)
   ) {
-    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern uses unsupported high-risk regex syntax");
+    throw new GroundlaneError("INVALID_INPUT", "extract", "Pattern uses unsupported high-risk regex syntax", false, undefined, hint("extract.pattern.high_risk", "Backreferences, lookaround, and nested quantifiers can cause catastrophic backtracking. Drop those constructs or split into multiple fields with bounded captures."));
   }
   // Extract inline flag modifier (?is) etc. JS regex parser rejects inline flag syntax,
   // so we peel it off the source and merge into the flags string. Recognised modifiers:

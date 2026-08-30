@@ -5,7 +5,7 @@ import type {
   ContentRequest,
   ContentResult,
 } from "./contracts.js";
-import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { GroundlaneError, hint, toGroundlaneError } from "./errors.js";
 import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 import { resolvePublicUrl } from "./url-policy.js";
 
@@ -47,6 +47,8 @@ export class ContentRouter {
         "web_content",
         "No configured content provider supports this request",
         true,
+        undefined,
+        hint("web_content.no_provider", "No configured content provider matched the request. Check provider_quota to see which adapters are enabled, and ensure at least one of them is keyed or in the auto pool."),
       );
     }
     const strategy =
@@ -73,6 +75,9 @@ export class ContentRouter {
         "INVALID_INPUT",
         "web_content",
         "Content URL, output limit, or provider selection is invalid",
+        false,
+        undefined,
+        hint("web_content.invalid_input", "Check the request: url must be a non-empty public http(s) URL, maxContentChars must be 1-200000, and provider/providers must be specified at most once."),
       );
     }
     await resolvePublicUrl(request.url);
@@ -136,6 +141,8 @@ export class ContentRouter {
       "web_content",
       "All selected content providers were unavailable",
       true,
+      undefined,
+      hint("web_content.all_providers_failed", "Every selected provider errored. Inspect the warnings field for per-provider failure reasons. Try a different provider, add credentials, or wait for upstream to recover."),
     );
   }
 
@@ -166,7 +173,7 @@ export class ContentRouter {
     );
     if (signal.aborted) {
       if (signal.reason instanceof GroundlaneError) throw signal.reason;
-      throw new GroundlaneError("CANCELLED", "web_content", "The request was cancelled");
+      throw new GroundlaneError("CANCELLED", "web_content", "The request was cancelled", false, undefined, hint("web_content.cancelled", "The caller aborted the request before any provider returned. Issue a fresh call if you still need this content."));
     }
     const contents = outcomes
       .map((outcome) => outcome.result)

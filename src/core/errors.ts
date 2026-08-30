@@ -21,6 +21,13 @@ export interface HintValue {
   localized?: Record<string, string>;
 }
 
+// Convenience builder so throw sites do not repeat the same object literal.
+// Throw sites pass a stable machine code plus a human-friendly text. Localized
+// translations are appended by operators, not here.
+export function hint(code: string, text: string): HintValue {
+  return { code, text };
+}
+
 export class GroundlaneError extends Error {
   constructor(
     readonly code: ErrorCode,

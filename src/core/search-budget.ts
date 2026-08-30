@@ -1,5 +1,5 @@
 import type { SearchProviderId } from "./contracts.js";
-import { GroundlaneError } from "./errors.js";
+import { GroundlaneError, hint } from "./errors.js";
 
 export type SearchBudgetPeriod = "monthly" | "daily" | "minute";
 
@@ -31,7 +31,7 @@ export function consumeProviderAttemptBudget(
   if (budget === undefined || budget.tryConsume(provider)) return undefined;
   const message = `${provider} request budget is exhausted`;
   if (throwWhenExhausted) {
-    throw new GroundlaneError("PROVIDER_UNAVAILABLE", source, message, true);
+    throw new GroundlaneError("PROVIDER_UNAVAILABLE", source, message, true, undefined, hint("search_budget.exhausted", "The local attempt budget for this provider is exhausted. Wait for reset, raise the operator-configured limit, or use a different provider."));
   }
   return `${provider} budget exhausted`;
 }
@@ -47,6 +47,9 @@ function validateBudgets(
         "INVALID_INPUT",
         "search-budget",
         `${label} must be non-negative integers`,
+        false,
+        undefined,
+        hint("search_budget.invalid_config", "Pass integer >= 0 for daily and monthly limits. The config validator runs once at startup; remove the offending value and restart."),
       );
     }
   }
@@ -215,6 +218,9 @@ export class MinuteRateLimiter implements SearchBudgetTracker {
           "INVALID_INPUT",
           "search-budget",
           "Per-minute rate limits must be positive integers",
+          false,
+          undefined,
+          hint("search_budget.invalid_rpm", "Per-minute rate limits must be integer >= 1. Pass integer values for jina and any other provider in the RPM config."),
         );
       }
     }

@@ -1,6 +1,6 @@
 import { load } from "cheerio";
 
-import { GroundlaneError } from "./errors.js";
+import { GroundlaneError, hint } from "./errors.js";
 import { truncateUnicode } from "./limits.js";
 import { extractReadableDocument } from "./readable-document.js";
 
@@ -261,9 +261,10 @@ function parseTables(source: string): ParsedTable[] {
 
 export function parseDocument(source: string, options: ParseDocumentOptions): ParsedDocument {
   if (source.trim().length === 0) {
-    throw new GroundlaneError("INVALID_INPUT", "parse", "Parser input is empty");
+    throw new GroundlaneError("INVALID_INPUT", "parse", "Parser input is empty", false, undefined, hint("parse.input_empty", "Provide a non-empty HTML string for html-mode parse, or pass a real URL for url-mode parse."));
   }
   const metadata = parseMetadata(source, options.baseUrl);
+
   const result: ParsedDocument = {
     purpose: options.purpose,
     ...(metadata.title === undefined ? {} : { title: metadata.title }),
@@ -302,7 +303,7 @@ export function parseDocument(source: string, options: ParseDocumentOptions): Pa
 
   const serializedLength = Array.from(JSON.stringify(result)).length;
   if (serializedLength > options.maxOutputChars * 2) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "parse", "Parsed output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "parse", "Parsed output exceeds the configured limit", false, undefined, hint("parse.output_too_large", "Lower maxOutputChars on the parse request, or narrow the purpose (e.g. metadata-only or links-only) so the document returns a smaller projection."));
   }
   if (result.truncated) result.warnings.push("output truncated");
   return result;

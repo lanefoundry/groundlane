@@ -5,7 +5,7 @@ import type {
   ResearchRequest,
   ResearchResult,
 } from "./contracts.js";
-import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { GroundlaneError, hint, toGroundlaneError } from "./errors.js";
 import { consumeProviderAttemptBudget, type ProviderAttemptBudgetTracker } from "./search-budget.js";
 
 export const RESEARCH_PROVIDER_IDS = ["linkup", "you", "parallel"] as const satisfies readonly ResearchProviderId[];
@@ -38,6 +38,8 @@ export class ResearchRouter {
         "web_research",
         "No configured research provider supports this request",
         true,
+        undefined,
+        hint("web_research.no_provider", "No configured research provider matched the request. provider_quota should show which adapters are enabled."),
       );
     }
 
@@ -64,6 +66,9 @@ export class ResearchRouter {
         "INVALID_INPUT",
         "web_research",
         "Research query, effort, or provider selection is invalid",
+        false,
+        undefined,
+        hint("web_research.invalid_input", "Check the request: query must be non-empty, effort must be one of lite|standard|deep, provider/providers mutually exclusive, and domains/excludeDomains are mutually exclusive (not both)."),
       );
     }
   }
@@ -127,6 +132,8 @@ export class ResearchRouter {
       "web_research",
       "All selected research providers were unavailable",
       true,
+      undefined,
+      hint("web_research.all_providers_failed", "Every selected research provider errored. Inspect warnings for per-provider reasons. Try a different provider, add credentials, or wait for upstream to recover."),
     );
   }
 
@@ -157,7 +164,7 @@ export class ResearchRouter {
     );
     if (signal.aborted) {
       if (signal.reason instanceof GroundlaneError) throw signal.reason;
-      throw new GroundlaneError("CANCELLED", "web_research", "The request was cancelled");
+      throw new GroundlaneError("CANCELLED", "web_research", "The request was cancelled", false, undefined, hint("web_research.cancelled", "The caller aborted the request before completion. Issue a fresh call if you still need this research synthesis."));
     }
 
     const reports = outcomes

@@ -150,6 +150,33 @@ Other `web_*.output_too_large` codes (one per tool, all share the same shape):
 - `web_answer.output_too_large`
 - `web_content.output_too_large` (and the related `web_content.binary_url` for PDF/image early-reject)
 
+URL / DNS / redirect policy codes (see `src/core/url-policy.ts`):
+
+- `url.invalid` — input not a parseable URL.
+- `url.blocked.invalid_protocol` — non-http(s) scheme.
+- `url.blocked.credentials` — user:pass@ in URL.
+- `url.blocked.invalid_port` — port outside the allowed set.
+- `dns.blocked.localhost` — loopback destination.
+- `dns.blocked.private_address` — DNS resolves to a private/reserved range.
+- `dns.unresolved` — DNS lookup returned no answers (retryable).
+- `redirect.invalid_location` — upstream returned a malformed Location header.
+- `${stage}.cancelled` — generic cancellation code emitted by `throwIfAborted`.
+
+Parse / selector codes:
+
+- `parse.input_empty` — empty HTML passed to parse.
+- `parse.output_too_large` — serialized parse result > maxOutputChars*2.
+- `selector.invalid` — cheerio could not parse the CSS selector.
+- `selector.no_match` — selector parsed but matched no elements.
+
+Router / provider-budget codes:
+
+- `web_content.no_provider` / `web_crawl.no_provider` / `web_research.no_provider` — no configured provider matched.
+- `web_content.invalid_input` / `web_crawl.invalid_input` / `web_research.invalid_input` — request failed schema/bounds validation.
+- `web_content.all_providers_failed` / `web_crawl.all_providers_failed` / `web_research.all_providers_failed` — every selected provider errored.
+- `web_content.cancelled` / `web_crawl.cancelled` / `web_research.cancelled` — caller aborted.
+- `search_budget.exhausted` — local attempt budget for the provider is empty.
+- `search_budget.invalid_config` / `search_budget.invalid_rpm` — operator config failed validation.
 ```json
 {
   "ok": false,
