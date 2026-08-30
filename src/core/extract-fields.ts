@@ -113,22 +113,22 @@ function extractPatternValues(html: string, field: ExtractionField, limits: Extr
 }
 
 export function extractFields(html: string, fields: readonly ExtractionField[], limits: ExtractionLimits): ExtractionResult {
-  if (fields.length === 0 || fields.length > limits.maxFields) throw new GroundlaneError("INVALID_INPUT", "extract", "Field count is outside the allowed range");
-  const names = new Set<string>();
-  const $ = load(html);
-  const data: Record<string, ExtractedValue> = {};
-  const missingFields: string[] = [];
-  for (const field of fields) {
-    validateFieldName(field.name, names);
-    if (field.engine === "pattern") {
-      const values = extractPatternValues(html, field, limits);
-      if (values.length === 0) missingFields.push(field.name);
-      data[field.name] = field.many ? values : values[0] ?? null;
-      continue;
-    }
-    if (field.value === "attribute" && !field.attribute) throw new GroundlaneError("INVALID_INPUT", "extract", "Attribute fields require an attribute name");
-    let nodes;
-    try { nodes = $(field.selector); } catch { throw new GroundlaneError("INVALID_INPUT", "extract", `Invalid selector for field ${field.name}`); }
+  if (fields.length === 0 || fields.length > limits.maxFields) throw new GroundlaneError("INVALID_INPUT", "extract", "Field count is outside the allowed range", false, undefined, hint("extract.invalid_field_count", "Provide at least one field and at most the configured maxFields (default 50). Split large requests into smaller extract calls."));
+   const names = new Set<string>();
+   const $ = load(html);
+   const data: Record<string, ExtractedValue> = {};
+   const missingFields: string[] = [];
+   for (const field of fields) {
+     validateFieldName(field.name, names);
+     if (field.engine === "pattern") {
+       const values = extractPatternValues(html, field, limits);
+       if (values.length === 0) missingFields.push(field.name);
+       data[field.name] = field.many ? values : values[0] ?? null;
+       continue;
+     }
+     if (field.value === "attribute" && !field.attribute) throw new GroundlaneError("INVALID_INPUT", "extract", "Attribute fields require an attribute name", false, undefined, hint("extract.attribute_missing", "When value is 'attribute' the request must also include the attribute key (e.g. attribute: 'href'). For text/html values, drop the attribute field."));
+     let nodes;
+     try { nodes = $(field.selector); } catch { throw new GroundlaneError("INVALID_INPUT", "extract", `Invalid selector for field ${field.name}`, false, undefined, hint("extract.selector.invalid", "Verify the CSS selector syntax (cheerio's jQuery-like subset). Cheerio accepts the same selectors as jQuery; pseudo-classes like :has-text() are not supported — use web_extract's pattern engine instead.")); }
     const selected = nodes.toArray().slice(0, field.many ? limits.maxValuesPerField : 1);
     const values = selected.map((node) => {
       const element = $(node);

@@ -5,7 +5,7 @@ import type {
   SearchResult,
   SearchStrategy,
 } from "./contracts.js";
-import { GroundlaneError, toGroundlaneError } from "./errors.js";
+import { GroundlaneError, hint, toGroundlaneError } from "./errors.js";
 import { fuseSearchResults } from "./search-fusion.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
 import type { ProviderHealthTracker } from "./provider-health.js";
@@ -58,6 +58,8 @@ export class SearchRouter {
           "search-budget",
           `${explicitProvider} request budget is exhausted`,
           true,
+          undefined,
+          hint("search_budget.exhausted", "The per-provider request budget is empty for the selected provider. Wait for the next reset window, raise SEARCH_*_REQUEST_BUDGETS in the operator config, or omit the explicit provider to let the router pick one with remaining quota."),
         );
       }
       throw new GroundlaneError(
@@ -65,6 +67,8 @@ export class SearchRouter {
         "search",
         "No configured provider supports this request",
         true,
+        undefined,
+        hint("search.no_provider", "No configured search provider matched the request. Verify SEARCH_PROVIDER_ORDER, API keys, and that the requested capabilities (news, images, etc.) are exposed by at least one provider."),
       );
     }
 
@@ -94,6 +98,9 @@ export class SearchRouter {
         "INVALID_INPUT",
         "search",
         "Search query, result limit, or provider selection is invalid",
+        false,
+        undefined,
+        hint("search.invalid_input", "Provide a non-empty query, set maxResults between 1 and 50, and choose either provider OR providers (not both)."),
       );
     }
   }
@@ -172,6 +179,8 @@ export class SearchRouter {
             "search-budget",
             `${provider.id} request budget is exhausted`,
             true,
+            undefined,
+            hint("search_budget.exhausted", "The per-provider request budget is empty for the selected provider. Wait for the next reset window, raise SEARCH_*_REQUEST_BUDGETS in the operator config, or omit the explicit provider to let the router pick one with remaining quota."),
           );
         }
         warnings.push(`${provider.id} budget exhausted`);
@@ -206,6 +215,8 @@ export class SearchRouter {
       "search",
       "All matching search providers were unavailable",
       true,
+      undefined,
+      hint("search.all_providers_failed", "Every selected provider errored or returned no results. Check provider health, retry once, or fall back to web_fetch on a known URL."),
     );
   }
 
