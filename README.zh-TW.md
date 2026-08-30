@@ -249,6 +249,26 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | Browser rendering | Local Playwright 或 Browserless（opt-in） |
 | Cloudflare runtime | 目前支援 Worker + Container deployment；Browser Run、AI Search、AI Gateway、Agents 與 Workflows 是已查到的未來 adapter surface |
 
+### Provider 功能、收費與免費額度
+
+以下資料於 **2026-08-30** 逐一查核 provider 官方 pricing／billing 頁。價格是未含可能稅額的公開美元牌價；enterprise 合約與登入後帳戶 offer 可能不同。「Groundlane tools」只列目前已有 runtime path 的功能，不把廠商尚未接入的產品算進來。月度／每日額度、餘額補回、持續限速免費與一次性 signup credits 也分開記錄。完整判斷方法與更多 browser／scraping 服務請看[免費搜尋、爬取與 Browser API 怎麼選](https://quidproquo.cc/posts/ai/2026-08-21-free-search-scraping-tools/)。
+
+| Provider | Groundlane tools | 與目前工具相關的公開收費 | 免費額度與重要條件 |
+| --- | --- | --- | --- |
+| [Tavily](https://docs.tavily.com/documentation/api-credits) | Search、Content/Extract、Map、Crawl | PAYG 每 credit `$0.008`；basic／advanced Search 分別用 1／2 credits；Extract、Map、Crawl 依成功頁數公式扣 credit | 每月 1,000 credits，每月 1 日重置；免信用卡 |
+| [Exa](https://exa.ai/docs/reference/pricing) | Search、Content | Search 起價 `$7/1k` requests；Contents 每個指定 content type 為 `$1/1k` pages；較深的 search mode 另有較高單價 | 新帳號一次取得 `$20`，之後每月 `$10` credits；免 payment method；reset anchor／rollover 未公開 |
+| [Parallel](https://parallel.ai/pricing) | Search、Research | 10 results 的 Search 為 `$1–$5/1k` requests；Responses research 依 processor 為 `$10–$250/1k` | Eligible organization 每月 `$5`；必須綁卡、每張卡限一個 org，未用額度月底失效；signup／startup promotion 有另外的資格 |
+| [Browserbase](https://docs.browserbase.com/account/billing/plans.md) | 只有 Search | Developer 每月 `$20`；付費方案 Search 超額為 `$7/1k` calls。Browser sessions、Fetch、Extract、Agents 是廠商功能，Groundlane 尚未暴露 | Free 每月含 1,000 次 Search 與 1 browser hour、3 concurrent sessions；免卡；Free Search 不提供 overage |
+| [Brave](https://api-dashboard.search.brave.com/documentation/pricing) | Search、News、Images | Search 為 `$5/1k` requests。Brave Answers 採 query 加 token 的不同價格，且不是 Groundlane tool | 每個已選 product plan 每月有 `$5` credit；需綁卡做 anti-fraud 驗證；官方免費 credit 條款另要求 attribution |
+| [Firecrawl](https://docs.firecrawl.dev/billing) | Search、Content/Scrape、Map、Crawl | Scrape／Crawl 每頁 1 credit、Map 每 call 1 credit、Search 每 10 results 2 credits；付費 self-serve plan 可買依方案換算的 `$5` reload batch | 每月 1,000 credits、免卡，通常不 rollover。Auto-reload 可設定上限或關閉。官方公開頁目前有一個 Standard headline 價格衝突，採購前需回 checkout 確認 |
+| [SerpApi](https://serpapi.com/pricing) | Search、News、Images | Starter 每月 `$25`／1,000 次成功 searches；Developer `$75`／5,000。Cached、errored、failed search 不扣 | 每 billing cycle 250 次成功 searches，renewal 時重置；現行公開頁未說 Free 是否需綁卡 |
+| [SearchAPI.io](https://www.searchapi.io/pricing) | Search | Developer 每月 `$40`／10,000 次成功 searches（`$4/1k`）；較大方案單價下降。只有 HTTP 200 search 計費 | 註冊 100 requests、免卡；這是有限 trial，沒有官方月度恢復說明；Groundlane 預設維持 opt-in |
+| [Linkup](https://docs.linkup.so/pages/documentation/platform/pricing) | Search、Answer、Research、Content/Fetch | Standard Search `$0.005`、sourced answer `$0.006`、deep Search `$0.05–$0.055`；Fetch `$0.001–$0.01`；Research 每 call `$0.25–$2.50` | Professional email 註冊取得 `$20`；eligible account 每月是把餘額**補回** `$20`，不是固定再送 `$20`。資格與 top-up 日期未完整公開 |
+| [Keenable](https://keenable.ai/pricing) | Search、Content/Fetch | 公開 headline 為 `$4/1k` requests，100 RPS+ 為 `$1/1k`；實際 SKU usage 可能不同，應讀 response usage | Verified organization 每月 100,000 requests。Keyless public Search／Fetch 不用這池額度，而是 per-IP shared pool：每小時 1,000、每秒 10 次 |
+| [Serper](https://serper.dev/#pricing) | Search、News、Images | Prepaid pack 從 `$50`／50,000 queries（`$1/1k`）起，最大公開方案降至 `$0.30/1k`；購買的 credits 六個月後到期 | 註冊 2,500 queries、免卡；沒有官方月度 reset；Groundlane 預設維持 opt-in |
+| [You.com](https://you.com/docs/administration/billing) | Search、Answer、Research、Content | Search 與 Answer 都是 `$5/1k` calls；Contents `$1/1k` pages；Research 從 `$12/1k` 起，依 effort tier 上升 | Keyless Search 每日 100 queries；有 key 的新帳號另有一次性 `$100` starter credit、免卡。兩者是不同額度；auto top-up 為 opt-in，且目前沒有 monthly spending cap |
+| [TinyFish](https://www.tinyfish.ai/pricing) | Search、Content/Fetch | Search、Fetch 都是 `$0`；廠商 Agent `$0.016/step`、Browser `$0.002/minute`，但 Groundlane 未暴露這兩個付費 surface | Wallet 為 `$0` 時 Search 仍有 30 requests/minute、Fetch 150 URLs/minute 的免費額度；仍需 API key。新帳號 `$8` Wallet 是一次性，只供付費 surface 使用 |
+
 Provider-backed routing 可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_quota` 會整合帳戶餘額、Groundlane 本機 provider-dispatch budget 與 capabilities；`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup、You.com、Firecrawl 與 SerpApi。Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
 
 ### Provider selection
