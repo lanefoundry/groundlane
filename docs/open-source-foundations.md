@@ -4,6 +4,8 @@
 
 Groundlane is built as a small TypeScript control plane, not as a fork of one crawler or browser server. This document records which open-source projects influence the architecture, what Groundlane may reuse, and where the boundary remains intentionally different.
 
+The expanded, time-sensitive reference landscape lives in [Open-source references](research/open-source-references.md); this page keeps only the stable architecture decision.
+
 ## Decision
 
 Groundlane keeps its current stateless `web_fetch`, `web_search`, and `web_extract` core. It does not add a crawler framework to the MVP dependency graph.

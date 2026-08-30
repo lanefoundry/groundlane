@@ -7,8 +7,11 @@ benchmark，不是對所有網站或文件格式的品質保證。
 
 `parse` 需要比單純 Reader 多一層可重用結構：document text、metadata、
 links、media 與 tables。這份 benchmark 用 repo 內建 fixtures 固定目前行為，
-讓後續拆解 Trafilatura、Crawl4AI、MarkItDown、Docling、Unstructured、
-PaddleOCR 等 open-source references 時，有同一組 deterministic gate 可以比較。
+讓後續拆解 Trafilatura、Crawl4AI、MarkItDown、anydoc、Docling、
+Unstructured、GROBID、pdf.js、pdfminer.six、PaddleOCR、RapidOCR、EasyOCR、
+docTR、Surya、Layout Parser、OLMOCR、OCRmyPDF、Apache Tika、PyMuPDF、
+pdfplumber、pypdf、Camelot、Tabula 等 open-source references 時，有同一組
+deterministic gate 可以比較。
 
 ## 可重跑方法
 

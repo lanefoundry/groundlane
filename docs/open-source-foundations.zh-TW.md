@@ -4,6 +4,8 @@
 
 Groundlane 是小而清楚的 TypeScript control plane，不是任何單一 crawler 或 browser server 的 fork。本文件記錄哪些開源專案影響架構、Groundlane 可能採用什麼，以及哪些邊界刻意保持不同。
 
+完整且會隨時間更新的 reference landscape 放在[開源專案參考清單](research/open-source-references.md)；本頁只保留較穩定的架構決策。
+
 ## 決策
 
 Groundlane 保留目前 stateless 的 `web_fetch`、`web_search` 與 `web_extract` 核心；MVP 不加入 crawler framework dependency。

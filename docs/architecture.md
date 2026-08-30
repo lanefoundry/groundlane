@@ -12,7 +12,7 @@ Groundlane is a vendor-neutral web access control plane for AI agents. Its publi
 
 Groundlane is not a crawler fleet, search index, residential proxy network, research agent, or persistent browser-session service in the MVP.
 
-Groundlane does use mature open-source crawler and browser projects as architectural references without treating their hosted services as open-source infrastructure. See [Open-source foundations](open-source-foundations.md) for the Crawlee adoption gate and the separation between crawl orchestration and managed anti-bot providers.
+Groundlane does use mature open-source crawler, browser, parser, and document-ingestion projects as architectural references without treating their hosted services as open-source infrastructure. See [Open-source foundations](open-source-foundations.md) for the Crawlee adoption gate and the separation between crawl orchestration and managed anti-bot providers, and [Open-source references](research/open-source-references.md) for the time-sensitive reference landscape.
 
 ## Runtime topology
 
@@ -33,14 +33,21 @@ Groundlane does use mature open-source crawler and browser projects as architect
                                |
                   +------------v-------------+
                   | MCP server + tool registry|
-                  +---+----------+----------+----+
-                      |          |          |    |
-             web_search   web_fetch   web_extract provider diagnostics
-                      |          |          |    |
-             SearchRouter   FetchPipeline   |    |
-                      |          +----------+    |
-              provider ports     |               |
-                      |          safe HTTP        |
+                  +---+----------+----------+----------+----------+
+                      |          |          |          |          |
+               web_search   web_fetch  web_extract   parse   diagnostics
+               web_answer      |      selector/pattern |   provider_balance
+              web_research     |          engines      |   provider_capabilities
+               web_content     |                       |   provider_quota
+                 web_map       |                       |   search_budget_status
+                web_crawl      |                       |
+                 web_news      |                       |
+                web_images     |                       |
+                      |          |                       |
+          provider routers  FetchPipeline          local HTML parser
+                      |          +----------+------------+
+              provider ports     |          |
+                      |       safe HTTP  raw HTML
   Tavily/Exa/Linkup/Parallel/Browserbase/Brave/Firecrawl/SerpApi/TinyFish |
                     SearchAPI.io/Serper/You.com (opt-in/keyless where available) |
                                       |

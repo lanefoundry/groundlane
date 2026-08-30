@@ -10,3 +10,4 @@ coverage/
 *.cpuprofile
 .DS_Store
 .work/
+.research/
