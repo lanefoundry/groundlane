@@ -80,7 +80,7 @@ export class SafeHttpFetcher implements HttpFetcher {
     for (let redirects = 0; ; redirects += 1) {
       if (redirects > request.maxRedirects) throw new GroundlaneError("UPSTREAM_ERROR", "redirect", "Upstream exceeded the redirect limit");
       const destination = await withinDeadline(
-        () => resolvePublicUrl(current, { cache, ...(this.options.lookup ? { lookup: this.options.lookup } : {}), ...(this.options.allowedPorts ? { allowedPorts: this.options.allowedPorts } : {}) }),
+        (signal) => resolvePublicUrl(current, { cache, signal, ...(this.options.lookup ? { lookup: this.options.lookup } : {}), ...(this.options.allowedPorts ? { allowedPorts: this.options.allowedPorts } : {}) }),
         request.deadline,
         parent,
         "dns",
@@ -134,9 +134,10 @@ export async function resolveFinalHttpUrl(
       throw new GroundlaneError("UPSTREAM_ERROR", "redirect", "Upstream exceeded the redirect limit");
     }
     const destination = await withinDeadline(
-      () =>
+      (signal) =>
         resolvePublicUrl(current, {
           cache,
+          signal,
           ...(options.lookup ? { lookup: options.lookup } : {}),
           ...(options.allowedPorts ? { allowedPorts: options.allowedPorts } : {}),
         }),

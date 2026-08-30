@@ -76,7 +76,7 @@ export function isLikelyDocumentationUrl(url: string): boolean {
     return true;
   }
   return pathSegments.some((segment) =>
-    ["api", "reference", "references", "docs", "documentation", "guide", "guides"].includes(segment),
+    ["reference", "references", "docs", "documentation", "guide", "guides"].includes(segment),
   );
 }
 
@@ -313,6 +313,13 @@ export function canUseSourceAwareDocs(request: FetchPipelineRequest): boolean {
   );
 }
 
+function isTerminalSourceError(error: unknown): boolean {
+  return (
+    error instanceof GroundlaneError &&
+    ["URL_BLOCKED", "DEADLINE_EXCEEDED", "CANCELLED"].includes(error.code)
+  );
+}
+
 export class SourceAwareDocsResolver implements SourceResolver {
   constructor(private readonly http: HttpFetcher) {}
 
@@ -358,7 +365,7 @@ export class SourceAwareDocsResolver implements SourceResolver {
         );
         if (resolved !== undefined) return resolved;
       } catch (error) {
-        if (error instanceof GroundlaneError && error.code === "URL_BLOCKED") throw error;
+        if (isTerminalSourceError(error)) throw error;
       }
     }
 
@@ -385,7 +392,7 @@ export class SourceAwareDocsResolver implements SourceResolver {
         reason: "source_aware_markdown",
       };
     } catch (error) {
-      if (error instanceof GroundlaneError && error.code === "URL_BLOCKED") throw error;
+      if (isTerminalSourceError(error)) throw error;
       return undefined;
     }
   }

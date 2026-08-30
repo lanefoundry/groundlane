@@ -249,7 +249,9 @@ Large generated documentation sites should not be handled by raising output limi
 The first runtime slice started as a conservative `web_fetch` fallback, and now
 proactively handles likely documentation URLs. Markdown/text requests without
 selectors, `waitFor`, or `render=always` try source Markdown before broad HTML
-for likely docs URLs. If direct HTTP later exceeds the byte limit, Groundlane can
+for likely docs URLs. A generic machine API path is not classified as documentation
+solely because it contains an `api` segment, and terminal deadline or cancellation
+errors stop source discovery immediately. If direct HTTP later exceeds the byte limit, Groundlane can
 still consult scoped/root `llms.txt` manifests for a nearest same-origin
 Markdown page. Candidate source responses must be Markdown/text; HTML returned
 by a server that ignores content negotiation falls back to the normal path.

@@ -195,6 +195,72 @@ void test("FetchPipeline does not proactively use source-aware docs for ordinary
   assert.equal(result.raw.backend, "direct");
 });
 
+void test("FetchPipeline does not treat a machine JSON API as documentation", async () => {
+  const requested: Array<{ url: string; accept?: string }> = [];
+  const apiUrl = "https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/confident-ai%2Fdeepeval";
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      requested.push({
+        url: request.url,
+        ...(request.headers?.accept === undefined ? {} : { accept: request.headers.accept }),
+      });
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: {},
+        contentType: "application/json",
+        body: new TextEncoder().encode('{"full_name":"confident-ai/deepeval"}'),
+        engine: "http",
+        backend: "direct",
+      });
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+    url: apiUrl,
+    format: "text",
+    render: "never",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(requested, [{ url: apiUrl }]);
+  assert.match(result.content, /confident-ai\/deepeval/u);
+});
+
+void test("FetchPipeline preserves terminal source-aware errors", async () => {
+  for (const reason of [
+    new GroundlaneError("DEADLINE_EXCEEDED", "response", "deadline", true),
+    new GroundlaneError("CANCELLED", "response", "cancelled"),
+  ]) {
+    let calls = 0;
+    const http: HttpFetcher = {
+      fetch: () => {
+        calls += 1;
+        return Promise.reject(reason);
+      },
+    };
+    const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+
+    await assert.rejects(
+      new FetchPipeline(http, browser, undefined, undefined, new SourceAwareDocsResolver(http)).fetch({
+        url: "https://docs.example.com/reference/search",
+        format: "text",
+        render: "never",
+        maxBytes: 1_000,
+        maxOutputChars: 1_000,
+        maxRedirects: 3,
+        deadline: new Deadline(1_000),
+      }),
+      (error) => error === reason,
+    );
+    assert.equal(calls, 1, reason.code);
+  }
+});
+
 void test("FetchPipeline rejects proactive source candidates that return HTML", async () => {
   const requested: string[] = [];
   const http: HttpFetcher = {

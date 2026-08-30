@@ -53,6 +53,10 @@ void test("llmsTxtCandidates checks scoped docs index before root index", () => 
 void test("isLikelyDocumentationUrl recognizes common docs surfaces", () => {
   assert.equal(isLikelyDocumentationUrl("https://developers.cloudflare.com/api/resources/accounts/"), true);
   assert.equal(isLikelyDocumentationUrl("https://docs.example.com/reference/search"), true);
+  assert.equal(
+    isLikelyDocumentationUrl("https://repos.ecosyste.ms/api/v1/hosts/GitHub/repositories/confident-ai%2Fdeepeval"),
+    false,
+  );
   assert.equal(isLikelyDocumentationUrl("https://example.com/products"), false);
 });
 

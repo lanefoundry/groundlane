@@ -71,6 +71,9 @@ Likely documentation URLs are now resolved proactively for Markdown/text
 - Candidate responses must actually be Markdown/text source; HTML returned by a
   server that ignores `Accept: text/markdown` is rejected and normal direct HTTP
   continues.
+- Generic machine API paths such as `/api/v1/...` are not documentation solely
+  because they contain an `api` segment. Deadline and cancellation errors stop
+  source discovery immediately instead of being replaced by a later-stage error.
 - Source Markdown cleanup removes YAML front matter, leading docs chrome before
   the first ATX heading, and common controls such as `Skip to content`,
   `Copy Markdown`, `On this page`, and feedback/edit labels.
