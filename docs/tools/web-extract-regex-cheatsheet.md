@@ -139,10 +139,16 @@ Other `extract.pattern.*` codes:
 - `extract.pattern.invalid_flags` — explicit `flags` rejected by the schema or duplicate.
 - `extract.pattern.compile_failed` — pattern parsed by JS regex engine as malformed.
 
-## Error envelope
+Other `web_*.output_too_large` codes (one per tool, all share the same shape):
 
-`INVALID_INPUT` and `OUTPUT_LIMIT` carry a structured `hint` alongside the
-existing `code`, `stage`, `message`, and `retryable` fields:
+- `search.output_too_large`
+- `web_crawl.output_too_large`
+- `web_images.output_too_large`
+- `web_news.output_too_large`
+- `web_research.output_too_large`
+- `web_map.output_too_large`
+- `web_answer.output_too_large`
+- `web_content.output_too_large` (and the related `web_content.binary_url` for PDF/image early-reject)
 
 ```json
 {

@@ -71,7 +71,7 @@ export interface WebResearchModuleOptions {
 
 export function assertResearchOutputWithinLimit(result: ResearchResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_research", "Research output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "web_research", "Research output exceeds the configured limit", false, undefined, { code: "web_research.output_too_large", text: "Lower maxOutputChars on the request, or narrow the research question so providers return shorter syntheses." });
   }
 }
 

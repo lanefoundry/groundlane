@@ -65,7 +65,7 @@ export interface WebMapModuleOptions {
 
 export function assertMapOutputWithinLimit(result: MapResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_map", "Map output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "web_map", "Map output exceeds the configured limit", false, undefined, { code: "web_map.output_too_large", text: "Lower maxOutputChars or reduce maxLinks so the map returns fewer discovered URLs." });
   }
 }
 

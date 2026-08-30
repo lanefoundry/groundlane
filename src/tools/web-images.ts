@@ -69,7 +69,7 @@ export interface WebImagesModuleOptions {
 
 export function assertImagesOutputWithinLimit(result: ImagesResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_images", "Images output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "web_images", "Images output exceeds the configured limit", false, undefined, { code: "web_images.output_too_large", text: "Lower maxOutputChars or reduce maxResults so the image index returns fewer entries." });
   }
 }
 

@@ -69,7 +69,7 @@ export interface WebAnswerModuleOptions {
 
 export function assertAnswerOutputWithinLimit(result: AnswerResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_answer", "Answer output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "web_answer", "Answer output exceeds the configured limit", false, undefined, { code: "web_answer.output_too_large", text: "Lower maxOutputChars on the request, or narrow the question so the cited answer is shorter." });
   }
 }
 

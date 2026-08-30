@@ -76,7 +76,7 @@ export interface WebCrawlModuleOptions {
 
 export function assertCrawlOutputWithinLimit(result: CrawlResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "web_crawl", "Crawl output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "web_crawl", "Crawl output exceeds the configured limit", false, undefined, { code: "web_crawl.output_too_large", text: "Lower maxOutputChars, reduce maxUrls, or narrow includePaths / patterns so the crawl visits fewer pages." });
   }
 }
 

@@ -67,7 +67,7 @@ export interface WebSearchModuleOptions {
 
 export function assertSearchOutputWithinLimit(result: SearchResult, maxOutputChars: number): void {
   if (Array.from(JSON.stringify(result)).length > maxOutputChars) {
-    throw new GroundlaneError("OUTPUT_LIMIT", "search", "Search output exceeds the configured limit");
+    throw new GroundlaneError("OUTPUT_LIMIT", "search", "Search output exceeds the configured limit", false, undefined, { code: "search.output_too_large", text: "Lower maxOutputChars on the request, or narrow your query (fewer terms, no site: filters) so each provider returns fewer hits." });
   }
 }
 
