@@ -183,6 +183,9 @@ void test("extractFields attaches hint to OUTPUT_LIMIT errors", () => {
       assert.fail("expected GroundlaneError-shaped throw");
     }
     assert.equal((error as { code: string }).code, "OUTPUT_LIMIT");
-    assert.match((error as { hint?: string }).hint ?? "", /Lower maxBytes/);
+    const hint = (error as { hint?: { code: string; text: string } }).hint;
+    if (!hint) assert.fail("expected hint");
+    assert.equal(hint.code, "extract.pattern.input_too_large");
+    assert.match(hint.text, /Lower maxBytes/);
   }
 });

@@ -42,7 +42,10 @@ function compilePattern(field: ExtractionField): RegExp {
       `Inline modifier flags ${inlineUnsupported.join("")} are not supported`,
       false,
       undefined,
-      "Use only i, s, m, u inline. Cross-line matching with '.': prefix (?s) or use [\\s\\S] in the pattern body.",
+      {
+        code: "extract.pattern.invalid_inline_modifier",
+        text: "Use only i, s, m, u inline. Cross-line matching with '.': prefix (?s) or use [\\s\\S] in the pattern body.",
+      },
     );
   }
   const explicitFlags = field.flags ?? "";
@@ -53,7 +56,10 @@ function compilePattern(field: ExtractionField): RegExp {
       "Pattern flags must be unique i, s, m, or u flags",
       false,
       undefined,
-      "Allowed: i (case-insensitive), s (dotAll / cross-line '.'), m (multiline), u (unicode). For cross-line matching use 's' or the (?s) inline modifier.",
+      {
+        code: "extract.pattern.invalid_flags",
+        text: "Allowed: i (case-insensitive), s (dotAll / cross-line '.'), m (multiline), u (unicode). For cross-line matching use 's' or the (?s) inline modifier.",
+      },
     );
   }
   const mergedFlags = (inlineFlags + explicitFlags).split("").filter((flag, index, all) => all.indexOf(flag) === index).join("");
@@ -66,7 +72,10 @@ function compilePattern(field: ExtractionField): RegExp {
       `Invalid pattern for field ${field.name}`,
       false,
       undefined,
-      "Check the regex with a local engine (regex101.com) — common causes: unbalanced groups, bad escape sequences, or incompatible flag combinations.",
+      {
+        code: "extract.pattern.compile_failed",
+        text: "Check the regex with a local engine (regex101.com) — common causes: unbalanced groups, bad escape sequences, or incompatible flag combinations.",
+      },
     );
   }
 }
@@ -80,7 +89,10 @@ function extractPatternValues(html: string, field: ExtractionField, limits: Extr
       "Pattern input exceeds the configured limit",
       false,
       undefined,
-      "Lower maxBytes on the request, or switch to a narrower selector field for HTML-only input.",
+      {
+        code: "extract.pattern.input_too_large",
+        text: "Lower maxBytes on the request, or switch to a narrower selector field for HTML-only input.",
+      },
     );
   }
   const pattern = compilePattern(field);
@@ -135,7 +147,10 @@ export function extractFields(html: string, fields: readonly ExtractionField[], 
       "Extracted output exceeds the configured limit",
       false,
       undefined,
-      "Lower maxOutputChars on the request, or reduce the number of fields / many: true values.",
+      {
+        code: "extract.output_too_large",
+        text: "Lower maxOutputChars on the request, or reduce the number of fields / many: true values.",
+      },
     );
   }
   return { data, missingFields, truncated: false };

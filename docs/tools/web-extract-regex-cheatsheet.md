@@ -12,7 +12,9 @@ without surprises.
 - The engine peels off an inline `(?...)` modifier so `(?is)line.+KEY=(\d+)` works.
 - Backrefs, lookaround, and nested quantifiers are rejected up-front — rewrite
   the pattern or split it across two fields.
-- Errors now carry a `hint` string telling you which input to adjust.
+- Errors carry a structured `hint` object: a stable machine-readable `code` plus
+  a `text` field. Consumers provide their own i18n via `localized` if they need
+  another language.
 
 ## Supported flag set
 
@@ -124,17 +126,23 @@ not parse DOM. Two `selector` fields (text + attribute) are simpler:
 
 ## Limits
 
-| Limit | Where enforced | Hint on overflow |
+| Limit | Where enforced | Hint code on overflow |
 |---|---|---|
-| Pattern length ≤ 500 chars | `compilePattern` | `Shorten the pattern or split across two fields.` |
-| `many: true` returns ≤ 100 matches per field | `extractPatternValues` | `Lower maxValuesPerField on the request, or split into narrower patterns.` |
-| Input HTML ≤ 1,000,000 chars | `extractPatternValues` | `Lower maxBytes on the request, or switch to a narrower selector field.` |
-| Total extracted output ≤ `maxOutputChars` | `extractFields` | `Lower maxOutputChars on the request, or reduce the number of fields.` |
+| Pattern length ≤ 500 chars | `compilePattern` | (no specific code) |
+| `many: true` returns ≤ 100 matches per field | `extractPatternValues` | (truncates silently today) |
+| Input HTML ≤ 1,000,000 chars | `extractPatternValues` | `extract.pattern.input_too_large` |
+| Total extracted output ≤ `maxOutputChars` | `extractFields` | `extract.output_too_large` |
+
+Other `extract.pattern.*` codes:
+
+- `extract.pattern.invalid_inline_modifier` — `(?x)` or other inline flag not in `[imus]`.
+- `extract.pattern.invalid_flags` — explicit `flags` rejected by the schema or duplicate.
+- `extract.pattern.compile_failed` — pattern parsed by JS regex engine as malformed.
 
 ## Error envelope
 
-Both `INVALID_INPUT` and `OUTPUT_LIMIT` now surface a `hint` string alongside
-the existing `code`, `stage`, `message`, and `retryable` fields:
+`INVALID_INPUT` and `OUTPUT_LIMIT` carry a structured `hint` alongside the
+existing `code`, `stage`, `message`, and `retryable` fields:
 
 ```json
 {
@@ -142,14 +150,41 @@ the existing `code`, `stage`, `message`, and `retryable` fields:
   "error": {
     "code": "INVALID_INPUT",
     "stage": "extract",
-    "message": "Invalid pattern for field prices",
+    "message": "Pattern flags must be unique i, s, m, or u flags",
     "retryable": false,
-    "hint": "Check the regex with a local engine (regex101.com) — common causes: unbalanced groups, bad escape sequences, or incompatible flag combinations."
+    "hint": {
+      "code": "extract.pattern.invalid_flags",
+      "text": "Allowed: i (case-insensitive), s (dotAll / cross-line '.'), m (multiline), u (unicode). For cross-line matching use 's' or the (?s) inline modifier."
+    }
   }
 }
 ```
 
-`hint` is the operator-facing remediation. Read it before retrying.
+### `hint` field shape
+
+| Field | Type | Meaning |
+|---|---|---|
+| `code` | string | Stable machine-readable identifier. Use this for branching, telemetry, or i18n lookup. |
+| `text` | string | Default (en-US) human-readable explanation. Treat as fallback when no `localized` match. |
+| `localized` | object? | Optional map of BCP-47 locale tag to translated message. Populated by the operator (e.g. README translation, hosted dashboard) — not by Groundlane itself. |
+
+### Localization
+
+Groundlane ships only the en-US `text` field. To render a different language:
+
+1. Take the `hint.code` from the error.
+2. Look it up in your own translation table.
+3. If the table has a match for the active locale, use it.
+4. Otherwise fall back to `hint.text`.
+
+This keeps the protocol small and lets each consumer pick its own language
+without Groundlane having to bundle a translation runtime.
+
+```ts
+function renderHint(hint: { code: string; text: string; localized?: Record<string, string> }, locale: string): string {
+  return hint.localized?.[locale] ?? hint.text;
+}
+```
 
 ## Debugging tips
 
@@ -165,6 +200,9 @@ the existing `code`, `stage`, `message`, and `retryable` fields:
 4. If you see `OUTPUT_LIMIT` for pattern input, the HTML body was too large —
    use `selector` fields to narrow what arrives at the pattern engine, or
    lower `maxBytes` on the request.
+5. If the error envelope shows a `hint.code`, look it up in this cheatsheet
+   first. The code is more stable than `text` and is the right key for
+   automated branching.
 
 ## What the engine does NOT do
 

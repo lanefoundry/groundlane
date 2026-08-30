@@ -4,12 +4,21 @@ import { toGroundlaneError } from "../core/errors.js";
 import type { ConcurrencyLimiter, Deadline } from "../core/limits.js";
 import { structuredToolError } from "../mcp/results.js";
 
+// Public wire shape for the error hint. Code + text are required; localized is
+// optional and only present when an operator has registered translations for
+// the code.
+export const publicHintSchema = z.object({
+  code: z.string().min(1),
+  text: z.string().min(1),
+  localized: z.record(z.string(), z.string()).optional(),
+});
+
 export const publicErrorSchema = z.object({
   code: z.string(),
   stage: z.string(),
   message: z.string(),
   retryable: z.boolean(),
-  hint: z.string().optional(),
+  hint: publicHintSchema.optional(),
 });
 
 export function resultEnvelopeSchema<T extends z.ZodType>(dataSchema: T) {

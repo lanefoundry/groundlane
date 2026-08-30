@@ -75,12 +75,15 @@ void test("web_content rejects .pdf URLs early with hint pointing to web_fetch",
   }
   const envelope = (result as { structuredContent?: unknown }).structuredContent as {
     ok?: boolean;
-    error?: { code?: string; hint?: string; message?: string };
+    error?: { code?: string; hint?: { code: string; text: string }; message?: string };
   };
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error?.code, "INVALID_INPUT");
   assert.match(envelope.error?.message ?? "", /\.pdf/);
-  assert.match(envelope.error?.hint ?? "", /web_fetch/);
+  const pdfHint = envelope.error?.hint;
+  if (!pdfHint) assert.fail("expected hint");
+  assert.equal(pdfHint.code, "web_content.binary_url");
+  assert.match(pdfHint.text, /web_fetch/);
 });
 
 void test("web_content attaches hint to OUTPUT_LIMIT errors", () => {
@@ -102,7 +105,10 @@ void test("web_content attaches hint to OUTPUT_LIMIT errors", () => {
       assert.fail("expected GroundlaneError-shaped throw");
     }
     assert.equal((error as { code: string }).code, "OUTPUT_LIMIT");
-    assert.match((error as { hint?: string }).hint ?? "", /maxContentChars/);
+    const hint = (error as { hint?: { code: string; text: string } }).hint;
+    if (!hint) assert.fail("expected hint");
+    assert.equal(hint.code, "web_content.output_too_large");
+    assert.match(hint.text, /maxContentChars/);
   }
 });
 

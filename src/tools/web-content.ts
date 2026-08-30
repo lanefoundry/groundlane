@@ -76,7 +76,10 @@ export function assertContentOutputWithinLimit(result: ContentResult, maxOutputC
       "Content output exceeds the configured limit",
       true,
       undefined,
-      "Lower maxContentChars, drop to a single provider, or switch strategy to 'fallback'. The current call aggregated output from multiple providers which exceeded the bound.",
+      {
+        code: "web_content.output_too_large",
+        text: "Lower maxContentChars, drop to a single provider, or switch strategy to 'fallback'. The current call aggregated output from multiple providers which exceeded the bound.",
+      },
     );
   }
 }
@@ -105,7 +108,10 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
                 `URL targets a binary resource (${binarySuffix}); web_content cannot parse it`,
                 false,
                 undefined,
-                "Use web_fetch for HTML pages, or download the file directly with curl + local OCR / image tooling for PDFs and images.",
+                {
+                  code: "web_content.binary_url",
+                  text: "Use web_fetch for HTML pages, or download the file directly with curl + local OCR / image tooling for PDFs and images.",
+                },
               );
             }
             const result = await withConcurrency(
