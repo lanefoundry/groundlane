@@ -117,7 +117,7 @@ export function createWebMapModule(options: WebMapModuleOptions): McpModule {
             assertMapOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "map" });
           }
         },
       );

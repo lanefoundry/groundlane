@@ -121,7 +121,7 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
             };
             return structuredToolResult({ ok: true, data });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "fetch" });
           }
         },
       );

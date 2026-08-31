@@ -122,7 +122,7 @@ export function createWebResearchModule(options: WebResearchModuleOptions): McpM
             assertResearchOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "research" });
           }
         },
       );

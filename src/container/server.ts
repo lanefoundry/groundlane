@@ -14,14 +14,24 @@ export interface RunningContainerServer {
   shutdown(signal: NodeJS.Signals): Promise<void>;
 }
 
+export interface StartContainerOptions {
+  /** When provided, the container wires this Analytics Engine writer into
+   *  the toolError sink. Omit on platforms without Analytics Engine. */
+  errorLogWriter?: {
+    writeDataPoint(event: { blobs?: readonly string[]; doubles?: readonly number[]; indexes?: readonly string[] }): void;
+  };
+}
+
 export function startContainerServer(
   port: number = Number(process.env.PORT ?? DEFAULT_PORT),
+  options: StartContainerOptions = {},
 ): RunningContainerServer {
   const config = parseConfig(process.env);
   const services = createGroundlaneServices(config);
   const app = createContainerApp({
     authToken: config.authToken,
     registryFactory: services.registryFactory,
+    ...(options.errorLogWriter === undefined ? {} : { errorLogWriter: options.errorLogWriter }),
   });
   const server = app.listen(port, "0.0.0.0", () => {
     console.log(

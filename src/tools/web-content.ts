@@ -140,7 +140,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
             assertContentOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "content" });
           }
         },
       );

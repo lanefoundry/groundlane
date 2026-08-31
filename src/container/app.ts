@@ -7,6 +7,8 @@ import express, {
 } from "express";
 import { timingSafeEqual } from "node:crypto";
 
+import { CloudflareErrorSink, type ErrorLogSink } from "../core/error-log.js";
+import { setErrorLogSink } from "../tools/common.js";
 import { hasValidBearerToken } from "../worker/auth.js";
 import { createMcpHttpHandler } from "../mcp/server.js";
 import {
@@ -42,6 +44,15 @@ const nodeTimingSafeSubtle = {
 export interface ContainerAppOptions {
   authToken?: string | undefined;
   registryFactory?: McpRegistryFactory | undefined;
+  /**
+   * Analytics Engine dataset the container writes error events to. When
+   * omitted, the container runs with the noop sink and nothing is recorded
+   * server-side. Clients should still record their own view with
+   * examples/groundlane-debug.ts.
+   */
+  errorLogWriter?: {
+    writeDataPoint(event: { blobs?: readonly string[]; doubles?: readonly number[]; indexes?: readonly string[] }): void;
+  } | undefined;
 }
 
 function asyncHandler(
@@ -84,7 +95,13 @@ function errorBody(
   });
 }
 
+function buildSink(options: ContainerAppOptions): ErrorLogSink {
+  if (options.errorLogWriter === undefined) return { record: () => undefined };
+  return new CloudflareErrorSink(options.errorLogWriter);
+}
+
 export function createContainerApp(options: ContainerAppOptions = {}): express.Express {
+  setErrorLogSink(buildSink(options));
   const app = express();
   const authToken = options.authToken ?? process.env.GROUNDLANE_AUTH_TOKEN ?? "";
   const registryFactory =

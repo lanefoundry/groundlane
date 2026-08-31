@@ -45,7 +45,7 @@ export function createProviderCapabilitiesModule(): McpModule {
               data: { providers: providerCapabilities(providers) },
             });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "provider_capabilities" });
           }
         },
       );

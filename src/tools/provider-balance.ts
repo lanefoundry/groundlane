@@ -97,7 +97,7 @@ export function createProviderBalanceModule(options: ProviderBalanceModuleOption
               data: { checkedAt: new Date().toISOString(), results },
             });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "provider_balance" });
           }
         },
       );

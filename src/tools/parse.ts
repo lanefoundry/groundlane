@@ -170,7 +170,7 @@ export function createParseModule(options: ParseModuleOptions): McpModule {
             };
             return structuredToolResult({ ok: true, data });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "parse" });
           }
         },
       );

@@ -78,7 +78,7 @@ export function createSearchBudgetStatusModule(
               },
             });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "search_budget_status" });
           }
         },
       );

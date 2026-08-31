@@ -234,7 +234,7 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
               },
             });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "provider_quota" });
           }
         },
       );

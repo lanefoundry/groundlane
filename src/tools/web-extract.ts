@@ -154,7 +154,7 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
             };
             return structuredToolResult({ ok: true, data });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "extract" });
           }
         },
       );

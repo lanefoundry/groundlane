@@ -184,6 +184,8 @@ export class ContentRouter {
         "web_content",
         "All selected content providers were unavailable",
         true,
+        undefined,
+        hint("web_content.all_providers_failed", "Every selected provider errored. Inspect the warnings field for per-provider failure reasons. Try a different provider, add credentials, or wait for upstream to recover."),
       );
     }
     return {

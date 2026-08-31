@@ -20,6 +20,12 @@ declare global {
       SERPER_API_KEY?: string;
       YOU_API_KEY?: string;
       BROWSERLESS_TOKEN?: string;
+      /** Cloudflare Analytics Engine dataset for groundlane error events. */
+      ERROR_LOG?: AnalyticsEngineDataset;
+      /** Cloudflare account ID for SQL query API access. */
+      ERROR_LOG_ACCOUNT_ID?: string;
+      /** Cloudflare API token with Analytics Engine read scope. */
+      ERROR_LOG_API_TOKEN?: string;
     }
   }
 

@@ -114,7 +114,7 @@ export function createWebNewsModule(options: WebNewsModuleOptions): McpModule {
             assertNewsOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "news" });
           }
         },
       );

@@ -119,7 +119,7 @@ export function createWebAnswerModule(options: WebAnswerModuleOptions): McpModul
             assertAnswerOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "answer" });
           }
         },
       );

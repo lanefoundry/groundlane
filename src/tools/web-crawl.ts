@@ -131,7 +131,7 @@ export function createWebCrawlModule(options: WebCrawlModuleOptions): McpModule 
             assertCrawlOutputWithinLimit(result, options.maxOutputChars);
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
-            return toolError(error);
+            return toolError(error, { tool: "crawl" });
           }
         },
       );

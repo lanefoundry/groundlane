@@ -74,7 +74,9 @@ import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
-
+import { createErrorLogModule } from "./tools/error-log.js";
+import { getErrorLogSink } from "./tools/common.js";
+import { NoopErrorSink } from "./core/error-log.js";
 export interface GroundlaneServices {
   registryFactory: McpRegistryFactory;
   close(): Promise<void>;
@@ -385,6 +387,10 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       requestTimeoutMs: config.requestTimeoutMs,
       maxResponseBytes: config.maxResponseBytes,
       maxOutputChars: config.maxOutputChars,
+    }),
+    createErrorLogModule({
+      sink: getErrorLogSink() ?? new NoopErrorSink(),
+      cloudflareQuery: undefined,
     }),
   ];
 
