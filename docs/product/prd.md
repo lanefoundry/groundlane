@@ -596,16 +596,16 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 
 ### Fetch 與 browser fallback
 
-- [ ] SSR fixture 走 `engine=http`。
+- [x] SSR fixture 走 `engine=http`。
 - [x] Jina 啟用時，符合條件的 Markdown fallback 走 `engine=reader, backend=jina`。
 - [x] JS/wait fixture 在 `render=auto` 以可觀測 reason 走 `engine=browser`。
-- [ ] `render=never` 在同一 fixture 不啟動 browser。
+- [x] `render=never` 在同一 fixture 不啟動 browser。
 - [x] generic 4xx 不觸發 browser retry。
-- [ ] redirect、byte cap、output truncation、cancel 與 shared deadline 有測試；MVP `cached` 固定為 `false`。
+- [x] redirect、byte cap、output truncation、cancel 與 shared deadline 有測試；MVP `cached` 固定為 `false`。
 
 ### Search routing
 
-- [ ] Explicit provider、auto order、capability selection、missing key、provider-rejection fallback 與 explicit-provider no-fallback 有 deterministic fake-adapter tests。
+- [x] Explicit provider、auto order、capability selection、missing key、provider-rejection fallback 與 explicit-provider no-fallback 有 deterministic fake-adapter tests。
 - [x] 所有結果符合 normalized schema 並保留 selected provider。
 - [x] 預設 CI 不呼叫真實 provider。
 
@@ -630,7 +630,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 
 - [x] `web_answer` 對 Linkup/You.com keyed paths 有 request mapping、source/citation normalization、unsupported filters、quota/rate-limit 與 malformed response tests。
 - [x] `web_answer` 的 parallel fan-out 保留 provider attribution；fallback mode 只消耗第一個成功 provider，partial failure 以 sanitized warnings 呈現。
-- [ ] `web_research` 對 Linkup async task、You.com Research 與 Parallel Responses 有 fake-based polling、source controls、citation extraction、failed task 與 cancellation tests。
+- [x] `web_research` 對 Linkup async task、You.com Research 與 Parallel Responses 有 fake-based polling、source controls、citation extraction、failed task 與 cancellation tests。
 - [ ] Research output 不做 hidden synthesis；deterministic citation/URL dedupe 不得改寫 provider report，多 provider 結果必須分開回傳，並保留 provider、status、sources、failed sources 與 warning provenance。
 - [x] 短時間 research 與不支援 MCP Tasks 的 client 保持現有同步 `web_research` contract；不得為加入 async path 破壞既有 caller。
 - [ ] MCP Tasks 或相容性 async tools 實作前，必須以可重跑的 target-client matrix 驗證 capability negotiation、create、poll、result、cancel 與斷線續查；不得只由 SDK types 推論 client 支援。
