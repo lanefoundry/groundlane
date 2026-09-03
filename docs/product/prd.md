@@ -631,7 +631,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [x] `web_answer` 對 Linkup/You.com keyed paths 有 request mapping、source/citation normalization、unsupported filters、quota/rate-limit 與 malformed response tests。
 - [x] `web_answer` 的 parallel fan-out 保留 provider attribution；fallback mode 只消耗第一個成功 provider，partial failure 以 sanitized warnings 呈現。
 - [x] `web_research` 對 Linkup async task、You.com Research 與 Parallel Responses 有 fake-based polling、source controls、citation extraction、failed task 與 cancellation tests。
-- [ ] Research output 不做 hidden synthesis；deterministic citation/URL dedupe 不得改寫 provider report，多 provider 結果必須分開回傳，並保留 provider、status、sources、failed sources 與 warning provenance。
+- [x] Research output 不做 hidden synthesis；deterministic citation/URL dedupe 不得改寫 provider report，多 provider 結果必須分開回傳，並保留 provider、status、sources、failed sources 與 warning provenance。
 - [x] 短時間 research 與不支援 MCP Tasks 的 client 保持現有同步 `web_research` contract；不得為加入 async path 破壞既有 caller。
 - [ ] MCP Tasks 或相容性 async tools 實作前，必須以可重跑的 target-client matrix 驗證 capability negotiation、create、poll、result、cancel 與斷線續查；不得只由 SDK types 推論 client 支援。
 - [ ] Async lifecycle 必須定義 caller ownership、TTL/expiry、provider job mapping、credential binding、status/result、upstream cancel capability、billing provenance 與 sanitized errors，並區分 caller 停止等待、Groundlane 取消 polling 與 upstream job 真正取消。
@@ -690,7 +690,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 
 ### Diagnostics、budget 與 configuration
 
-- [ ] Phase 0 `provider_capabilities` static matrix 必須和 public schema、adapter registry、composition 與 docs 同步；registry refactor 後改由 registrations 產生並以 snapshot 固定，不呼叫 live provider discovery。
+- [x] Phase 0 `provider_capabilities` static matrix 必須和 public schema、adapter registry、composition 與 docs 同步；registry refactor 後改由 registrations 產生並以 snapshot 固定，不呼叫 live provider discovery。
 - [x] `provider_balance` 只呼叫已實作且有 credential 的官方 balance APIs；不得在 error/warning/log/test snapshot 洩漏 secrets 或 raw provider payload。
 - [x] `provider_quota` 必須明確分開 account balance、Groundlane local attempt budgets、capability support、keyless availability 與 recommended next checks。
 - [x] `search_budget_status` 必須標明 instance-local、UTC reset、非 provider billing truth；daily/monthly/minute budgets 有 deterministic reset/cap tests。
@@ -737,7 +737,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [x] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` 全部通過。
 - [x] Cloudflare deployment 文件與實際 Wrangler/Container contract 一致，並完成 controlled-fixture smoke test。
 - [ ] 每次 user-visible tool/config/workflow 變更都同步更新 `README.md`、`README.zh-TW.md` 與相關 docs；若不需更新，final report 必須說明原因。
-- [ ] Browser diagnostics 預設只回 decision reason、stage timing、blocked-subrequest 與 bounded console/network failure metadata；screenshot、snapshot、trace 或 HAR 必須 explicit opt-in、受 byte/time/retention 限制，且不得回傳 headers、cookies、secrets 或 raw response body。
+- [x] Browser diagnostics 預設只回 decision reason、stage timing、blocked-subrequest 與 bounded console/network failure metadata；screenshot、snapshot、trace 或 HAR 必須 explicit opt-in、受 byte/time/retention 限制，且不得回傳 headers、cookies、secrets 或 raw response body。
 - [x] Cloudflare binding types、Workflows、Queues、Durable Objects、D1、R2、Browser Run 與 observability integrations 不得進入 provider-neutral runtime contract；core contract tests 不需 Cloudflare account 或 live bindings。
 - [x] Worker 與 Container 若同時提供 retrieval/provider execution path，必須共用或以 contract tests 證明 URL policy、deadline/cancellation、limits、sanitized errors 與 provenance 語意一致。
 - [ ] Durable job retry 對 provider task creation、付費 upstream call 與 artifact writes 有 idempotency/replay tests；沒有 provider acknowledgment 時不得宣稱 upstream cancel 成功。
