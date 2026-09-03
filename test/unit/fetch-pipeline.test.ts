@@ -511,6 +511,51 @@ void test("FetchPipeline resolves Markdown through scoped llms.txt when direct c
   assert.match(result.content, /Account API overview/u);
 });
 
+void test("FetchPipeline preserves finalUrl when HTTP fetcher follows a redirect", async () => {
+  const http: HttpFetcher = {
+    fetch: () => Promise.resolve({
+      requestedUrl: "https://example.com/old",
+      finalUrl: "https://example.com/new",
+      status: 200,
+      headers: {},
+      contentType: "text/html",
+      body: new TextEncoder().encode("<main>Redirected content.</main>"),
+      engine: "http",
+      backend: "direct",
+    }),
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser).fetch({ url: "https://example.com/old", format: "text", render: "never", maxBytes: 1_000, maxOutputChars: 1_000, maxRedirects: 3, deadline: new Deadline(1_000) });
+  assert.equal(result.raw.requestedUrl, "https://example.com/old");
+  assert.equal(result.raw.finalUrl, "https://example.com/new");
+  assert.equal(result.raw.status, 200);
+});
+
+void test("FetchPipeline passes maxBytes to the HTTP fetcher and reflects the bounded body size", async () => {
+  const maxBytes = 64;
+  const cappedBody = "A".repeat(maxBytes);
+  let receivedMaxBytes = 0;
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      receivedMaxBytes = request.maxBytes;
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: {},
+        contentType: "text/html",
+        body: new TextEncoder().encode(cappedBody),
+        engine: "http",
+        backend: "direct",
+      });
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser).fetch({ url: "https://example.com", format: "text", render: "never", maxBytes, maxOutputChars: 1_000, maxRedirects: 3, deadline: new Deadline(1_000) });
+  assert.equal(receivedMaxBytes, maxBytes);
+  assert.equal(result.bytes, maxBytes);
+});
+
 void test("validateFetchPipelineRequest enforces byte, output, redirect and selector bounds", () => {
   const base = { url: "https://example.com", format: "text" as const, render: "never" as const, maxBytes: 1_000, maxOutputChars: 1_000, maxRedirects: 3, deadline: new Deadline(1_000) };
   assert.doesNotThrow(() => validateFetchPipelineRequest(base));
