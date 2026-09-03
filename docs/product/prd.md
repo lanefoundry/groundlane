@@ -589,25 +589,25 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 
 ### MCP 與工具契約
 
-- [ ] Phase 0/MVP client 可 initialize、list tools，且只看到已註冊的 Groundlane stateless tools 與 provider diagnostics；未來 stateful tool family 啟用時必須另有 capability/version gate 與 schema snapshot。
+- [x] Phase 0/MVP client 可 initialize、list tools，且只看到已註冊的 Groundlane stateless tools 與 provider diagnostics；未來 stateful tool family 啟用時必須另有 capability/version gate 與 schema snapshot。
 - [ ] 每個工具至少有 success、invalid input、deadline、limit 與 upstream failure contract test。
-- [ ] MCP text content 與 `structuredContent` 表達同一結果，供不同 client 相容使用。
-- [ ] error codes 與 schema 由測試固定，raw exception 不外洩。
+- [x] MCP text content 與 `structuredContent` 表達同一結果，供不同 client 相容使用。
+- [x] error codes 與 schema 由測試固定，raw exception 不外洩。
 
 ### Fetch 與 browser fallback
 
 - [ ] SSR fixture 走 `engine=http`。
-- [ ] Jina 啟用時，符合條件的 Markdown fallback 走 `engine=reader, backend=jina`。
-- [ ] JS/wait fixture 在 `render=auto` 以可觀測 reason 走 `engine=browser`。
+- [x] Jina 啟用時，符合條件的 Markdown fallback 走 `engine=reader, backend=jina`。
+- [x] JS/wait fixture 在 `render=auto` 以可觀測 reason 走 `engine=browser`。
 - [ ] `render=never` 在同一 fixture 不啟動 browser。
-- [ ] generic 4xx 不觸發 browser retry。
+- [x] generic 4xx 不觸發 browser retry。
 - [ ] redirect、byte cap、output truncation、cancel 與 shared deadline 有測試；MVP `cached` 固定為 `false`。
 
 ### Search routing
 
 - [ ] Explicit provider、auto order、capability selection、missing key、provider-rejection fallback 與 explicit-provider no-fallback 有 deterministic fake-adapter tests。
-- [ ] 所有結果符合 normalized schema 並保留 selected provider。
-- [ ] 預設 CI 不呼叫真實 provider。
+- [x] 所有結果符合 normalized schema 並保留 selected provider。
+- [x] 預設 CI 不呼叫真實 provider。
 
 ### Provider registry 與 operator-hosted bridge
 
@@ -616,49 +616,49 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [ ] Registration 拒絕 duplicate/reserved/invalid IDs、unknown protocol、沒有 runtime adapter 的 capability、空 endpoint、manifest 內 secret value/env name，以及 capability/config 不一致；`custom.` ID 到專用 secret binding 的推導與 reserved-name denylist 有 tests。
 - [ ] `groundlane-provider-v1` 第一版只 expose search；未宣告或尚未支援的 content/crawl/research/balance operation 在 dispatch 前回穩定 capability error，不呼叫 upstream。
 - [ ] Operator-hosted base URL 只從 build/deploy manifest 取得並通過 operator endpoint allowlist；caller 不能傳入或覆寫 provider endpoint、auth token、headers、redirect policy 或 transport。
-- [ ] HTTP bridge 不轉送 caller authorization/cookies/任意 headers；provider secret 只從 provider ID 推導的專用 binding 讀取，且不得出現在 logs、warnings、errors、snapshots 或 provenance。
+- [x] HTTP bridge 不轉送 caller authorization/cookies/任意 headers；provider secret 只從 provider ID 推導的專用 binding 讀取，且不得出現在 logs、warnings、errors、snapshots 或 provenance。
 - [ ] Worker→Container 只轉送已註冊 `custom.` ID 對應的 `GROUNDLANE_CUSTOM_PROVIDER_*_TOKEN` bindings；generic adapter 只能依自身 provider ID 取得單一 secret，不能讀取 Groundlane auth、built-in provider、browser/reader secrets 或任意 `process.env` entry。
 - [ ] Worker binding allowlist 與 Container registry 由同一份 canonical manifest artifact 產生並驗證相同 schema version/digest；任何 mismatch、stale artifact 或第二份手寫 ID-to-binding mapping 都會使 deployment/readiness fail closed。
-- [ ] Bridge 共用 Groundlane deadline/AbortSignal、request/result/byte limits 與 sanitized errors；redirect 預設拒絕，若未來允許則至少限制 same-origin 並重新驗證目的地。
+- [x] Bridge 共用 Groundlane deadline/AbortSignal、request/result/byte limits 與 sanitized errors；redirect 預設拒絕，若未來允許則至少限制 same-origin 並重新驗證目的地。
 - [ ] Custom provider 預設 disabled 且 daily/monthly budget 為 0；只有明確 enable 與正數 budget 才能 dispatch。第一版 explicit provider 與 explicit `providers[] + strategy=fallback` 有 success/exhausted tests，`auto`/`balanced`/`deep` 必須排除 custom provider。
 - [ ] `domainFilter` 五種模式、`maxDomains`、combined include/exclude、timeRange support 與 deployment cap precedence 有 deterministic validation tests；unsupported combination 在呼叫 upstream 前拒絕。
-- [ ] Malformed JSON、unknown fields rejection、missing required fields、oversized response、unsafe result URL、429/quota、5xx、timeout 與 cancellation 有 deterministic fake-server tests。
+- [x] Malformed JSON、unknown fields rejection、missing required fields、oversized response、unsafe result URL、429/quota、5xx、timeout 與 cancellation 有 deterministic fake-server tests。
 - [ ] `web_search.providerDetails[]` 以 optional、backward-compatible schema 加入 contract versioning 與 schema snapshot；operator-hosted attempt 一旦啟用即必須包含 stable provider ID、`backend=http-compatible`、`ownership=operator-hosted` 與 protocol version，不得包含 endpoint/secret reference，也不得標示成 built-in provider。
-- [ ] 預設 CI 使用本機 fake HTTP service，不需要 live operator endpoint、Cloudflare account、provider key 或外網。
+- [x] 預設 CI 使用本機 fake HTTP service，不需要 live operator endpoint、Cloudflare account、provider key 或外網。
 
 ### Answer 與 research
 
-- [ ] `web_answer` 對 Linkup/You.com keyed paths 有 request mapping、source/citation normalization、unsupported filters、quota/rate-limit 與 malformed response tests。
-- [ ] `web_answer` 的 parallel fan-out 保留 provider attribution；fallback mode 只消耗第一個成功 provider，partial failure 以 sanitized warnings 呈現。
+- [x] `web_answer` 對 Linkup/You.com keyed paths 有 request mapping、source/citation normalization、unsupported filters、quota/rate-limit 與 malformed response tests。
+- [x] `web_answer` 的 parallel fan-out 保留 provider attribution；fallback mode 只消耗第一個成功 provider，partial failure 以 sanitized warnings 呈現。
 - [ ] `web_research` 對 Linkup async task、You.com Research 與 Parallel Responses 有 fake-based polling、source controls、citation extraction、failed task 與 cancellation tests。
 - [ ] Research output 不做 hidden synthesis；deterministic citation/URL dedupe 不得改寫 provider report，多 provider 結果必須分開回傳，並保留 provider、status、sources、failed sources 與 warning provenance。
-- [ ] 短時間 research 與不支援 MCP Tasks 的 client 保持現有同步 `web_research` contract；不得為加入 async path 破壞既有 caller。
+- [x] 短時間 research 與不支援 MCP Tasks 的 client 保持現有同步 `web_research` contract；不得為加入 async path 破壞既有 caller。
 - [ ] MCP Tasks 或相容性 async tools 實作前，必須以可重跑的 target-client matrix 驗證 capability negotiation、create、poll、result、cancel 與斷線續查；不得只由 SDK types 推論 client 支援。
 - [ ] Async lifecycle 必須定義 caller ownership、TTL/expiry、provider job mapping、credential binding、status/result、upstream cancel capability、billing provenance 與 sanitized errors，並區分 caller 停止等待、Groundlane 取消 polling 與 upstream job 真正取消。
 
 ### Provider content、map、crawl、news、images
 
-- [ ] `web_content` 對 Linkup、You.com、Exa、Tavily、Firecrawl、TinyFish、Keenable 的 endpoint shape、auth header、selector/filter support、malformed response 與 unsafe provider-returned URL 有 tests。
-- [ ] `web_map` 與 `web_crawl` 對 Firecrawl/Tavily 的 request mapping、page/result caps、dedupe、unsafe URL drop、polling/cancellation 與 quota errors 有 tests。
-- [ ] `web_news` 與 `web_images` 對 Brave、Serper、SerpApi 的 vertical endpoint、domain/time filters、image/source URL validation、dedupe 與 provider attribution 有 tests。
-- [ ] Provider-backed tools 的 `parallel`、`fallback` 與 explicit-provider behavior 必須各有 partial success、all-failed、non-retryable error 與 warning sanitization coverage。
+- [x] `web_content` 對 Linkup、You.com、Exa、Tavily、Firecrawl、TinyFish、Keenable 的 endpoint shape、auth header、selector/filter support、malformed response 與 unsafe provider-returned URL 有 tests。
+- [x] `web_map` 與 `web_crawl` 對 Firecrawl/Tavily 的 request mapping、page/result caps、dedupe、unsafe URL drop、polling/cancellation 與 quota errors 有 tests。
+- [x] `web_news` 與 `web_images` 對 Brave、Serper、SerpApi 的 vertical endpoint、domain/time filters、image/source URL validation、dedupe 與 provider attribution 有 tests。
+- [x] Provider-backed tools 的 `parallel`、`fallback` 與 explicit-provider behavior 必須各有 partial success、all-failed、non-retryable error 與 warning sanitization coverage。
 - [ ] Durable crawl contract 若被啟用，必須提供 provider-neutral create/status/result/cancel、owner binding、credential binding、expiry、pagination、partial result、total page/byte/output budgets 與 upstream cancel evidence；owner mismatch、expired/unknown job 與 sanitized upstream failures 必須有 deterministic tests，不得只回裸露的 provider job ID。
 - [ ] Caller cancellation、停止 Groundlane polling 與 upstream crawl cancellation 必須是不同狀態；沒有 provider acknowledgment 或等價證據時，不得回報 upstream job 已取消。
 
 ### Extraction
 
-- [ ] selector engine 的 text、HTML、attribute、many、missing、invalid selector、duplicate field name 與 total output limit 有 fixture tests。
-- [ ] pattern engine 的 named/numbered group、many、missing、invalid flags、invalid regex、高風險 regex 語法、input size cap、match cap 與 total output limit 有 tests。
-- [ ] 相同 fixture/input 的結果 deterministic。
-- [ ] extract 與 fetch 共用 URL policy、render control 與 deadline。
+- [x] selector engine 的 text、HTML、attribute、many、missing、invalid selector、duplicate field name 與 total output limit 有 fixture tests。
+- [x] pattern engine 的 named/numbered group、many、missing、invalid flags、invalid regex、高風險 regex 語法、input size cap、match cap 與 total output limit 有 tests。
+- [x] 相同 fixture/input 的結果 deterministic。
+- [x] extract 與 fetch 共用 URL policy、render control 與 deadline。
 - [ ] Provider-backed schema extraction 第一版限單一已知 URL 與 caller-provided bounded schema，拒絕 remote `$ref`、無界 nested structures 與隱含 deterministic-to-model fallback；必須 explicit opt-in、在 Groundlane 本機驗證 output，回傳 missing/invalid fields 與 provider/model/source/billing provenance。
 - [ ] Provider-backed schema extraction 進入 production routing 前，必須保存 machine-readable repeatability、field accuracy、missing/invalid correctness、latency、output size 與 billed-unit benchmark；provider product availability 本身不算 Groundlane user-demand proof。
 
 ### Parser 與 document processing
 
-- [ ] `parse` 的 URL mode 共用 `web_fetch` retrieval、安全、deadline 與 output caps；raw HTML mode 不連網，且必須要求 HTTP(S) `baseUrl`。
-- [ ] HTML parser 的 `document`、`metadata`、`links`、`media`、`tables`、`all` purposes 有 unit/contract tests，並固定 unsafe URL scheme drop、relative URL resolution、table bounds 與 title heuristic。
-- [ ] Parser benchmark 至少追蹤 required text、noise rejection、metadata、links、images、tables、latency 與 failures；新增 parser engine 前需補 corpus 或說明既有 corpus 足夠。
+- [x] `parse` 的 URL mode 共用 `web_fetch` retrieval、安全、deadline 與 output caps；raw HTML mode 不連網，且必須要求 HTTP(S) `baseUrl`。
+- [x] HTML parser 的 `document`、`metadata`、`links`、`media`、`tables`、`all` purposes 有 unit/contract tests，並固定 unsafe URL scheme drop、relative URL resolution、table bounds 與 title heuristic。
+- [x] Parser benchmark 至少追蹤 required text、noise rejection、metadata、links、images、tables、latency 與 failures；新增 parser engine 前需補 corpus 或說明既有 corpus 足夠。
 - [ ] PDF/OCR/Office document processing 仍未實作；實作前需先定義 input kind、byte/page/time limits、sandbox/file permission boundary、confidence/source spans、model artifact policy 與 fallback metadata。
 - [ ] 現有 `parse` 與所有 document-processing operation 預設只回傳 normalized output 或 explicit artifact；只有 caller 明確呼叫 corpus enrollment operation，才可建立 persistent source membership 或觸發 index sync。未來 file/document tool family 可依公開 policy 使用 transient processing cache，但不得把 cache entry 標示成 durable ArtifactRef 或 corpus source。
 - [ ] Portable `DocumentSource` 是 tagged union：`inline` 只接受 bounded bytes、declared MIME 與 filename metadata；`url` 只接受經既有 SSRF/DNS/redirect/deadline policy 驗證的 public HTTP(S) URL；`artifact` 只接受由目前 portable ownership scope 可讀的 Groundlane-issued opaque `ArtifactRef`。V1 ownership scope 是 deployment/default owner scope；Managed Cloud 才映射到 tenant/project，不能以 `credentialId` 冒充 owner/project。Remote schema 不接受 caller local path、任意 filesystem path、caller-selected bucket/object key、storage credential 或帶 credential URL。
@@ -691,22 +691,22 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 ### Diagnostics、budget 與 configuration
 
 - [ ] Phase 0 `provider_capabilities` static matrix 必須和 public schema、adapter registry、composition 與 docs 同步；registry refactor 後改由 registrations 產生並以 snapshot 固定，不呼叫 live provider discovery。
-- [ ] `provider_balance` 只呼叫已實作且有 credential 的官方 balance APIs；不得在 error/warning/log/test snapshot 洩漏 secrets 或 raw provider payload。
-- [ ] `provider_quota` 必須明確分開 account balance、Groundlane local attempt budgets、capability support、keyless availability 與 recommended next checks。
-- [ ] `search_budget_status` 必須標明 instance-local、UTC reset、非 provider billing truth；daily/monthly/minute budgets 有 deterministic reset/cap tests。
+- [x] `provider_balance` 只呼叫已實作且有 credential 的官方 balance APIs；不得在 error/warning/log/test snapshot 洩漏 secrets 或 raw provider payload。
+- [x] `provider_quota` 必須明確分開 account balance、Groundlane local attempt budgets、capability support、keyless availability 與 recommended next checks。
+- [x] `search_budget_status` 必須標明 instance-local、UTC reset、非 provider billing truth；daily/monthly/minute budgets 有 deterministic reset/cap tests。
 
 ### Benchmark 與 compatibility
 
-- [ ] Reader benchmark、parser benchmark 與 extractor fixtures 都能在本機重跑，並輸出 machine-readable JSON 或 deterministic assertions。
+- [x] Reader benchmark、parser benchmark 與 extractor fixtures 都能在本機重跑，並輸出 machine-readable JSON 或 deterministic assertions。
 - [ ] 新增 provider、engine、parser backend、crawler policy 或 source-aware parser behavior 前，必須新增 fixture、benchmark case 或 contract test。
-- [ ] Benchmark 文件需記錄 corpus、revision、method、environment、限制與不可推論事項；不得把 fixture success 宣稱為 production success。
+- [x] Benchmark 文件需記錄 corpus、revision、method、environment、限制與不可推論事項；不得把 fixture success 宣稱為 production success。
 
 ### Stateful resource gate
 
-- [ ] Monitoring、scheduled research、stateful browser sessions、Groundlane-owned orchestration、corpus lifecycle、explicit synthesis 與 generic model extraction 不得只因 provider/SDK 提供對應能力就進入 implementation；每項需有獨立 usage evidence 與 approved product contract。
+- [x] Monitoring、scheduled research、stateful browser sessions、Groundlane-owned orchestration、corpus lifecycle、explicit synthesis 與 generic model extraction 不得只因 provider/SDK 提供對應能力就進入 implementation；每項需有獨立 usage evidence 與 approved product contract。
 - [ ] 每個 stateful resource 必須分別定義 owner、credential binding、TTL/retention、status/result/cancel、notification/webhook、abuse controls、quota/billing provenance、data deletion 與 deterministic lifecycle tests。
-- [ ] MCP transport session、Cloudflare Container instance memory 與單次 request lifecycle 不得被當成 durable ownership 或 storage boundary。
-- [ ] Authenticated browsing 必須維持獨立、explicit opt-in 的 tool family，不得改變 `web_fetch` 的 stateless public-Web contract。進入 implementation 前需有具體 target sites、使用頻率、session duration、MFA 模式、read-only/action boundary、provider custody 接受度與成本上限的 usage evidence。
+- [x] MCP transport session、Cloudflare Container instance memory 與單次 request lifecycle 不得被當成 durable ownership 或 storage boundary。
+- [x] Authenticated browsing 必須維持獨立、explicit opt-in 的 tool family，不得改變 `web_fetch` 的 stateless public-Web contract。進入 implementation 前需有具體 target sites、使用頻率、session duration、MFA 模式、read-only/action boundary、provider custody 接受度與成本上限的 usage evidence。
 - [ ] Authenticated session 第一版若獲核准，只接受 allowlisted domain、operator-authorized account、human-in-the-loop login/MFA、provider-owned opaque profile/context reference、principal/site/account binding、exclusive lease、idle/absolute TTL、explicit release/delete 與 read-only bounded navigation。不得保存 raw password、TOTP seed、passkey、可匯出的 cookie/storage snapshot，也不得承諾 CAPTCHA 或 managed-challenge bypass。
 
 ### Security 與 deployment
@@ -732,20 +732,20 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [ ] `groundlane credentials` CLI 只從 protected environment/secret helper讀取 admin token並呼叫 admin API，不持有 D1 binding、database ID/API token或直接執行 SQL；create/rotate raw token只輸出一次，list/revoke輸出不包含 raw token或 verifier。
 - [ ] Auth matrix deterministic tests覆蓋 admin、legacy、managed、OAuth與缺少 credential對 `/admin/credentials`、`/mcp`、`/readyz`、OAuth endpoints及`/register` 的允許/拒絕結果；`/register` 的 legacy protection只作 OAuth DCR anti-abuse compatibility，不被解讀為 managed-token admin authorization。
 - [ ] `local_static` profile 沒有 D1、只維持現有單一 static bearer；`worker_internal_context` 的 backward-compatibility deployment 可保留 Worker static/OAuth 驗證，但必須明確回報 managed-token capability unavailable；兩者都不得悄悄建立 multi-static-secret fallback。
-- [ ] direct/private、DNS-to-private、redirect-to-private、IPv4/IPv6 special ranges、metadata 與 browser subresource policy regression tests 通過。
-- [ ] unauthenticated `/mcp` 被拒絕，health response 不洩漏 secret。
-- [ ] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` 全部通過。
-- [ ] Cloudflare deployment 文件與實際 Wrangler/Container contract 一致，並完成 controlled-fixture smoke test。
+- [x] direct/private、DNS-to-private、redirect-to-private、IPv4/IPv6 special ranges、metadata 與 browser subresource policy regression tests 通過。
+- [x] unauthenticated `/mcp` 被拒絕，health response 不洩漏 secret。
+- [x] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` 全部通過。
+- [x] Cloudflare deployment 文件與實際 Wrangler/Container contract 一致，並完成 controlled-fixture smoke test。
 - [ ] 每次 user-visible tool/config/workflow 變更都同步更新 `README.md`、`README.zh-TW.md` 與相關 docs；若不需更新，final report 必須說明原因。
 - [ ] Browser diagnostics 預設只回 decision reason、stage timing、blocked-subrequest 與 bounded console/network failure metadata；screenshot、snapshot、trace 或 HAR 必須 explicit opt-in、受 byte/time/retention 限制，且不得回傳 headers、cookies、secrets 或 raw response body。
-- [ ] Cloudflare binding types、Workflows、Queues、Durable Objects、D1、R2、Browser Run 與 observability integrations 不得進入 provider-neutral runtime contract；core contract tests 不需 Cloudflare account 或 live bindings。
-- [ ] Worker 與 Container 若同時提供 retrieval/provider execution path，必須共用或以 contract tests 證明 URL policy、deadline/cancellation、limits、sanitized errors 與 provenance 語意一致。
+- [x] Cloudflare binding types、Workflows、Queues、Durable Objects、D1、R2、Browser Run 與 observability integrations 不得進入 provider-neutral runtime contract；core contract tests 不需 Cloudflare account 或 live bindings。
+- [x] Worker 與 Container 若同時提供 retrieval/provider execution path，必須共用或以 contract tests 證明 URL policy、deadline/cancellation、limits、sanitized errors 與 provenance 語意一致。
 - [ ] Durable job retry 對 provider task creation、付費 upstream call 與 artifact writes 有 idempotency/replay tests；沒有 provider acknowledgment 時不得宣稱 upstream cancel 成功。
 - [ ] D1/DO/Workflow/Queue state 不保存大型內容；durable async `ArtifactRef` 必須 storage-neutral，並包含 tenant/owner binding、content hash、byte size、retention/expiry 與 deletion policy，Cloudflare reference deployment 才映射到 R2。
 - [ ] Public Web 與 scoped corpus search 使用不同 tool family；兩者 output 都必須能辨識 source kind、provider/backend、corpus boundary 與 freshness provenance，scoped result 不得標示成全網搜尋結果。
 - [ ] Corpus lifecycle contract 至少覆蓋 create、enroll source、update/resync、remove source、status、search 與 delete。Public corpus/source identity 不得使用 backend job/index ID；backend partial failure、reconciliation、reindex 與 delete propagation 必須映射成 stable state，未完成 derived-index/artifact deletion前不得宣稱刪除完成。
 - [ ] Corpus manifest、source identity/hash、ACL、retention/deletion policy 與 lifecycle/citation/backend provenance 是 Groundlane contract truth；derived index 可重建且不得成為 identity、authorization、retention 或 deletion truth。
-- [ ] Operator-hosted search adapter 只允許 build/deploy-time registration 與 operator-controlled endpoint allowlist；caller 不得在 tool input 注入任意 provider endpoint。
+- [x] Operator-hosted search adapter 只允許 build/deploy-time registration 與 operator-controlled endpoint allowlist；caller 不得在 tool input 注入任意 provider endpoint。
 
 ## 9. Non-goals
 
