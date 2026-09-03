@@ -611,16 +611,16 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 
 ### Provider registry 與 operator-hosted bridge
 
-- [ ] Registry 是 built-in/operator registrations、tool provider schema、composition、capability matrix、routing order/budgets 與 diagnostics 的 single source of truth；新增 fake registration 後，各 surface 無需修改第二份 provider ID 清單即可同步。
-- [ ] Registry refactor 前後的 built-in provider IDs、default order/budgets、tool schemas、explicit/auto routing 與 provider diagnostics snapshot 保持相容。
-- [ ] Registration 拒絕 duplicate/reserved/invalid IDs、unknown protocol、沒有 runtime adapter 的 capability、空 endpoint、manifest 內 secret value/env name，以及 capability/config 不一致；`custom.` ID 到專用 secret binding 的推導與 reserved-name denylist 有 tests。
-- [ ] `groundlane-provider-v1` 第一版只 expose search；未宣告或尚未支援的 content/crawl/research/balance operation 在 dispatch 前回穩定 capability error，不呼叫 upstream。
+- [x] Registry 是 built-in/operator registrations、tool provider schema、composition、capability matrix、routing order/budgets 與 diagnostics 的 single source of truth；新增 fake registration 後，各 surface 無需修改第二份 provider ID 清單即可同步。
+- [x] Registry refactor 前後的 built-in provider IDs、default order/budgets、tool schemas、explicit/auto routing 與 provider diagnostics snapshot 保持相容。
+- [x] Registration 拒絕 duplicate/reserved/invalid IDs、unknown protocol、沒有 runtime adapter 的 capability、空 endpoint、manifest 內 secret value/env name，以及 capability/config 不一致；`custom.` ID 到專用 secret binding 的推導與 reserved-name denylist 有 tests。
+- [x] `groundlane-provider-v1` 第一版只 expose search；未宣告或尚未支援的 content/crawl/research/balance operation 在 dispatch 前回穩定 capability error，不呼叫 upstream。
 - [ ] Operator-hosted base URL 只從 build/deploy manifest 取得並通過 operator endpoint allowlist；caller 不能傳入或覆寫 provider endpoint、auth token、headers、redirect policy 或 transport。
 - [x] HTTP bridge 不轉送 caller authorization/cookies/任意 headers；provider secret 只從 provider ID 推導的專用 binding 讀取，且不得出現在 logs、warnings、errors、snapshots 或 provenance。
 - [ ] Worker→Container 只轉送已註冊 `custom.` ID 對應的 `GROUNDLANE_CUSTOM_PROVIDER_*_TOKEN` bindings；generic adapter 只能依自身 provider ID 取得單一 secret，不能讀取 Groundlane auth、built-in provider、browser/reader secrets 或任意 `process.env` entry。
 - [ ] Worker binding allowlist 與 Container registry 由同一份 canonical manifest artifact 產生並驗證相同 schema version/digest；任何 mismatch、stale artifact 或第二份手寫 ID-to-binding mapping 都會使 deployment/readiness fail closed。
 - [x] Bridge 共用 Groundlane deadline/AbortSignal、request/result/byte limits 與 sanitized errors；redirect 預設拒絕，若未來允許則至少限制 same-origin 並重新驗證目的地。
-- [ ] Custom provider 預設 disabled 且 daily/monthly budget 為 0；只有明確 enable 與正數 budget 才能 dispatch。第一版 explicit provider 與 explicit `providers[] + strategy=fallback` 有 success/exhausted tests，`auto`/`balanced`/`deep` 必須排除 custom provider。
+- [x] Custom provider 預設 disabled 且 daily/monthly budget 為 0；只有明確 enable 與正數 budget 才能 dispatch。第一版 explicit provider 與 explicit `providers[] + strategy=fallback` 有 success/exhausted tests，`auto`/`balanced`/`deep` 必須排除 custom provider。
 - [x] `domainFilter` 五種模式、`maxDomains`、combined include/exclude、timeRange support 與 deployment cap precedence 有 deterministic validation tests；unsupported combination 在呼叫 upstream 前拒絕。
 - [x] Malformed JSON、unknown fields rejection、missing required fields、oversized response、unsafe result URL、429/quota、5xx、timeout 與 cancellation 有 deterministic fake-server tests。
 - [x] `web_search.providerDetails[]` 以 optional、backward-compatible schema 加入 contract versioning 與 schema snapshot；operator-hosted attempt 一旦啟用即必須包含 stable provider ID、`backend=http-compatible`、`ownership=operator-hosted` 與 protocol version，不得包含 endpoint/secret reference，也不得標示成 built-in provider。
