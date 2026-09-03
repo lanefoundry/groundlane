@@ -46,6 +46,7 @@ Document roadmap 採可配置且有界的 retention，不會默默永久保存�
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
 | `search_budget_status` | 檢查 Groundlane 本機 provider attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
+| `error_log` | Operator-only：查詢 Groundlane error log | Cloudflare Analytics Engine 查詢，可依 tool、code、hintCode 或時間範圍過濾；回傳最多 `limit` 筆最近的 matching events，由新到舊 |
 
 Fetch/extract/parse 在抓 URL 時會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch`、`web_extract` 與 URL-backed `parse` 仍可運作。
 
@@ -309,7 +310,7 @@ Worker / Node HTTP edge       authentication, request identity
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
                               web_news | web_images | web_fetch | web_extract | parse
-                              diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities
+                              diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities | error_log
     |
     +-- provider router       可替換的 search adapters
     +-- safe HTTP + Reader    有界的內容取得與正文清理
@@ -327,7 +328,7 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：十個 Web access MCP tools、一個 parser MCP tool、四個 provider 診斷 MCP tools、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
+- 已完成：十個 Web access MCP tools、一個 parser MCP tool、四個 provider 診斷 MCP tools、一個 operator 診斷 MCP tool、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends，以及 Cloudflare Worker + Container deployment。
 - 下一步：加入 single-tenant multi-credential principal contract、D1 managed-token registry，以及呼叫 admin-only API 的 operator CLI。新的 admin secret 會和既有 `GROUNDLANE_AUTH_TOKEN` 隔離；後者只保留為 legacy/local data-plane credential，永遠不取得 credential-management 權限。其他下一步包括補強工具契約與相容性 fixtures，保存 machine-readable Reader/parser/extractor benchmark artifacts，設計 provider-neutral durable crawl `create/status/result/cancel`，評估 single-URL、caller-schema provider extraction，加入 stateless login/challenge diagnostics，並先執行 MCP Tasks／目標 client compatibility spike，再決定 async research API。短研究維持同步，provider 結果維持分開。已核准的 document-source contract 是 bounded inline bytes、經 policy 檢查的公開 URL 或 Groundlane-issued opaque `ArtifactRef`；Cloudflare reference upload path 由 MCP 建立 provisional upload intent，再由支援 upload handoff 的 client、CLI 或 dashboard 以 presigned PUT 直傳 R2 staging object，驗證與 immutable finalization 後才產生 artifact reference，self-host 則可替換 artifact backend。Operator-owned corpus search 已確認是產品方向，但會使用獨立、需通過 demand gate 的 `corpus_search` tool family，明確揭露 corpus、freshness、access control、retention、deletion 與 backend provenance，不改變 public-Web `web_search`。泛用 LLM extraction、monitoring/scheduling、persistent authenticated browser sessions 與 Groundlane-owned durable orchestration仍是需逐項 demand gate 的 roadmap 候選，不是已承諾的 runtime 功能。未來若加入 authenticated browser，會使用獨立 opt-in tool family、人工 login/MFA、provider-owned opaque profile reference、明確 owner/TTL/delete 控制，並先限制在 read-only bounded navigation，再評估 Groundlane 是否代管 credential 或執行一般帳號操作。
 - 開源參考來源已在產品需求文件分成 primary references 與 watchlist/discovery sources，避免低維護度候選專案預設變成 runtime 優先項。
 - 規劃中的 document processing 包含 ownership-scoped、content-addressed result cache，working default 為 24 小時，並提供 bounded caller TTL/cache controls、完整 engine/version/source provenance，以及 deletion/invalidation 規則；這不代表啟用 Phase 0 Web response cache。

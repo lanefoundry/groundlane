@@ -621,9 +621,9 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [ ] Worker binding allowlist 與 Container registry 由同一份 canonical manifest artifact 產生並驗證相同 schema version/digest；任何 mismatch、stale artifact 或第二份手寫 ID-to-binding mapping 都會使 deployment/readiness fail closed。
 - [x] Bridge 共用 Groundlane deadline/AbortSignal、request/result/byte limits 與 sanitized errors；redirect 預設拒絕，若未來允許則至少限制 same-origin 並重新驗證目的地。
 - [ ] Custom provider 預設 disabled 且 daily/monthly budget 為 0；只有明確 enable 與正數 budget 才能 dispatch。第一版 explicit provider 與 explicit `providers[] + strategy=fallback` 有 success/exhausted tests，`auto`/`balanced`/`deep` 必須排除 custom provider。
-- [ ] `domainFilter` 五種模式、`maxDomains`、combined include/exclude、timeRange support 與 deployment cap precedence 有 deterministic validation tests；unsupported combination 在呼叫 upstream 前拒絕。
+- [x] `domainFilter` 五種模式、`maxDomains`、combined include/exclude、timeRange support 與 deployment cap precedence 有 deterministic validation tests；unsupported combination 在呼叫 upstream 前拒絕。
 - [x] Malformed JSON、unknown fields rejection、missing required fields、oversized response、unsafe result URL、429/quota、5xx、timeout 與 cancellation 有 deterministic fake-server tests。
-- [ ] `web_search.providerDetails[]` 以 optional、backward-compatible schema 加入 contract versioning 與 schema snapshot；operator-hosted attempt 一旦啟用即必須包含 stable provider ID、`backend=http-compatible`、`ownership=operator-hosted` 與 protocol version，不得包含 endpoint/secret reference，也不得標示成 built-in provider。
+- [x] `web_search.providerDetails[]` 以 optional、backward-compatible schema 加入 contract versioning 與 schema snapshot；operator-hosted attempt 一旦啟用即必須包含 stable provider ID、`backend=http-compatible`、`ownership=operator-hosted` 與 protocol version，不得包含 endpoint/secret reference，也不得標示成 built-in provider。
 - [x] 預設 CI 使用本機 fake HTTP service，不需要 live operator endpoint、Cloudflare account、provider key 或外網。
 
 ### Answer 與 research
@@ -736,7 +736,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 - [x] unauthenticated `/mcp` 被拒絕，health response 不洩漏 secret。
 - [x] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build` 全部通過。
 - [x] Cloudflare deployment 文件與實際 Wrangler/Container contract 一致，並完成 controlled-fixture smoke test。
-- [ ] 每次 user-visible tool/config/workflow 變更都同步更新 `README.md`、`README.zh-TW.md` 與相關 docs；若不需更新，final report 必須說明原因。
+- [x] 每次 user-visible tool/config/workflow 變更都同步更新 `README.md`、`README.zh-TW.md` 與相關 docs；若不需更新，final report 必須說明原因。
 - [x] Browser diagnostics 預設只回 decision reason、stage timing、blocked-subrequest 與 bounded console/network failure metadata；screenshot、snapshot、trace 或 HAR 必須 explicit opt-in、受 byte/time/retention 限制，且不得回傳 headers、cookies、secrets 或 raw response body。
 - [x] Cloudflare binding types、Workflows、Queues、Durable Objects、D1、R2、Browser Run 與 observability integrations 不得進入 provider-neutral runtime contract；core contract tests 不需 Cloudflare account 或 live bindings。
 - [x] Worker 與 Container 若同時提供 retrieval/provider execution path，必須共用或以 contract tests 證明 URL policy、deadline/cancellation、limits、sanitized errors 與 provenance 語意一致。

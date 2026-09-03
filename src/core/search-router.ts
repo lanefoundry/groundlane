@@ -1,10 +1,15 @@
 import type {
+  ProviderDetail,
   SearchProvider,
   SearchProviderId,
   SearchRequest,
   SearchResult,
   SearchStrategy,
 } from "./contracts.js";
+import {
+  type DomainFilterValidationOptions,
+  validateDomainFiltersForRequest,
+} from "./domain-filter-validation.js";
 import { GroundlaneError, hint, toGroundlaneError } from "./errors.js";
 import { fuseSearchResults } from "./search-fusion.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
@@ -32,8 +37,18 @@ export class SearchRouter {
     private readonly order: readonly SearchProviderId[],
     private readonly health?: ProviderHealthTracker,
     private readonly budget?: SearchBudgetTracker,
+    private readonly filterOptions?: DomainFilterValidationOptions,
   ) {
     this.providers = new Map(providers.map((provider) => [provider.id, provider]));
+  }
+
+  private static builtInDetail(id: SearchProviderId): ProviderDetail {
+    return {
+      providerId: id,
+      backend: "api",
+      ownership: "built-in",
+      protocolVersion: "1",
+    };
   }
 
   async search(request: SearchRequest, signal: AbortSignal): Promise<SearchResult> {
@@ -42,6 +57,17 @@ export class SearchRouter {
       request.provider !== undefined && request.provider !== "auto"
         ? request.provider
         : undefined;
+
+    const candidateIds = explicitProvider === undefined
+      ? (request.providers ?? this.order)
+      : [explicitProvider];
+    validateDomainFiltersForRequest(
+      request,
+      explicitProvider,
+      candidateIds,
+      this.filterOptions,
+    );
+
     const strategy: SearchStrategy = explicitProvider === undefined
       ? (request.strategy ?? "balanced")
       : "fallback";
@@ -201,6 +227,7 @@ export class SearchRouter {
           providersAttempted: attempted,
           providersSucceeded: [provider.id],
           warnings: [...warnings, ...normalized.warnings],
+          providerDetails: [SearchRouter.builtInDetail(provider.id)],
         };
       } catch (error) {
         const safe = toGroundlaneError(error, "search");
@@ -308,6 +335,7 @@ export class SearchRouter {
           providersSelected: selectedIds,
           providersAttempted: attemptedIds,
           providersSucceeded: successes.map((result) => result.provider),
+          providerDetails: successes.map((result) => SearchRouter.builtInDetail(result.provider)),
         };
       }
     }
