@@ -590,7 +590,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 ### MCP 與工具契約
 
 - [x] Phase 0/MVP client 可 initialize、list tools，且只看到已註冊的 Groundlane stateless tools 與 provider diagnostics；未來 stateful tool family 啟用時必須另有 capability/version gate 與 schema snapshot。
-- [ ] 每個工具至少有 success、invalid input、deadline、limit 與 upstream failure contract test。
+- [x] 每個工具至少有 success、invalid input、deadline、limit 與 upstream failure contract test。
 - [x] MCP text content 與 `structuredContent` 表達同一結果，供不同 client 相容使用。
 - [x] error codes 與 schema 由測試固定，raw exception 不外洩。
 
@@ -698,7 +698,7 @@ Cloudflare 是 operator-controlled reference deployment 的 execution platform�
 ### Benchmark 與 compatibility
 
 - [x] Reader benchmark、parser benchmark 與 extractor fixtures 都能在本機重跑，並輸出 machine-readable JSON 或 deterministic assertions。
-- [ ] 新增 provider、engine、parser backend、crawler policy 或 source-aware parser behavior 前，必須新增 fixture、benchmark case 或 contract test。
+- [x] 新增 provider、engine、parser backend、crawler policy 或 source-aware parser behavior 前，必須新增 fixture、benchmark case 或 contract test。
 - [x] Benchmark 文件需記錄 corpus、revision、method、environment、限制與不可推論事項；不得把 fixture success 宣稱為 production success。
 
 ### Stateful resource gate
