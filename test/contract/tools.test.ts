@@ -429,9 +429,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         description?: string;
         author?: string;
         content?: string;
+        cached?: boolean;
       };
     };
     assert.equal(fetchEnvelope.ok, true);
+    assert.strictEqual(fetchEnvelope.data?.cached, false);
     assert.equal(fetchEnvelope.data?.title, "Groundlane");
     assert.equal(fetchEnvelope.data?.description, "Trusted web access");
     assert.equal(fetchEnvelope.data?.author, "Groundlane Team");
