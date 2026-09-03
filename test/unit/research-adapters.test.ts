@@ -4,6 +4,7 @@ import test from "node:test";
 import { LinkupResearchProvider } from "../../src/adapters/research/linkup.js";
 import { ParallelResearchProvider } from "../../src/adapters/research/parallel.js";
 import { YouResearchProvider } from "../../src/adapters/research/you.js";
+import { GroundlaneError } from "../../src/core/errors.js";
 
 void test("Linkup research submits an async task and polls for sourced output", async () => {
   const requestedUrls: string[] = [];
@@ -261,6 +262,36 @@ void test("Linkup research maps failed async tasks to retryable upstream errors"
   await assert.rejects(
     provider.research({ query: "q", effort: "standard" }, new AbortController().signal),
     /Linkup research task failed/u,
+  );
+});
+
+void test("Linkup research cancellation during polling loop", async () => {
+  const controller = new AbortController();
+  let pollCount = 0;
+  const provider = new LinkupResearchProvider({
+    apiKey: "linkup-secret",
+    pollIntervalMs: 1,
+    sleep: (_ms, signal) => {
+      if (signal.aborted) {
+        return Promise.reject(
+          new GroundlaneError("CANCELLED", "web_research", "Research request was cancelled"),
+        );
+      }
+      return Promise.resolve();
+    },
+    fetch: (_url, init) => {
+      if (init.method === "POST") {
+        return Promise.resolve(Response.json({ id: "task_poll" }));
+      }
+      pollCount++;
+      if (pollCount >= 2) controller.abort();
+      return Promise.resolve(Response.json({ id: "task_poll", status: "pending" }));
+    },
+  });
+
+  await assert.rejects(
+    provider.research({ query: "q", effort: "standard" }, controller.signal),
+    { code: "CANCELLED" },
   );
 });
 
