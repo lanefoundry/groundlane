@@ -152,10 +152,16 @@ resources. The reference bindings are checked in and live:
 - R2 bucket `groundlane-artifacts` (`GROUNDLANE_ARTIFACTS`).
 
 > [!IMPORTANT]
-> Bound resources do not light up the data plane yet. The D1-backed
-> `ManagedTokenStore` adapter and the R2 artifact storage backend are still
-> pending; until they land, managed tokens stay unavailable (fail closed)
-> and durable `ArtifactRef` values stay in-memory only.
+> The D1-backed `ManagedTokenStore` adapter (`src/worker/d1-managed-store.ts`)
+> is wired: when `MANAGED_TOKEN_D1` is bound the Worker authenticates managed
+> tokens against D1, otherwise the data plane stays fail-closed. Rotation runs
+> as one atomic batch (guarded INSERT first, guarded UPDATE second); a lost
+> race changes zero rows and returns a stable conflict. Live SQL smoke on the
+> provisioned database confirmed rotate 1/0, revoke first-wins, and zero
+> residue rows. The R2 artifact storage backend is still pending — core
+> `ArtifactStoragePort` is synchronous and must migrate to an async port
+> before an R2 adapter can take the boundary; until then durable `ArtifactRef`
+> values stay in-memory only.
 
 1. (Already done for the reference deployment; repeat only for a new
    account.) Create the D1 database and the R2 bucket, then record their

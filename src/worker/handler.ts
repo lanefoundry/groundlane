@@ -21,6 +21,7 @@ import {
   type ManagedTokenStore,
 } from "./managed-tokens.js";
 import { handleAdminCredentialsRequest } from "./admin-credentials.js";
+import { D1ManagedTokenStore } from "./d1-managed-store.js";
 import { jsonError } from "./http.js";
 import {
   buildContainerRequestWithInternalContext,
@@ -42,6 +43,7 @@ type ExtendedEnv = WorkerEnv & {
   GROUNDLANE_ADMIN_TOKEN?: string;
   GROUNDLANE_INTERNAL_SIGNING_SECRET?: string;
   GROUNDLANE_AUTH_MODE?: string;
+  MANAGED_TOKEN_D1?: D1Database;
   __MANAGED_STORE__?: ManagedTokenStore | null;
   __MANAGED_CLOCK__?: ManagedClock;
   __ADMIN_AUDIT__?: BoundedAuditLog;
@@ -54,6 +56,12 @@ const sharedRotateIdempotency = new RotateIdempotencyStore();
 function getManagedStore(env: ExtendedEnv): ManagedTokenStore | null {
   if ("__MANAGED_STORE__" in env) {
     return env.__MANAGED_STORE__ ?? null;
+  }
+  // Production path: D1-backed registry when the binding is provisioned.
+  // Absent binding stays fail-closed (managed_unavailable), never falling
+  // back to a static bearer.
+  if (env.MANAGED_TOKEN_D1 !== undefined) {
+    return new D1ManagedTokenStore(env.MANAGED_TOKEN_D1);
   }
   return null;
 }
