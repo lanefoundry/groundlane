@@ -460,6 +460,8 @@ export function rebuildSourceBinding(
 
 const PROJECTION_VERSION = "1.0.0";
 
+export const CANONICAL_PROJECTION_VERSION = PROJECTION_VERSION;
+
 function blockToMarkdown(block: DocumentBlock): string {
   switch (block.type) {
     case "text":
@@ -552,6 +554,7 @@ export function projectToText(
   });
 
   const content = orderedBlocks.map(blockToText).join("\n\n");
+  const omissions = computeTextOmissions(orderedBlocks);
 
   return {
     projectionVersion: PROJECTION_VERSION,
@@ -560,9 +563,279 @@ export function projectToText(
     kind: "text",
     content,
     lossy: true,
+    omissions,
+    warnings: omissions.length > 0 ? ["text projection is lossy; structure flattened"] : [],
+  };
+}
+
+// -- PRD 663: Canonical envelope authoritative output runtime -----------------
+//
+// The envelope is the authority; markdown/structured/text/all are versioned,
+// deterministic projections of the same envelope (never an independent parse
+// path, never Markdown-derived structure). Default kind is markdown.
+
+function orderedBlocksOrThrow(envelope: CanonicalDocumentEnvelope): DocumentBlock[] {
+  return envelope.readingOrder.map((id) => {
+    const block = envelope.blocks.find((b) => b.blockId === id);
+    if (!block) throw new Error(`Block "${id}" not found`);
+    return block;
+  });
+}
+
+function computeTextOmissions(blocks: readonly DocumentBlock[]): string[] {
+  const omissions: string[] = [];
+  if (blocks.some((b) => b.type === "table")) omissions.push("table-structure");
+  if (blocks.some((b) => b.type === "asset")) omissions.push("asset-bytes");
+  if (blocks.some((b) => b.type === "formula")) omissions.push("formula-formatting");
+  return omissions;
+}
+
+/** Resolves the requested projection kind; undefined defaults to markdown. */
+export function resolveProjectionKind(requested?: ProjectionKind): ProjectionKind {
+  if (requested === undefined) return DEFAULT_PROJECTION_KIND;
+  const valid: readonly ProjectionKind[] = ["markdown", "structured", "text", "all"];
+  if (!valid.includes(requested)) {
+    throw new Error(`Unknown projection kind "${String(requested)}"`);
+  }
+  return requested;
+}
+
+/** Deterministic lossless structured projection (JSON of ordered blocks). */
+export function projectToStructured(
+  envelope: CanonicalDocumentEnvelope,
+): ProjectionResult {
+  const ordered = orderedBlocksOrThrow(envelope);
+  const content = JSON.stringify({ readingOrder: envelope.readingOrder, blocks: ordered });
+  return {
+    projectionVersion: PROJECTION_VERSION,
+    sourceDocumentId: envelope.documentId,
+    canonicalContentId: envelope.canonicalContentId,
+    kind: "structured",
+    content,
+    lossy: false,
     omissions: [],
     warnings: [],
   };
+}
+
+/** Deterministic bundled projection containing markdown+structured+text. */
+export function projectToAll(
+  envelope: CanonicalDocumentEnvelope,
+): ProjectionResult {
+  const ordered = orderedBlocksOrThrow(envelope);
+  const markdown = ordered.map(blockToMarkdown).join("\n\n");
+  const structured = JSON.stringify({ readingOrder: envelope.readingOrder, blocks: ordered });
+  const text = ordered.map(blockToText).join("\n\n");
+  const content = JSON.stringify({ markdown, structured, text });
+  return {
+    projectionVersion: PROJECTION_VERSION,
+    sourceDocumentId: envelope.documentId,
+    canonicalContentId: envelope.canonicalContentId,
+    kind: "all",
+    content,
+    lossy: false,
+    omissions: [],
+    warnings: [],
+  };
+}
+
+/**
+ * Single dispatcher for all projection kinds. Validates the envelope first
+ * so every projection shares schema/semantics/provenance.
+ */
+export function projectCanonicalDocument(
+  envelope: CanonicalDocumentEnvelope,
+  kind?: ProjectionKind,
+): ProjectionResult {
+  validateEnvelope(envelope);
+  const resolved = resolveProjectionKind(kind);
+  switch (resolved) {
+    case "markdown":
+      return projectToMarkdown(envelope);
+    case "text":
+      return projectToText(envelope);
+    case "structured":
+      return projectToStructured(envelope);
+    case "all":
+      return projectToAll(envelope);
+  }
+}
+
+// -- PRD 663: Adapter boundary (provider raw JSON never crosses) --------------
+
+export const ADAPTER_FORBIDDEN_RAW_KEYS: readonly string[] = [
+  "rawJson",
+  "raw",
+  "providerRaw",
+  "providerPayload",
+  "engineRaw",
+  "doclingOutput",
+  "anydocOutput",
+];
+
+/**
+ * Rejects provider/engine raw JSON at the adapter boundary. Adapters must
+ * normalize to typed blocks inside src/adapters/ before constructing the
+ * envelope; caller contracts never depend on Docling/anydoc/OCR/VLM schemas.
+ */
+export function assertNoRawProviderPayload(input: Record<string, unknown>): void {
+  for (const key of Object.keys(input)) {
+    if (ADAPTER_FORBIDDEN_RAW_KEYS.includes(key)) {
+      throw new Error(
+        `Adapter boundary violation: key "${key}" must not cross the adapter boundary; normalize to typed blocks first`,
+      );
+    }
+  }
+}
+
+export interface AdapterEnvelopeInput {
+  readonly documentId: string;
+  readonly canonicalContentId?: string;
+  readonly sourceIdentity: SourceIdentity;
+  readonly blocks: readonly DocumentBlock[];
+  readonly readingOrder: readonly string[];
+  readonly status: DocumentStatus;
+  readonly capabilityStates: CapabilityStates;
+  readonly provenance: DocumentProvenance;
+  readonly warnings?: readonly string[];
+  readonly errors?: readonly string[];
+  readonly metadata?: readonly MetadataRecord[];
+  readonly citations?: readonly CitationRecord[];
+  readonly raw?: Record<string, unknown>;
+}
+
+/**
+ * Builds a validated envelope from adapter-normalized input. Rejects any
+ * raw provider payload and defaults canonicalContentId via content hash.
+ */
+export function buildCanonicalEnvelopeFromAdapter(
+  input: AdapterEnvelopeInput & Record<string, unknown>,
+): CanonicalDocumentEnvelope {
+  assertNoRawProviderPayload(input);
+  const canonicalContentId =
+    input.canonicalContentId ?? computeContentHash(input.blocks);
+  const envelope: CanonicalDocumentEnvelope = {
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    documentId: input.documentId,
+    canonicalContentId,
+    sourceIdentity: input.sourceIdentity,
+    blocks: input.blocks,
+    readingOrder: input.readingOrder,
+    status: input.status,
+    capabilityStates: input.capabilityStates,
+    warnings: input.warnings ?? [],
+    errors: input.errors ?? [],
+    provenance: input.provenance,
+    ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+    ...(input.citations === undefined ? {} : { citations: input.citations }),
+  };
+  validateEnvelope(envelope);
+  return envelope;
+}
+
+// -- PRD 663: Cache unit is the canonical content core ------------------------
+
+/**
+ * Extracts the cacheable core (no source-specific fields). The core never
+ * contains URL/filename/ArtifactRef/documentId/cache-age/request metadata.
+ */
+export function extractCacheableCore(
+  envelope: CanonicalDocumentEnvelope,
+): CanonicalContentCore {
+  const core = extractContentCore(envelope);
+  const serialized = JSON.stringify(core);
+  const identity = envelope.sourceIdentity;
+  for (const secret of [identity.url, identity.filename, identity.artifactRef]) {
+    if (secret !== undefined && secret !== "" && serialized.includes(secret)) {
+      throw new Error("Cacheable core must not contain source-specific identity");
+    }
+  }
+  if ("documentId" in core || "sourceIdentity" in core) {
+    throw new Error("Cacheable core must not contain source binding fields");
+  }
+  return core;
+}
+
+/** Rebuilds the source binding on a cache hit. */
+export function rebuildEnvelopeFromCacheHit(
+  core: CanonicalContentCore,
+  sourceIdentity: SourceIdentity,
+  documentId: string,
+): CanonicalDocumentEnvelope {
+  const envelope = rebuildSourceBinding(core, sourceIdentity, documentId);
+  validateEnvelope(envelope);
+  return envelope;
+}
+
+// -- PRD 663: Typed bounded output --------------------------------------------
+
+export type CanonicalArtifactKind = "source" | "canonical_document" | "projection";
+
+export interface TypedTruncatedResult extends TruncatedResult {
+  readonly artifactKind: CanonicalArtifactKind;
+}
+
+/**
+ * Builds a bounded over-limit summary with a typed result ArtifactRef.
+ * The ref must be storage-neutral (no R2 key/presigned URL/filesystem path).
+ */
+export function buildTypedTruncatedResult(
+  envelope: CanonicalDocumentEnvelope,
+  artifactRef: string,
+  artifactKind: CanonicalArtifactKind,
+  boundsCheck: BoundsCheckResult,
+): TypedTruncatedResult {
+  const valid: readonly CanonicalArtifactKind[] = ["source", "canonical_document", "projection"];
+  if (!valid.includes(artifactKind)) {
+    throw new Error(`Invalid artifactKind: "${String(artifactKind)}"`);
+  }
+  if (!artifactRef) {
+    throw new Error("Typed truncated result requires a non-empty artifactRef");
+  }
+  if (artifactRef.includes("/") && /^[0-9a-f]{32}\//u.test(artifactRef)) {
+    throw new Error("artifactRef must be storage-neutral, not a storage key");
+  }
+  const base = buildTruncatedResult(envelope, artifactRef, boundsCheck);
+  return { ...base, artifactKind };
+}
+
+export type BoundedProjectionOutcome =
+  | { readonly withinBounds: true; readonly projection: ProjectionResult }
+  | { readonly withinBounds: false; readonly summary: TypedTruncatedResult };
+
+/**
+ * Projects with output bounds. Within bounds returns the projection;
+ * over limit returns a bounded summary + typed ArtifactRef (no raw content).
+ */
+export function projectWithBounds(
+  envelope: CanonicalDocumentEnvelope,
+  kind: ProjectionKind | undefined,
+  bounds: OutputBounds,
+  artifactRef: string,
+  artifactKind: CanonicalArtifactKind,
+): BoundedProjectionOutcome {
+  validateEnvelope(envelope);
+  const check = checkOutputBounds(envelope, bounds);
+  if (!check.withinBounds) {
+    return {
+      withinBounds: false as const,
+      summary: buildTypedTruncatedResult(envelope, artifactRef, artifactKind, check),
+    };
+  }
+  const projection = projectCanonicalDocument(envelope, kind);
+  if (projection.content.length > bounds.maxChars) {
+    const charCheck: BoundsCheckResult = {
+      withinBounds: false,
+      exceededDimension: "chars",
+      actualValue: projection.content.length,
+      limitValue: bounds.maxChars,
+    };
+    return {
+      withinBounds: false as const,
+      summary: buildTypedTruncatedResult(envelope, artifactRef, artifactKind, charCheck),
+    };
+  }
+  return { withinBounds: true as const, projection };
 }
 
 // -- PRD 683: Output bounds --------------------------------------------------

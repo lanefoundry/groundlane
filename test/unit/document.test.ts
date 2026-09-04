@@ -189,3 +189,60 @@ void test("extractFields attaches hint to OUTPUT_LIMIT errors", () => {
     assert.match(hint.text, /Lower maxBytes/);
   }
 });
+
+// ---------------------------------------------------------------------------
+// PRD 668: Parse flat schema compatibility (additive/versioned, no breaking)
+// ---------------------------------------------------------------------------
+
+void test("PRD 668: parse all-purpose flat schema keeps required fields", async () => {
+  const { parseDocument } = await import("../../src/core/parse-document.js");
+  const page = "<!doctype html><html><head><title>T</title></head><body><main><article><h1>T</h1><p>body</p></article></main></body></html>";
+  const result = parseDocument(page, { purpose: "all", baseUrl: "https://example.com/a", maxOutputChars: 50_000 });
+  for (const field of ["purpose", "truncated", "warnings"] as const) {
+    assert.ok(field in result, `missing required flat field ${field}`);
+  }
+  assert.equal(result.purpose, "all");
+  assert.equal(Array.isArray(result.warnings), true);
+});
+
+void test("PRD 668: parse additive change passes, required removal fails", async () => {
+  const { validateParseBackwardCompat } = await import("../../src/core/document-source.js");
+  const previous = {
+    schemaVersion: "1.0.0",
+    requiredFields: ["purpose", "truncated", "warnings"],
+    optionalFields: ["title", "content"],
+  };
+  const additive = {
+    schemaVersion: "1.1.0",
+    requiredFields: ["purpose", "truncated", "warnings"],
+    optionalFields: ["title", "content", "canonicalUrl", "tables"],
+  };
+  assert.doesNotThrow(() => validateParseBackwardCompat(previous, additive));
+  const breaking = {
+    schemaVersion: "2.0.0",
+    requiredFields: ["purpose", "truncated"],
+    optionalFields: ["title"],
+  };
+  assert.throws(() => validateParseBackwardCompat(previous, breaking), { message: /warnings/ });
+});
+
+void test("PRD 668: parse flat output has no canonical-envelope-only fields", async () => {
+  const { parseDocument } = await import("../../src/core/parse-document.js");
+  const page = "<!doctype html><html><head><title>T</title></head><body><main><p>body</p></main></body></html>";
+  const result = parseDocument(page, { purpose: "all", baseUrl: "https://example.com/a", maxOutputChars: 50_000 }) as unknown as Record<string, unknown>;
+  for (const envelopeOnly of ["canonicalContentId", "blocks", "readingOrder", "capabilityStates", "provenance", "schemaVersion", "documentId"]) {
+    assert.equal(envelopeOnly in result, false, `${envelopeOnly} must not leak into flat parse schema`);
+  }
+});
+
+void test("PRD 668: parse purpose narrowing keeps required-field contract", async () => {
+  const { parseDocument } = await import("../../src/core/parse-document.js");
+  const page = "<!doctype html><html><head><title>T</title></head><body><main><article><h1>T</h1><p>body</p><a href=\"/x\">X</a></article></main></body></html>";
+  const options = { baseUrl: "https://example.com/a", maxOutputChars: 50_000 } as const;
+  for (const purpose of ["document", "metadata", "links", "media", "tables", "all"] as const) {
+    const result = parseDocument(page, { purpose, ...options });
+    assert.equal(result.purpose, purpose);
+    assert.equal(typeof result.truncated, "boolean");
+    assert.ok(Array.isArray(result.warnings));
+  }
+});

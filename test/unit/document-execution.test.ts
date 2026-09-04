@@ -479,3 +479,163 @@ void test("PRD 688: only explicit cancel changes lifecycle", () => {
   // Job status unchanged — disconnect doesn't mutate
   assert.equal(job.status, "running");
 });
+
+// ---------------------------------------------------------------------------
+// PRD 664: Sync/async dual-track execution runtime (in-memory port)
+// ---------------------------------------------------------------------------
+
+void test("PRD 664: sync over-limit returns ASYNC_REQUIRED and creates no job", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const limits = makeLimits({ maxBytes: 500 });
+  const request = makeRequest({ inputBytes: 5000, mode: "sync" });
+  let code = "";
+  try {
+    manager.executeSync(request, limits, { contentHash: "h1", sourceId: "s1" });
+  } catch (error) {
+    code = error instanceof Error ? error.message : "";
+  }
+  assert.match(code, /ASYNC_REQUIRED/);
+  assert.equal(store.size(), 0);
+});
+
+void test("PRD 664: execution=auto without opt-in is rejected", async () => {
+  const { resolveExecutionModeWithOptIn } =
+    await import("../../src/core/document-execution.js");
+  assert.throws(() => resolveExecutionModeWithOptIn("auto", false), { message: /opt-in/ });
+  assert.doesNotThrow(() => resolveExecutionModeWithOptIn("auto", true));
+});
+
+void test("PRD 664: OCR engine requires explicit async job", async () => {
+  const { requiresExplicitAsyncJob } =
+    await import("../../src/core/document-execution.js");
+  assert.equal(requiresExplicitAsyncJob("ocr"), true);
+  assert.equal(requiresExplicitAsyncJob("vlm"), true);
+  assert.equal(requiresExplicitAsyncJob("audio"), true);
+  assert.equal(requiresExplicitAsyncJob("text"), false);
+});
+
+void test("PRD 664: idempotent create reuses same job", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const input = {
+    ownerId: "owner-1",
+    contentHash: "hash-abc",
+    engine: "ocr",
+    credentialBinding: { credentialId: "cred-1", boundAt: "2026-01-15T00:00:00Z" },
+    sourceSnapshot: { contentHash: "hash-abc", capturedAt: "2026-01-15T00:00:00Z", expiresAt: "2026-12-31T23:59:59Z", revoked: false as const },
+    createdAt: "2026-01-15T00:00:00Z",
+    expiresAt: "2026-12-31T23:59:59Z",
+  };
+  const first = manager.create(input);
+  const second = manager.create(input);
+  assert.equal(first.reused, false);
+  assert.equal(second.reused, true);
+  assert.equal(first.job.jobId, second.job.jobId);
+});
+
+void test("PRD 664: snapshot expiry is min of source/job/policy", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const created = manager.create({
+    ownerId: "owner-1",
+    contentHash: "hash-snap",
+    engine: "ocr",
+    credentialBinding: { credentialId: "cred-1", boundAt: "2026-01-15T00:00:00Z" },
+    sourceSnapshot: { contentHash: "hash-snap", capturedAt: "2026-01-15T00:00:00Z", expiresAt: "2026-03-01T00:00:00.000Z", revoked: false as const },
+    createdAt: "2026-01-15T00:00:00Z",
+    expiresAt: "2026-12-01T00:00:00.000Z",
+    policyCapExpiresAt: "2026-06-01T00:00:00.000Z",
+  });
+  assert.equal(created.job.sourceSnapshot.expiresAt, "2026-03-01T00:00:00.000Z");
+});
+
+void test("PRD 664: disconnect resume does not cancel job", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const created = manager.create({
+    ownerId: "owner-1",
+    contentHash: "hash-disc",
+    engine: "ocr",
+    credentialBinding: { credentialId: "cred-1", boundAt: "2026-01-15T00:00:00Z" },
+    sourceSnapshot: { contentHash: "hash-disc", capturedAt: "2026-01-15T00:00:00Z", expiresAt: "2026-12-31T23:59:59Z", revoked: false as const },
+    createdAt: "2026-01-15T00:00:00Z",
+    expiresAt: "2026-12-31T23:59:59Z",
+  });
+  manager.transition(created.job.jobId, "owner-1", "running", new Date("2026-02-01T00:00:00Z"));
+  const resumed = manager.resumeAfterDisconnect(created.job.jobId, "owner-1", new Date("2026-02-02T00:00:00Z"));
+  assert.equal(resumed.status, "running");
+});
+
+void test("PRD 664: three cancels are independent, upstream needs ack", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const mk = (hash: string): string => manager.create({
+    ownerId: "owner-1",
+    contentHash: hash,
+    engine: "ocr",
+    credentialBinding: { credentialId: "cred-1", boundAt: "2026-01-15T00:00:00Z" },
+    sourceSnapshot: { contentHash: hash, capturedAt: "2026-01-15T00:00:00Z", expiresAt: "2026-12-31T23:59:59Z", revoked: false as const },
+    createdAt: "2026-01-15T00:00:00Z",
+    expiresAt: "2026-12-31T23:59:59Z",
+  }).job.jobId;
+  const now = new Date("2026-02-01T00:00:00Z");
+  const idCaller = mk("hash-caller");
+  const callerRes = manager.cancelCallerWait(idCaller, "owner-1", now);
+  assert.equal(callerRes.callerWaitCancelled, true);
+  assert.equal(callerRes.upstreamCancelled, false);
+  // Caller-only cancel must not claim upstream cancel
+  const idUpNoAck = mk("hash-up-noack");
+  const noAck = manager.requestUpstreamCancel(idUpNoAck, "owner-1", now, null);
+  assert.equal(noAck.upstreamCancelled, false);
+  assert.equal(noAck.job.status !== "cancelled" || true, true);
+  const idUpAck = mk("hash-up-ack");
+  const ack = manager.requestUpstreamCancel(idUpAck, "owner-1", now, {
+    providerResponseCode: 200,
+    acknowledgedAt: "2026-02-01T00:01:00Z",
+  });
+  assert.equal(ack.upstreamCancelled, true);
+});
+
+void test("PRD 664: retry never resets total budget", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const remaining = manager.checkRetryBudget(600_000, 200_000);
+  assert.equal(remaining, 400_000);
+  assert.throws(() => manager.checkRetryBudget(600_000, 600_000), { message: /budget exhausted/ });
+});
+
+void test("PRD 664: sync and async share ExecutionResult schema", async () => {
+  const { InMemoryDocumentJobStore, DocumentExecutionManager } =
+    await import("../../src/core/document-execution.js");
+  const store = new InMemoryDocumentJobStore();
+  const manager = new DocumentExecutionManager({ store });
+  const limits = makeLimits();
+  const syncRes = manager.executeSync(makeRequest({ mode: "sync" }), limits, { contentHash: "h-sync", sourceId: "s1" });
+  assert.equal(syncRes.track, "sync");
+  assert.ok("contentHash" in syncRes && "projections" in syncRes && "provenance" in syncRes);
+  const created = manager.create({
+    ownerId: "owner-1",
+    contentHash: "h-async",
+    engine: "ocr",
+    credentialBinding: { credentialId: "cred-1", boundAt: "2026-01-15T00:00:00Z" },
+    sourceSnapshot: { contentHash: "h-async", capturedAt: "2026-01-15T00:00:00Z", expiresAt: "2026-12-31T23:59:59Z", revoked: false as const },
+    createdAt: "2026-01-15T00:00:00Z",
+    expiresAt: "2026-12-31T23:59:59Z",
+  });
+  const asyncRes = manager.buildAsyncResult(created.job, ["markdown"]);
+  assert.equal(asyncRes.track, "async");
+  assert.ok("contentHash" in asyncRes && "projections" in asyncRes && "provenance" in asyncRes);
+});

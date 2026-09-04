@@ -2,6 +2,10 @@
 // PRD 671, 672, 673, 674, 677, 682 -- Document processing cache contract
 // ---------------------------------------------------------------------------
 
+import { createHash } from "node:crypto";
+
+import { GroundlaneError } from "./errors.js";
+
 // -- PRD 671: Cache mode and configuration -----------------------------------
 
 export type CacheMode = "use" | "refresh" | "bypass";
@@ -435,4 +439,547 @@ export function projectionCacheKeyString(key: ProjectionCacheKey): string {
     key.projectionVersion,
     key.projectionOptions,
   ].join(":");
+}
+
+// ---------------------------------------------------------------------------
+// PRD 662: Document processing cache runtime (in-memory port)
+// ---------------------------------------------------------------------------
+//
+// In-memory deterministic runtime behind the contract validators above.
+// No live D1/KV/network: `DocumentCacheStorePort` is the explicit seam where
+// a future durable backend replaces `InMemoryDocumentCacheStore`.
+// Working default TTL is 24h via DEFAULT_CACHE_TTL_SECONDS.
+//
+// Modes:
+// - use: hit-read, miss-execute-and-write
+// - refresh: skip-read, re-execute-and-replace
+// - bypass: no-read, no-write
+// Operator-disabled degrades use/refresh to bypass (degraded=true).
+// Tools outside document scope (web_fetch/web_extract/parse) are forced to
+// bypass so existing contracts stay uncached.
+// Cache failures never fail processing: get/set faults are captured as
+// `cacheError` and the fresh execution result is still returned.
+
+export const MAX_DOCUMENT_CACHE_ENTRIES = 500;
+export const MAX_DOCUMENT_CACHE_KEY_CHARS = 2048;
+export const MAX_SOURCE_IDENTITY_CHARS = 1024;
+
+export interface DocumentCacheEntry {
+  readonly key: ParsedPayloadCacheKey;
+  readonly keyString: string;
+  readonly payload: CachePayload;
+  readonly bindings: LiveReferenceSet;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly provenance: BillingProvenance;
+}
+
+export interface DocumentCacheExecution<T> {
+  readonly data: T;
+  readonly provenance: BillingProvenance;
+}
+
+export interface DocumentCacheProcessParams<T> {
+  readonly mode: CacheMode;
+  readonly key: ParsedPayloadCacheKey;
+  readonly sourceIdentity: string;
+  readonly sourceVersion: string;
+  readonly ownershipScope: string;
+  readonly nowMs: number;
+  readonly requestedTtlSeconds?: number;
+  readonly toolName?: string;
+  readonly networkPolicyChecked?: boolean;
+  readonly execute: () => DocumentCacheExecution<T>;
+}
+
+export type DocumentCacheProcessResult<T> =
+  | {
+      readonly cached: true;
+      readonly data: T;
+      readonly hit: CacheHitResult;
+      readonly cacheError?: string;
+    }
+  | {
+      readonly cached: false;
+      readonly data: T;
+      readonly provenance: BillingProvenance;
+      readonly stored: boolean;
+      readonly degraded?: boolean;
+      readonly cacheError?: string;
+    };
+
+/** Durable-backend port: D1/KV snapshots plug in here. */
+export interface DocumentCacheStorePort {
+  get(keyString: string): DocumentCacheEntry | undefined;
+  set(entry: DocumentCacheEntry): void;
+  revokeSourceBinding(sourceIdentity: string): void;
+  size(): number;
+  sweepExpired(nowMs: number): number;
+}
+
+function cacheRuntimeError(message: string): GroundlaneError {
+  return new GroundlaneError("INVALID_INPUT", "document-cache", message);
+}
+
+/**
+ * Deterministic key string for the processing-cache runtime. Includes
+ * ownershipScope + contentHash + engine/model/schema/policy versions.
+ * URL/filename alone can never produce a valid key because contentHash,
+ * engine, model, schema, and policy versions are all required.
+ */
+export function documentCacheKeyString(key: ParsedPayloadCacheKey): string {
+  validateCacheKey(key);
+  const raw = [
+    key.ownershipScope,
+    key.contentHash,
+    key.engineId,
+    key.engineVersion,
+    key.modelId,
+    key.modelVersion,
+    key.normalizedOptions,
+    key.schemaVersion,
+    key.policyVersion,
+  ].join(":");
+  if (raw.length > MAX_DOCUMENT_CACHE_KEY_CHARS) {
+    throw cacheRuntimeError(
+      `Document cache key exceeds ${String(MAX_DOCUMENT_CACHE_KEY_CHARS)} characters`,
+    );
+  }
+  return raw;
+}
+
+function buildPayloadId(keyString: string): string {
+  return createHash("sha256").update(keyString).digest("hex").slice(0, 32);
+}
+
+function isExcludedTool(toolName: string | undefined): boolean {
+  if (toolName === undefined) return false;
+  return validateCacheScope(toolName, DEFAULT_CACHE_SCOPE_POLICY).allowed === false;
+}
+
+export class InMemoryDocumentCacheStore implements DocumentCacheStorePort {
+  private readonly entries = new Map<string, DocumentCacheEntry>();
+  private readonly maxEntries: number;
+
+  constructor(maxEntries: number = MAX_DOCUMENT_CACHE_ENTRIES) {
+    this.maxEntries = maxEntries;
+  }
+
+  get(keyString: string): DocumentCacheEntry | undefined {
+    return this.entries.get(keyString);
+  }
+
+  set(entry: DocumentCacheEntry): void {
+    if (!this.entries.has(entry.keyString) && this.entries.size >= this.maxEntries) {
+      let oldestKey: string | undefined;
+      let oldestCreated = Number.POSITIVE_INFINITY;
+      for (const [k, v] of this.entries) {
+        if (v.createdAt < oldestCreated) {
+          oldestCreated = v.createdAt;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey !== undefined) this.entries.delete(oldestKey);
+    }
+    this.entries.set(entry.keyString, entry);
+  }
+
+  revokeSourceBinding(sourceIdentity: string): void {
+    for (const [k, entry] of this.entries) {
+      const hasBinding = entry.bindings.bindings.some(
+        (b) => b.sourceIdentity === sourceIdentity,
+      );
+      if (!hasBinding) continue;
+      this.entries.set(k, {
+        ...entry,
+        bindings: revokeBinding(entry.bindings, sourceIdentity),
+      });
+    }
+  }
+
+  size(): number {
+    return this.entries.size;
+  }
+
+  sweepExpired(nowMs: number): number {
+    let removed = 0;
+    for (const [k, entry] of this.entries) {
+      if (nowMs > entry.expiresAt) {
+        this.entries.delete(k);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+}
+
+/** Revokes only the named source binding across all entries. */
+export function revokeDocumentSourceBinding(
+  store: DocumentCacheStorePort,
+  sourceIdentity: string,
+): void {
+  if (sourceIdentity.length === 0 || sourceIdentity.length > MAX_SOURCE_IDENTITY_CHARS) {
+    throw cacheRuntimeError("sourceIdentity must be non-empty and bounded");
+  }
+  store.revokeSourceBinding(sourceIdentity);
+}
+
+function buildEntry<T>(
+  key: ParsedPayloadCacheKey,
+  keyString: string,
+  sourceIdentity: string,
+  sourceVersion: string,
+  ownershipScope: string,
+  nowMs: number,
+  expiresAt: number,
+  execution: DocumentCacheExecution<T>,
+): DocumentCacheEntry {
+  const payloadId = buildPayloadId(keyString);
+  const binding: SourceBinding = {
+    bindingId: `bind-${sourceIdentity}@${sourceVersion}`,
+    sourceIdentity,
+    payloadId,
+    ownershipScope,
+    createdAt: nowMs,
+    revoked: false,
+  };
+  return {
+    key,
+    keyString,
+    payload: {
+      payloadId,
+      contentHash: key.contentHash,
+      data: execution.data,
+      createdAt: nowMs,
+    },
+    bindings: { payloadId, bindings: [binding] },
+    createdAt: nowMs,
+    expiresAt,
+    provenance: execution.provenance,
+  };
+}
+
+function toHitResult(
+  entry: DocumentCacheEntry,
+  nowMs: number,
+): CacheHitResult {
+  const ageSeconds = Math.max(0, Math.floor((nowMs - entry.createdAt) / 1000));
+  const hit: CacheHitResult = {
+    cached: true,
+    createdAt: entry.createdAt,
+    expiresAt: entry.expiresAt,
+    ageSeconds,
+    sourceHash: entry.key.contentHash,
+    engineVersion: entry.key.engineVersion,
+    modelVersion: entry.key.modelVersion,
+    billingProvenance: entry.provenance,
+  };
+  validateCacheHit(hit);
+  return hit;
+}
+
+/**
+ * Runs one document-cache operation with the requested mode.
+ * Never throws for store faults: they are captured as `cacheError`.
+ * Throws (sanitized, no payload/secret) for invalid keys, ownership
+ * mismatch, or missing network-policy evidence.
+ */
+export function processDocumentCache<T>(
+  store: DocumentCacheStorePort,
+  config: CacheConfig,
+  params: DocumentCacheProcessParams<T>,
+): DocumentCacheProcessResult<T> {
+  if (params.sourceIdentity.length === 0 || params.sourceIdentity.length > MAX_SOURCE_IDENTITY_CHARS) {
+    throw cacheRuntimeError("sourceIdentity must be non-empty and bounded");
+  }
+  if (!Number.isInteger(params.nowMs) || params.nowMs <= 0) {
+    throw cacheRuntimeError("nowMs must be a positive integer");
+  }
+  validateCacheKey(params.key);
+  validateOwnershipScope(params.ownershipScope, params.key.ownershipScope);
+  if (params.networkPolicyChecked === false) {
+    validateNetworkPolicyRequired(DEFAULT_CACHE_SCOPE_POLICY, false);
+  }
+
+  const resolved = resolveCacheMode(params.mode, config);
+  let effectiveMode = resolved.effectiveMode;
+  if (isExcludedTool(params.toolName)) {
+    effectiveMode = "bypass";
+  }
+
+  const runExecute = (): DocumentCacheExecution<T> => params.execute();
+
+  if (effectiveMode === "bypass") {
+    const execution = runExecute();
+    const result: DocumentCacheProcessResult<T> = resolved.degraded
+      ? {
+          cached: false,
+          data: execution.data,
+          provenance: execution.provenance,
+          stored: false,
+          degraded: true,
+        }
+      : { cached: false, data: execution.data, provenance: execution.provenance, stored: false };
+    return result;
+  }
+
+  const keyString = documentCacheKeyString(params.key);
+  const ttlSeconds = resolveEffectiveTtl(params.requestedTtlSeconds, config);
+  const expiresAt = params.nowMs + ttlSeconds * 1000;
+
+  if (effectiveMode === "refresh") {
+    const execution = runExecute();
+    try {
+      let next: DocumentCacheEntry;
+      const existing = store.get(keyString);
+      if (existing === undefined) {
+        next = buildEntry(
+          params.key,
+          keyString,
+          params.sourceIdentity,
+          params.sourceVersion,
+          params.ownershipScope,
+          params.nowMs,
+          expiresAt,
+          execution,
+        );
+      } else {
+        const hasBinding = existing.bindings.bindings.some(
+          (b) => b.sourceIdentity === params.sourceIdentity,
+        );
+        const binding: SourceBinding = {
+          bindingId: `bind-${params.sourceIdentity}@${params.sourceVersion}`,
+          sourceIdentity: params.sourceIdentity,
+          payloadId: existing.payload.payloadId,
+          ownershipScope: params.ownershipScope,
+          createdAt: params.nowMs,
+          revoked: false,
+        };
+        const bindings: LiveReferenceSet = hasBinding
+          ? {
+              payloadId: existing.payload.payloadId,
+              bindings: existing.bindings.bindings.map((b) =>
+                b.sourceIdentity === params.sourceIdentity ? binding : b,
+              ),
+            }
+          : {
+              payloadId: existing.payload.payloadId,
+              bindings: [...existing.bindings.bindings, binding],
+            };
+        next = {
+          key: params.key,
+          keyString,
+          payload: {
+            payloadId: existing.payload.payloadId,
+            contentHash: params.key.contentHash,
+            data: execution.data,
+            createdAt: params.nowMs,
+          },
+          bindings,
+          createdAt: params.nowMs,
+          expiresAt,
+          provenance: execution.provenance,
+        };
+      }
+      store.set(next);
+    } catch (error) {
+      const cacheError = error instanceof Error ? error.message.slice(0, 500) : "Cache operation failed";
+      return {
+        cached: false,
+        data: execution.data,
+        provenance: execution.provenance,
+        stored: false,
+        cacheError,
+      };
+    }
+    return {
+      cached: false,
+      data: execution.data,
+      provenance: execution.provenance,
+      stored: true,
+    };
+  }
+
+  // effectiveMode === "use": try read, miss -> execute and write.
+  let cachedEntry: DocumentCacheEntry | undefined;
+  let readError: string | undefined;
+  try {
+    cachedEntry = store.get(keyString);
+  } catch (error) {
+    readError = error instanceof Error ? error.message.slice(0, 500) : "Cache read failed";
+    cachedEntry = undefined;
+  }
+  if (cachedEntry !== undefined && readError === undefined) {
+    const expired = params.nowMs > cachedEntry.expiresAt;
+    const existingBinding = cachedEntry.bindings.bindings.find(
+      (b) => b.sourceIdentity === params.sourceIdentity,
+    );
+    const bindingLive = existingBinding !== undefined && !existingBinding.revoked;
+    const ownershipOk = cachedEntry.bindings.bindings.every(
+      (b) => b.ownershipScope === params.ownershipScope || b.sourceIdentity !== params.sourceIdentity,
+    );
+    if (!expired && bindingLive && ownershipOk) {
+      try {
+        validateOwnershipScope(params.ownershipScope, cachedEntry.key.ownershipScope);
+        const hit = toHitResult(cachedEntry, params.nowMs);
+        return {
+          cached: true,
+          data: cachedEntry.payload.data as T,
+          hit,
+        };
+      } catch (error) {
+        readError = error instanceof Error ? error.message.slice(0, 500) : "Cache hit validation failed";
+      }
+    }
+    // Revoked binding: source deleted -> miss without restoring the binding.
+    // Missing binding (never seen source): fall through to execute-and-append below.
+    if (existingBinding !== undefined && !bindingLive) {
+      const execution = runExecute();
+      if (readError !== undefined) {
+        return {
+          cached: false,
+          data: execution.data,
+          provenance: execution.provenance,
+          stored: false,
+          cacheError: readError,
+        };
+      }
+      return {
+        cached: false,
+        data: execution.data,
+        provenance: execution.provenance,
+        stored: false,
+      };
+    }
+    if (!expired && existingBinding === undefined) {
+      // Same payload shared by a new source: execute then append binding.
+      const execution = runExecute();
+      try {
+        const latest = store.get(keyString);
+        if (latest !== undefined && params.nowMs <= latest.expiresAt) {
+          const binding: SourceBinding = {
+            bindingId: `bind-${params.sourceIdentity}@${params.sourceVersion}`,
+            sourceIdentity: params.sourceIdentity,
+            payloadId: latest.payload.payloadId,
+            ownershipScope: params.ownershipScope,
+            createdAt: params.nowMs,
+            revoked: false,
+          };
+          store.set({
+            ...latest,
+            bindings: {
+              payloadId: latest.payload.payloadId,
+              bindings: [...latest.bindings.bindings, binding],
+            },
+          });
+          return {
+            cached: false,
+            data: execution.data,
+            provenance: execution.provenance,
+            stored: true,
+          };
+        }
+      } catch (error) {
+        return {
+          cached: false,
+          data: execution.data,
+          provenance: execution.provenance,
+          stored: false,
+          cacheError: error instanceof Error ? error.message.slice(0, 500) : "Cache write failed",
+        };
+      }
+      // Entry vanished/expired between reads: fall through to create path.
+      try {
+        store.set(
+          buildEntry(
+            params.key,
+            keyString,
+            params.sourceIdentity,
+            params.sourceVersion,
+            params.ownershipScope,
+            params.nowMs,
+            expiresAt,
+            execution,
+          ),
+        );
+        return {
+          cached: false,
+          data: execution.data,
+          provenance: execution.provenance,
+          stored: true,
+        };
+      } catch (error) {
+        return {
+          cached: false,
+          data: execution.data,
+          provenance: execution.provenance,
+          stored: false,
+          cacheError: error instanceof Error ? error.message.slice(0, 500) : "Cache write failed",
+        };
+      }
+    }
+  }
+
+  const execution = runExecute();
+  if (readError !== undefined) {
+    return {
+      cached: false,
+      data: execution.data,
+      provenance: execution.provenance,
+      stored: false,
+      cacheError: readError,
+    };
+  }
+  try {
+    const existing = store.get(keyString);
+    if (existing === undefined || params.nowMs > existing.expiresAt) {
+      store.set(
+        buildEntry(
+          params.key,
+          keyString,
+          params.sourceIdentity,
+          params.sourceVersion,
+          params.ownershipScope,
+          params.nowMs,
+          expiresAt,
+          execution,
+        ),
+      );
+    } else {
+      const hasBinding = existing.bindings.bindings.some(
+        (b) => b.sourceIdentity === params.sourceIdentity,
+      );
+      if (!hasBinding) {
+        const binding: SourceBinding = {
+          bindingId: `bind-${params.sourceIdentity}@${params.sourceVersion}`,
+          sourceIdentity: params.sourceIdentity,
+          payloadId: existing.payload.payloadId,
+          ownershipScope: params.ownershipScope,
+          createdAt: params.nowMs,
+          revoked: false,
+        };
+        store.set({
+          ...existing,
+          bindings: {
+            payloadId: existing.payload.payloadId,
+            bindings: [...existing.bindings.bindings, binding],
+          },
+        });
+      }
+    }
+    return {
+      cached: false,
+      data: execution.data,
+      provenance: execution.provenance,
+      stored: true,
+    };
+  } catch (error) {
+    return {
+      cached: false,
+      data: execution.data,
+      provenance: execution.provenance,
+      stored: false,
+      cacheError: error instanceof Error ? error.message.slice(0, 500) : "Cache write failed",
+    };
+  }
 }

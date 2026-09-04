@@ -591,3 +591,215 @@ void test("PRD 682: projection kind is in projection key but not canonical key",
     projectionCacheKeyString(txtKey),
   );
 });
+
+// ---------------------------------------------------------------------------
+// PRD 662: Document processing cache runtime (in-memory port)
+// ---------------------------------------------------------------------------
+
+void test("PRD 662: use miss executes and writes, second use hits with cached=true", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const key = makeFullCacheKey();
+  let calls = 0;
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => {
+    calls += 1;
+    return {
+      data: `payload-${String(calls)}`,
+      provenance: { isOriginal: true, originalCost: 0.02, engine: "docparser", model: "vlm-1" },
+    };
+  };
+  const params = {
+    mode: "use" as const,
+    key,
+    sourceIdentity: "source-a",
+    sourceVersion: "v1",
+    ownershipScope: "tenant-a",
+    nowMs: 1_700_000_000_000,
+    execute,
+  };
+  const first = processDocumentCache(store, config, params);
+  assert.equal(first.cached, false);
+  assert.equal(calls, 1);
+  const second = processDocumentCache(store, config, { ...params, nowMs: 1_700_000_360_000 });
+  assert.equal(second.cached, true);
+  assert.equal(calls, 1);
+  if (second.cached) {
+    assert.equal(second.hit.billingProvenance.isOriginal, true);
+    assert.ok(second.hit.ageSeconds >= 0);
+  }
+});
+
+void test("PRD 662: refresh skips read and replaces entry", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const key = makeFullCacheKey();
+  let n = 0;
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => {
+    n += 1;
+    return {
+      data: `v${String(n)}`,
+      provenance: { isOriginal: true, originalCost: 0.01, engine: "docparser", model: "vlm-1" },
+    };
+  };
+  const base = {
+    key,
+    sourceIdentity: "source-a",
+    sourceVersion: "v1",
+    ownershipScope: "tenant-a",
+    nowMs: 1_700_000_000_000,
+    execute,
+  };
+  const first = processDocumentCache(store, config, { ...base, mode: "use" as const });
+  assert.equal(first.cached, false);
+  const refreshed = processDocumentCache(store, config, { ...base, mode: "refresh" as const, nowMs: 1_700_000_100_000 });
+  assert.equal(refreshed.cached, false);
+  assert.equal(n, 2);
+  const hit = processDocumentCache(store, config, { ...base, mode: "use" as const, nowMs: 1_700_000_200_000 });
+  assert.equal(hit.cached, true);
+  if (hit.cached) assert.equal(hit.data, "v2");
+});
+
+void test("PRD 662: bypass performs no read and no write", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const key = makeFullCacheKey();
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => ({
+    data: "fresh",
+    provenance: { isOriginal: true, originalCost: 0.01, engine: "docparser", model: "vlm-1" },
+  });
+  const params = {
+    mode: "bypass" as const,
+    key,
+    sourceIdentity: "source-a",
+    sourceVersion: "v1",
+    ownershipScope: "tenant-a",
+    nowMs: 1_700_000_000_000,
+    execute,
+  };
+  const r1 = processDocumentCache(store, config, params);
+  const r2 = processDocumentCache(store, config, params);
+  assert.equal(r1.cached, false);
+  assert.equal(r2.cached, false);
+  assert.equal(store.size(), 0);
+});
+
+void test("PRD 662: cache key without contentHash rejected (no URL-only keys)", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const badKey = makeFullCacheKey({ contentHash: "" });
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => ({
+    data: "x",
+    provenance: { isOriginal: true, originalCost: 0, engine: "docparser", model: "vlm-1" },
+  });
+  assert.throws(
+    () => processDocumentCache(store, config, {
+      mode: "use" as const,
+      key: badKey,
+      sourceIdentity: "source-a",
+      sourceVersion: "v1",
+      ownershipScope: "tenant-a",
+      nowMs: 1_700_000_000_000,
+      execute,
+    }),
+    { message: /contentHash/ },
+  );
+});
+
+void test("PRD 662: revoking one source binding preserves other source hit", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache, revokeDocumentSourceBinding } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const key = makeFullCacheKey();
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => ({
+    data: "shared",
+    provenance: { isOriginal: true, originalCost: 0.01, engine: "docparser", model: "vlm-1" },
+  });
+  const base = {
+    key,
+    sourceVersion: "v1",
+    ownershipScope: "tenant-a",
+    nowMs: 1_700_000_000_000,
+    execute,
+  };
+  processDocumentCache(store, config, { ...base, mode: "use" as const, sourceIdentity: "source-a" });
+  processDocumentCache(store, config, { ...base, mode: "use" as const, sourceIdentity: "source-b" });
+  revokeDocumentSourceBinding(store, "source-a");
+  const hitA = processDocumentCache(store, config, { ...base, mode: "use" as const, sourceIdentity: "source-a", nowMs: 1_700_000_010_000 });
+  // source-a binding revoked -> must re-execute (miss), not hit revoked payload
+  assert.equal(hitA.cached, false);
+  const hitB = processDocumentCache(store, config, { ...base, mode: "use" as const, sourceIdentity: "source-b", nowMs: 1_700_000_020_000 });
+  assert.equal(hitB.cached, true);
+});
+
+void test("PRD 662: cache store failure does not fail processing", async () => {
+  const { processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const failingStore = {
+    get(): never { throw new Error("D1 down"); },
+    set(): never { throw new Error("D1 down"); },
+    revokeSourceBinding(): void { throw new Error("D1 down"); },
+    size(): number { throw new Error("D1 down"); },
+    sweepExpired(): number { throw new Error("D1 down"); },
+  };
+  const config = makeDefaultConfig();
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => ({
+    data: "fresh",
+    provenance: { isOriginal: true, originalCost: 0.01, engine: "docparser", model: "vlm-1" },
+  });
+  const result = processDocumentCache(failingStore, config, {
+    mode: "use" as const,
+    key: makeFullCacheKey(),
+    sourceIdentity: "source-a",
+    sourceVersion: "v1",
+    ownershipScope: "tenant-a",
+    nowMs: 1_700_000_000_000,
+    execute,
+  });
+  assert.equal(result.cached, false);
+  assert.equal(result.data, "fresh");
+  assert.ok(result.cacheError?.includes("D1 down"));
+});
+
+void test("PRD 662: excluded tools bypass cache without writes", async () => {
+  const { InMemoryDocumentCacheStore, processDocumentCache } =
+    await import("../../src/core/document-cache-contract.js");
+  const store = new InMemoryDocumentCacheStore();
+  const config = makeDefaultConfig();
+  const execute = (): { data: string; provenance: { isOriginal: boolean; originalCost: number; engine: string; model: string } } => ({
+    data: "fresh",
+    provenance: { isOriginal: true, originalCost: 0.01, engine: "docparser", model: "vlm-1" },
+  });
+  for (const toolName of ["web_fetch", "web_extract", "parse"] as const) {
+    const r = processDocumentCache(store, config, {
+      mode: "use" as const,
+      key: makeFullCacheKey(),
+      sourceIdentity: `src-${toolName}`,
+      sourceVersion: "v1",
+      ownershipScope: "tenant-a",
+      nowMs: 1_700_000_000_000,
+      toolName,
+      networkPolicyChecked: true,
+      execute,
+    });
+    assert.equal(r.cached, false);
+  }
+  assert.equal(store.size(), 0);
+});
+
+void test("PRD 662: documentCacheKeyString is deterministic and bounded", async () => {
+  const { documentCacheKeyString } =
+    await import("../../src/core/document-cache-contract.js");
+  const key = makeFullCacheKey();
+  assert.equal(documentCacheKeyString(key), documentCacheKeyString(key));
+  assert.ok(documentCacheKeyString(key).includes("sha256:abc123"));
+  assert.ok(documentCacheKeyString(key).length < 2048);
+});

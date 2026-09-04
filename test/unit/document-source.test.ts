@@ -459,3 +459,190 @@ void test("PRD 689: adding required fields while keeping existing is accepted", 
   };
   assert.doesNotThrow(() => validateParseBackwardCompat(previous, next));
 });
+
+// ---------------------------------------------------------------------------
+// PRD 659 (input runtime): MIME sniffing, encrypted/macro/archive rejection,
+// page/byte limits, preflight classification, transient-vs-durable guard
+// ---------------------------------------------------------------------------
+
+void test("PRD 659: sniffMimeFromBytes detects PDF/PNG/JPEG magic", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
+  assert.equal(mod.sniffMimeFromBytes(pdf), "application/pdf");
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.equal(mod.sniffMimeFromBytes(png), "image/png");
+  const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  assert.equal(mod.sniffMimeFromBytes(jpg), "image/jpeg");
+});
+
+void test("PRD 659: classify PDF bytes returns pdf hint without OCR", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const text = "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+  const data = new TextEncoder().encode(text);
+  const c = mod.classifyDocumentBytes(data, "application/pdf", "doc.pdf");
+  assert.equal(c.inputKind, "pdf");
+  assert.equal(c.sniffedMime, "application/pdf");
+  assert.equal(c.needsOcr, false);
+});
+
+void test("PRD 659: classify PNG bytes returns image hint with OCR flag", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+  const c = mod.classifyDocumentBytes(data, "image/png", "scan.png");
+  assert.equal(c.inputKind, "image");
+  assert.equal(c.needsOcr, true);
+});
+
+void test("PRD 659: classify OOXML docx returns office hint", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const head = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00]);
+  const tail = new TextEncoder().encode("[Content_Types].xml word/document.xml");
+  const data = new Uint8Array(head.length + tail.length);
+  data.set(head, 0);
+  data.set(tail, head.length);
+  const c = mod.classifyDocumentBytes(
+    data,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "report.docx",
+  );
+  assert.equal(c.inputKind, "office");
+  assert.equal(c.needsOcr, false);
+});
+
+void test("PRD 659: encrypted PDF rejected", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const text = "%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Encrypt 2 0 R >>\nendobj\n";
+  const data = new TextEncoder().encode(text);
+  assert.throws(() => mod.classifyDocumentBytes(data, "application/pdf", "locked.pdf"), {
+    message: /encrypted/i,
+  });
+});
+
+void test("PRD 659: OOXML with macro rejected", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const head = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+  const tail = new TextEncoder().encode("xl/vbaProject.bin malicious");
+  const data = new Uint8Array(head.length + tail.length);
+  data.set(head, 0);
+  data.set(tail, head.length);
+  assert.throws(
+    () =>
+      mod.classifyDocumentBytes(
+        data,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "budget.xlsx",
+      ),
+    { message: /macro/i },
+  );
+});
+
+void test("PRD 659: generic zip archive rejected", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const head = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+  const tail = new TextEncoder().encode("random archive content");
+  const data = new Uint8Array(head.length + tail.length);
+  data.set(head, 0);
+  data.set(tail, head.length);
+  assert.throws(() => mod.classifyDocumentBytes(data, "application/zip", "bundle.zip"), {
+    message: /archive/i,
+  });
+});
+
+void test("PRD 659: MIME mismatch between sniff and declared rejected", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.throws(() => mod.classifyDocumentBytes(png, "application/pdf", "fake.pdf"), {
+    message: /MIME.*mismatch|mismatch.*MIME/i,
+  });
+});
+
+void test("PRD 659: byte limits enforced on inline bytes", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const data = new Uint8Array(1024);
+  assert.throws(
+    () =>
+      mod.validateDocumentByteLimits(
+        data,
+        { maxBytes: 100, maxPages: 10, maxTimeMs: 1000, maxMemoryMb: 64 },
+        1,
+      ),
+    { message: /exceeds|limit/i },
+  );
+});
+
+void test("PRD 659: page limits enforced via estimated PDF pages", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  let text = "%PDF-1.7\n";
+  for (let i = 0; i < 5; i += 1) {
+    text += `${String(i)} 0 obj\n<< /Type /Page >>\nendobj\n`;
+  }
+  const data = new TextEncoder().encode(text);
+  const pages = mod.estimatePdfPages(data);
+  assert.equal(pages, 5);
+  assert.throws(
+    () =>
+      mod.validateDocumentByteLimits(
+        data,
+        { maxBytes: 10_000_000, maxPages: 2, maxTimeMs: 1000, maxMemoryMb: 64 },
+        pages,
+      ),
+    { message: /pages|limit/i },
+  );
+});
+
+void test("PRD 659: preflight inline source accepted with classification", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const data = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+  const result = mod.preflightInlineSource(
+    { kind: "inline", data, declaredMime: "application/pdf", filename: "a.pdf" },
+    { maxBytes: 10_000_000, maxPages: 100, maxTimeMs: 5000, maxMemoryMb: 256 },
+  );
+  assert.equal(result.accepted, true);
+  if (result.accepted) {
+    assert.equal(result.inputKind, "pdf");
+  }
+});
+
+void test("PRD 659: preflight URL source deferred without fetching", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const result = mod.preflightDocumentSource(
+    { kind: "url", url: "https://example.com/report.pdf" },
+    { maxBytes: 10_000_000, maxPages: 100, maxTimeMs: 5000, maxMemoryMb: 256 },
+  );
+  assert.equal(result.accepted, true);
+  if (result.accepted && "deferred" in result) {
+    assert.equal(result.deferred, true);
+  } else {
+    assert.fail("URL preflight must be deferred");
+  }
+});
+
+void test("PRD 659: preflight rejects local path without network access", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  assert.throws(
+    () =>
+      mod.preflightDocumentSource(
+        { kind: "url", url: "/etc/passwd" },
+        { maxBytes: 10_000_000, maxPages: 100, maxTimeMs: 5000, maxMemoryMb: 256 },
+      ),
+    { message: /local path/ },
+  );
+});
+
+void test("PRD 659: transient cache entry cannot be used as durable artifact", async () => {
+  const mod = await import("../../src/core/document-source.js");
+  const transient = {
+    kind: "transient_cache" as const,
+    contentHash: "sha256-abc",
+    expiresAt: Date.now() + 60_000,
+  };
+  assert.throws(() => mod.requireDurableForArtifact(transient), {
+    message: /transient/i,
+  });
+  const durable = {
+    kind: "durable_artifact" as const,
+    refId: "art_123",
+    ownershipScope: "deploy_prod",
+  };
+  assert.doesNotThrow(() => mod.requireDurableForArtifact(durable));
+});

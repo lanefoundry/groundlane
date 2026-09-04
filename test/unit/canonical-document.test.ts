@@ -724,3 +724,109 @@ void test("PRD 683: billing not double-counted when returning canonical + projec
   // Provenance lives only on the envelope
   assert.ok(envelope.provenance.cost >= 0);
 });
+
+// ---------------------------------------------------------------------------
+// PRD 663: Canonical envelope authoritative output runtime
+// ---------------------------------------------------------------------------
+
+void test("PRD 663: projection dispatcher defaults to markdown", async () => {
+  const { projectCanonicalDocument } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({ blocks: [makeTextBlock("b1", "hello")], readingOrder: ["b1"] });
+  const proj = projectCanonicalDocument(envelope);
+  assert.equal(proj.kind, "markdown");
+  assert.ok(proj.content.includes("hello"));
+  assert.equal(proj.sourceDocumentId, envelope.documentId);
+  assert.equal(proj.canonicalContentId, envelope.canonicalContentId);
+  assert.ok(proj.projectionVersion.length > 0);
+});
+
+void test("PRD 663: structured projection is deterministic and lossless", async () => {
+  const { projectCanonicalDocument } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({
+    blocks: [makeTextBlock("b1", "a"), makeTableBlock("tbl1")],
+    readingOrder: ["b1", "tbl1"],
+  });
+  const s1 = projectCanonicalDocument(envelope, "structured");
+  const s2 = projectCanonicalDocument(envelope, "structured");
+  assert.equal(s1.content, s2.content);
+  assert.equal(s1.lossy, false);
+  assert.deepEqual(s1.omissions, []);
+});
+
+void test("PRD 663: all projection bundles deterministic content", async () => {
+  const { projectCanonicalDocument } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({ blocks: [makeTextBlock("b1", "x")], readingOrder: ["b1"] });
+  const a1 = projectCanonicalDocument(envelope, "all");
+  const a2 = projectCanonicalDocument(envelope, "all");
+  assert.equal(a1.content, a2.content);
+  assert.equal(a1.kind, "all");
+});
+
+void test("PRD 663: text projection reports lossy with omissions for tables", async () => {
+  const { projectCanonicalDocument } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({ blocks: [makeTableBlock("tbl1")], readingOrder: ["tbl1"] });
+  const proj = projectCanonicalDocument(envelope, "text");
+  assert.equal(proj.lossy, true);
+  assert.ok(proj.omissions.length > 0);
+  assert.ok(proj.warnings.length > 0);
+});
+
+void test("PRD 663: adapter boundary rejects provider raw JSON", async () => {
+  const { assertNoRawProviderPayload } =
+    await import("../../src/core/canonical-document.js");
+  assert.throws(
+    () => assertNoRawProviderPayload({ rawJson: "{\"x\":1}", blocks: [] }),
+    { message: /adapter boundary/ },
+  );
+  assert.throws(
+    () => assertNoRawProviderPayload({ providerPayload: {}, blocks: [] }),
+    { message: /adapter boundary/ },
+  );
+  assert.doesNotThrow(() => assertNoRawProviderPayload({ blocks: [] }));
+});
+
+void test("PRD 663: cache core excludes source fields and rebuild restores binding", async () => {
+  const { extractCacheableCore, rebuildEnvelopeFromCacheHit } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({
+    sourceIdentity: { contentHash: "h1", url: "https://example.com/a.pdf" },
+  });
+  const core = extractCacheableCore(envelope);
+  assert.equal(JSON.stringify(core).includes("example.com"), false);
+  const rebuilt = rebuildEnvelopeFromCacheHit(core, { contentHash: "h1", url: "https://example.com/b.pdf" }, "doc-new");
+  assert.equal(rebuilt.documentId, "doc-new");
+  assert.equal(rebuilt.sourceIdentity.url, "https://example.com/b.pdf");
+  assert.deepEqual(rebuilt.blocks, envelope.blocks);
+});
+
+void test("PRD 663: over-limit output returns typed artifact summary", async () => {
+  const { checkOutputBounds, buildTypedTruncatedResult } =
+    await import("../../src/core/canonical-document.js");
+  const envelope = makeEnvelope({ blocks: [makeTextBlock("b1", "x".repeat(5000))], readingOrder: ["b1"] });
+  const bounds = { maxBytes: 10, maxChars: 1_000_000, maxBlocks: 100, maxTables: 10, maxAssets: 10 };
+  const check = checkOutputBounds(envelope, bounds);
+  assert.equal(check.withinBounds, false);
+  const summary = buildTypedTruncatedResult(envelope, "art-001", "projection", check);
+  assert.equal(summary.truncated, true);
+  assert.equal(summary.artifactKind, "projection");
+  assert.equal(summary.artifactRef, "art-001");
+  assert.deepEqual(summary.provenance, envelope.provenance);
+});
+
+void test("PRD 663: projectWithBounds returns projection or typed summary", async () => {
+  const { projectWithBounds } =
+    await import("../../src/core/canonical-document.js");
+  const small = makeEnvelope({ blocks: [makeTextBlock("b1", "hi")], readingOrder: ["b1"] });
+  const bounds = { maxBytes: 1_000_000, maxChars: 1_000_000, maxBlocks: 100, maxTables: 10, maxAssets: 10 };
+  const ok = projectWithBounds(small, "markdown", bounds, "art-unused", "projection");
+  assert.equal(ok.withinBounds, true);
+  if (ok.withinBounds) assert.ok(ok.projection.content.includes("hi"));
+  const big = makeEnvelope({ blocks: [makeTextBlock("b1", "x".repeat(5000))], readingOrder: ["b1"] });
+  const over = projectWithBounds(big, "markdown", { ...bounds, maxBytes: 10 }, "art-big", "projection");
+  assert.equal(over.withinBounds, false);
+  if (!over.withinBounds) assert.equal(over.summary.artifactKind, "projection");
+});

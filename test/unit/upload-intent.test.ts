@@ -523,3 +523,192 @@ void test("PRD 684: projection result artifact ref accepted", () => {
   const ref = makeArtifactRef({ artifactKind: "projection" });
   assert.doesNotThrow(() => validateResultArtifactRef(ref));
 });
+
+// ---------------------------------------------------------------------------
+// PRD 660 (upload flow runtime): create -> PUT -> complete/finalize integration
+// ---------------------------------------------------------------------------
+
+void test("PRD 660: upload flow happy path finalizes to opaque verified ArtifactRef", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const now = NOW;
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 64,
+      maxSize: 10_000,
+    },
+    now,
+  );
+  assert.equal(intent.status, "pending");
+  const pdfText = "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+  const bytes = new TextEncoder().encode(pdfText);
+  store.recordPut(intent.intentId, "deploy_prod", bytes, now + 1000);
+  const ref = store.completeAndFinalize(intent.intentId, "deploy_prod", now + 2000);
+  assert.equal(ref.verified, true);
+  assert.equal(ref.ownershipScope, "deploy_prod");
+  assert.ok(ref.refId.startsWith("art_"));
+  assert.equal(ref.expiresAt, now + 2000 + VERIFIED_ARTIFACT_DEFAULT_TTL_MS);
+  assert.doesNotThrow(() => validateArtifactRefId(ref.refId));
+});
+
+void test("PRD 660: expired intent cannot complete", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 32,
+      maxSize: 10_000,
+      ttlMs: 1000,
+    },
+    NOW,
+  );
+  const bytes = new TextEncoder().encode("%PDF-1.7\n");
+  store.recordPut(intent.intentId, "deploy_prod", bytes, NOW + 500);
+  assert.throws(() => store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 5000), {
+    message: /expired/i,
+  });
+});
+
+void test("PRD 660: over-limit PUT rejected", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 10,
+      maxSize: 16,
+    },
+    NOW,
+  );
+  const big = new Uint8Array(64);
+  big.set([0x25, 0x50, 0x44, 0x46], 0);
+  assert.throws(() => store.recordPut(intent.intentId, "deploy_prod", big, NOW + 10), {
+    message: /exceeds max size/i,
+  });
+});
+
+void test("PRD 660: MIME sniff mismatch rejected on complete", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "image/png",
+      declaredSize: 32,
+      maxSize: 10_000,
+    },
+    NOW,
+  );
+  const pdf = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<< >>\nendobj\n");
+  store.recordPut(intent.intentId, "deploy_prod", pdf, NOW + 10);
+  assert.throws(() => store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 20), {
+    message: /MIME.*mismatch/i,
+  });
+});
+
+void test("PRD 660: content hash mismatch rejected when expectedDigest set", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 32,
+      maxSize: 10_000,
+      expectedDigest: "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+    },
+    NOW,
+  );
+  const pdf = new TextEncoder().encode("%PDF-1.7\nreal content\n");
+  store.recordPut(intent.intentId, "deploy_prod", pdf, NOW + 10);
+  assert.throws(() => store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 20), {
+    message: /hash mismatch/i,
+  });
+});
+
+void test("PRD 660: replayed complete rejected after finalize", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 32,
+      maxSize: 10_000,
+    },
+    NOW,
+  );
+  const pdf = new TextEncoder().encode("%PDF-1.7\n");
+  store.recordPut(intent.intentId, "deploy_prod", pdf, NOW + 10);
+  store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 20);
+  assert.throws(() => store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 30), {
+    message: /finalized|cannot overwrite|already/i,
+  });
+});
+
+void test("PRD 660: cross-ownership PUT and complete rejected", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 32,
+      maxSize: 10_000,
+    },
+    NOW,
+  );
+  const pdf = new TextEncoder().encode("%PDF-1.7\n");
+  assert.throws(() => store.recordPut(intent.intentId, "deploy_staging", pdf, NOW + 10), {
+    message: /Cross-ownership/i,
+  });
+  store.recordPut(intent.intentId, "deploy_prod", pdf, NOW + 10);
+  assert.throws(() => store.completeAndFinalize(intent.intentId, "deploy_staging", NOW + 20), {
+    message: /Cross-ownership/i,
+  });
+});
+
+void test("PRD 660: multipart intent rejected in V1 runtime", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  assert.throws(
+    () =>
+      store.createIntent(
+        {
+          ownershipScope: "deploy_prod",
+          declaredMime: "application/pdf",
+          declaredSize: 32,
+          maxSize: 10_000,
+          multipart: true,
+        },
+        NOW,
+      ),
+    { message: /multipart is rejected/i },
+  );
+});
+
+void test("PRD 660: finalized refId is storage-neutral opaque", async () => {
+  const mod = await import("../../src/core/upload-intent.js");
+  const store = new mod.UploadFlowStore();
+  const intent = store.createIntent(
+    {
+      ownershipScope: "deploy_prod",
+      declaredMime: "application/pdf",
+      declaredSize: 16,
+      maxSize: 10_000,
+    },
+    NOW,
+  );
+  const pdf = new TextEncoder().encode("%PDF-1.7\n");
+  store.recordPut(intent.intentId, "deploy_prod", pdf, NOW + 5);
+  const ref = store.completeAndFinalize(intent.intentId, "deploy_prod", NOW + 10);
+  assert.ok(!ref.refId.includes("/"));
+  assert.ok(!ref.refId.includes("?"));
+  assert.ok(!ref.refId.startsWith("/"));
+  assert.ok(!ref.refId.includes("presigned"));
+});

@@ -4,6 +4,8 @@
 
 import { createHash } from "node:crypto";
 
+import { GroundlaneError } from "./errors.js";
+
 // -- PRD 685: Dual-track execution -----------------------------------------
 
 export type ExecutionTrack = "sync" | "async";
@@ -408,4 +410,477 @@ export function computeRemainingBudget(
     );
   }
   return remaining;
+}
+
+// ---------------------------------------------------------------------------
+// PRD 664: Sync/async dual-track execution runtime (in-memory port)
+// ---------------------------------------------------------------------------
+//
+// Deterministic in-memory runtime behind the validators above. No live
+// provider, D1/DO/Workflow/Queue/R2 bindings, or network. `DocumentJobStorePort`
+// is the explicit durable seam; `DocumentProviderPort` is the upstream-cancel
+// seam. Concepts mirror src/core/async-lifecycle.ts (ownership, TTL, three
+// independent cancels with ack gating, idempotency, sanitized errors) but are
+// re-implemented here for the document job shape; async-lifecycle.ts itself is
+// never modified.
+//
+// Tracks share one schema family: sync and async both produce ExecutionResult.
+// Sync never silently becomes async: over-limit/async-only sync requests throw
+// ASYNC_REQUIRED and create no job. execution=auto requires explicit opt-in.
+
+export const MAX_DOCUMENT_JOBS = 500;
+export const MAX_DOCUMENT_OWNER_CHARS = 256;
+export const MAX_DOCUMENT_HASH_CHARS = 256;
+export const MAX_DOCUMENT_ENGINE_CHARS = 128;
+
+/** Engines that can never complete within sync limits. */
+export const ASYNC_ONLY_ENGINES: readonly string[] = [
+  "ocr",
+  "vlm",
+  "audio",
+  "ocr-vlm",
+  "layout-vlm",
+  "transcription",
+];
+
+export function requiresExplicitAsyncJob(engine: string): boolean {
+  return ASYNC_ONLY_ENGINES.includes(engine);
+}
+
+function executionRuntimeError(message: string): GroundlaneError {
+  return new GroundlaneError("INVALID_INPUT", "document-execution", message);
+}
+
+/**
+ * Resolves an execution mode string. "auto" is rejected unless the caller
+ * passes explicit opt-in (allowAuto=true). "sync"/"async" pass through.
+ */
+export function resolveExecutionModeWithOptIn(
+  mode: string,
+  allowAuto: boolean,
+): ExecutionMode | "auto" {
+  if (mode === "auto") {
+    if (!allowAuto) {
+      throw executionRuntimeError(
+        'Execution mode "auto" requires explicit opt-in; pass allowAuto=true or use explicit "sync"/"async"',
+      );
+    }
+    return "auto";
+  }
+  validateExecutionMode(mode);
+  return mode as ExecutionMode;
+}
+
+/** Routes an auto request to a track; requires explicit opt-in. */
+export function routeAutoExecution(
+  request: ExecutionRequest,
+  limits: ExecutionLimits,
+  allowAuto: boolean,
+): ExecutionTrack {
+  if (!allowAuto) {
+    throw executionRuntimeError(
+      'Execution mode "auto" requires explicit opt-in; pass allowAuto=true',
+    );
+  }
+  return selectExecutionTrack(request, limits);
+}
+
+/**
+ * Throws ASYNC_REQUIRED (sanitized, no payload) when a sync request cannot
+ * run synchronously. Never creates a job.
+ */
+export function assertSyncExecutable(
+  request: ExecutionRequest,
+  limits: ExecutionLimits,
+): void {
+  if (request.mode !== "sync") {
+    throw executionRuntimeError(`Sync execution requires mode "sync", got "${request.mode}"`);
+  }
+  const guard = validateSyncExecutionGuard(request, limits);
+  if (guard !== null) {
+    throw new GroundlaneError(
+      "INVALID_INPUT",
+      "document-execution",
+      `ASYNC_REQUIRED: ${guard.reason}; use an explicit async document job`,
+    );
+  }
+  if (requiresExplicitAsyncJob(request.engine)) {
+    throw new GroundlaneError(
+      "INVALID_INPUT",
+      "document-execution",
+      `ASYNC_REQUIRED: Engine "${request.engine}" is async-only; use an explicit async document job`,
+    );
+  }
+}
+
+export interface SyncExecutionContext {
+  readonly contentHash: string;
+  readonly sourceId: string;
+  readonly projections?: readonly string[];
+}
+
+function assertBoundedId(value: string, field: string, max: number): void {
+  if (value.length === 0 || value.length > max) {
+    throw executionRuntimeError(`${field} must be non-empty within ${String(max)} characters`);
+  }
+}
+
+export interface DocumentProviderCancelAck {
+  readonly providerResponseCode: number;
+  readonly acknowledgedAt: string;
+}
+
+export interface InternalDocumentJobState {
+  readonly job: AsyncDocumentJob;
+  readonly callerWaitCancelled: boolean;
+  readonly groundlaneDispatchCancelled: boolean;
+  readonly upstreamRequested: boolean;
+  readonly upstreamAck: DocumentProviderCancelAck | null;
+}
+
+export interface DocumentJobStorePort {
+  get(jobId: string): InternalDocumentJobState | undefined;
+  set(state: InternalDocumentJobState): void;
+  size(): number;
+}
+
+export class InMemoryDocumentJobStore implements DocumentJobStorePort {
+  private readonly jobs = new Map<string, InternalDocumentJobState>();
+
+  get(jobId: string): InternalDocumentJobState | undefined {
+    return this.jobs.get(jobId);
+  }
+
+  set(state: InternalDocumentJobState): void {
+    this.jobs.set(state.job.jobId, state);
+  }
+
+  size(): number {
+    return this.jobs.size;
+  }
+}
+
+export interface CreateDocumentJobInput {
+  readonly ownerId: string;
+  readonly contentHash: string;
+  readonly engine: string;
+  readonly credentialBinding: CredentialBinding;
+  readonly sourceSnapshot: SourceSnapshot;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly policyCapExpiresAt?: string;
+  readonly now?: Date;
+}
+
+export interface CreateDocumentJobResult {
+  readonly job: AsyncDocumentJob;
+  readonly reused: boolean;
+}
+
+export interface DocumentCancelOutcome {
+  readonly job: AsyncDocumentJob;
+  readonly callerWaitCancelled: boolean;
+  readonly groundlaneDispatchCancelled: boolean;
+  readonly upstreamRequested: boolean;
+  readonly upstreamCancelled: boolean;
+  readonly providerAck: DocumentProviderCancelAck | null;
+}
+
+export interface DocumentExecutionManagerOptions {
+  readonly store?: DocumentJobStorePort;
+  readonly maxJobs?: number;
+}
+
+/**
+ * In-memory dual-track document execution manager. All time flows through
+ * injectable Date params for determinism. Disconnect never cancels; retry
+ * never resets the total budget; upstream cancel without acknowledgment never
+ * reports upstreamCancelled=true.
+ */
+export class DocumentExecutionManager {
+  private readonly store: DocumentJobStorePort;
+  private readonly maxJobs: number;
+
+  constructor(options: DocumentExecutionManagerOptions = {}) {
+    this.store = options.store ?? new InMemoryDocumentJobStore();
+    this.maxJobs = options.maxJobs ?? MAX_DOCUMENT_JOBS;
+  }
+
+  /** Bounded sync execution: throws ASYNC_REQUIRED instead of creating a job. */
+  executeSync(
+    request: ExecutionRequest,
+    limits: ExecutionLimits,
+    context: SyncExecutionContext,
+  ): ExecutionResult {
+    assertSyncExecutable(request, limits);
+    assertBoundedId(context.contentHash, "contentHash", MAX_DOCUMENT_HASH_CHARS);
+    assertBoundedId(context.sourceId, "sourceId", MAX_DOCUMENT_OWNER_CHARS);
+    return {
+      track: "sync",
+      contentHash: context.contentHash,
+      projections: context.projections === undefined ? ["markdown"] : [...context.projections],
+      provenance: { engine: request.engine, durationMs: 0, sourceId: context.sourceId },
+      cachedAt: null,
+      error: null,
+    };
+  }
+
+  /** Builds the async-track result with the same ExecutionResult schema. */
+  buildAsyncResult(
+    job: AsyncDocumentJob,
+    projections: readonly string[],
+  ): ExecutionResult {
+    return {
+      track: "async",
+      contentHash: job.sourceSnapshot.contentHash,
+      projections: [...projections],
+      provenance: {
+        engine: job.billingProvenance.providerId,
+        durationMs: 0,
+        sourceId: job.jobId,
+      },
+      cachedAt: null,
+      error: null,
+    };
+  }
+
+  /** Idempotent create: same owner+hash+engine reuses the same jobId. */
+  create(input: CreateDocumentJobInput): CreateDocumentJobResult {
+    assertBoundedId(input.ownerId, "ownerId", MAX_DOCUMENT_OWNER_CHARS);
+    assertBoundedId(input.contentHash, "contentHash", MAX_DOCUMENT_HASH_CHARS);
+    assertBoundedId(input.engine, "engine", MAX_DOCUMENT_ENGINE_CHARS);
+    if (!input.credentialBinding.credentialId) {
+      throw executionRuntimeError("credentialBinding.credentialId is required");
+    }
+    const jobId = computeIdempotentJobId(input.ownerId, input.contentHash, input.engine);
+    const existing = this.store.get(jobId);
+    if (existing !== undefined) {
+      if (existing.job.ownerId !== input.ownerId) {
+        throw executionRuntimeError("Owner mismatch: caller does not own this document job");
+      }
+      return { job: existing.job, reused: true };
+    }
+    if (this.store.size() >= this.maxJobs) {
+      throw new GroundlaneError(
+        "CONCURRENCY_LIMIT",
+        "document-execution",
+        "The document job store is full",
+        true,
+      );
+    }
+    const now = input.now ?? new Date();
+    if (isNaN(now.getTime())) throw executionRuntimeError("Invalid creation time");
+    if (new Date(input.expiresAt).getTime() <= now.getTime()) {
+      throw executionRuntimeError("Document job expiresAt must be in the future");
+    }
+    const policyCap = input.policyCapExpiresAt ?? input.expiresAt;
+    const snapshotExpiresAt = resolveSnapshotExpiry(
+      input.sourceSnapshot.expiresAt,
+      input.expiresAt,
+      policyCap,
+    );
+    const job: AsyncDocumentJob = {
+      jobId,
+      ownerId: input.ownerId,
+      sourceSnapshot: { ...input.sourceSnapshot, expiresAt: snapshotExpiresAt },
+      status: "created",
+      credentialBinding: input.credentialBinding,
+      billingProvenance: {
+        providerId: input.engine,
+        inputUnits: 0,
+        outputUnits: 0,
+        billedAt: null,
+      },
+      resultRef: null,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+    };
+    const state: InternalDocumentJobState = {
+      job,
+      callerWaitCancelled: false,
+      groundlaneDispatchCancelled: false,
+      upstreamRequested: false,
+      upstreamAck: null,
+    };
+    this.store.set(state);
+    return { job, reused: false };
+  }
+
+  /** Read-only poll; never extends expiry. */
+  poll(jobId: string, ownerId: string, now: Date = new Date()): AsyncDocumentJob {
+    return this.resolve(jobId, ownerId, now).job;
+  }
+
+  /** Monotonic status transition. */
+  transition(
+    jobId: string,
+    ownerId: string,
+    to: AsyncDocumentJob["status"],
+    now: Date = new Date(),
+  ): AsyncDocumentJob {
+    const state = this.resolve(jobId, ownerId, now);
+    try {
+      validateDocumentJobStatusTransition(state.job.status, to);
+    } catch (error) {
+      throw executionRuntimeError(error instanceof Error ? error.message : "Invalid status transition");
+    }
+    const next: InternalDocumentJobState = { ...state, job: { ...state.job, status: to } };
+    this.store.set(next);
+    return next.job;
+  }
+
+  /** Source delete revokes the snapshot (terminal-cancel when running). */
+  revokeSource(jobId: string, ownerId: string, now: Date = new Date()): AsyncDocumentJob {
+    const state = this.resolve(jobId, ownerId, now);
+    const revoked = revokeSnapshot(state.job);
+    const next: InternalDocumentJobState = { ...state, job: revoked };
+    this.store.set(next);
+    return revoked;
+  }
+
+  /** Cancel kind 1: caller stops waiting. Flag-only; job keeps running. */
+  cancelCallerWait(jobId: string, ownerId: string, now: Date = new Date()): DocumentCancelOutcome {
+    const state = this.resolve(jobId, ownerId, now);
+    this.assertNonTerminal(state);
+    const next: InternalDocumentJobState = { ...state, callerWaitCancelled: true };
+    this.store.set(next);
+    return this.toCancelOutcome(next);
+  }
+
+  /** Cancel kind 2: Groundlane stops polling/dispatch. Transitions when active. */
+  cancelGroundlaneDispatch(
+    jobId: string,
+    ownerId: string,
+    now: Date = new Date(),
+  ): DocumentCancelOutcome {
+    const state = this.resolve(jobId, ownerId, now);
+    this.assertNonTerminal(state);
+    let job = state.job;
+    try {
+      validateDocumentJobStatusTransition(job.status, "cancelled");
+      job = { ...job, status: "cancelled" as const };
+    } catch {
+      // Already in a state that cannot move to cancelled (e.g. created->cancelled
+      // is monotonic per order table, so this rarely triggers); keep status.
+    }
+    const next: InternalDocumentJobState = {
+      ...state,
+      job,
+      groundlaneDispatchCancelled: true,
+    };
+    this.store.set(next);
+    return this.toCancelOutcome(next);
+  }
+
+  /**
+   * Cancel kind 3: upstream cancel requires provider acknowledgment.
+   * Without ack only upstreamRequested is recorded; upstreamCancelled stays false.
+   */
+  requestUpstreamCancel(
+    jobId: string,
+    ownerId: string,
+    now: Date,
+    ack: DocumentProviderCancelAck | null,
+  ): DocumentCancelOutcome {
+    const state = this.resolve(jobId, ownerId, now);
+    this.assertNonTerminal(state);
+    if (ack === null) {
+      const next: InternalDocumentJobState = { ...state, upstreamRequested: true };
+      this.store.set(next);
+      return this.toCancelOutcome(next);
+    }
+    if (!Number.isInteger(ack.providerResponseCode) || ack.acknowledgedAt === "") {
+      throw executionRuntimeError("provider acknowledgment must carry response code and timestamp");
+    }
+    let job = state.job;
+    try {
+      validateDocumentJobStatusTransition(job.status, "cancelled");
+      job = { ...job, status: "cancelled" as const };
+    } catch {
+      // Keep current status if transition is not monotonic from here.
+    }
+    const next: InternalDocumentJobState = {
+      ...state,
+      job,
+      upstreamRequested: true,
+      upstreamAck: ack,
+    };
+    this.store.set(next);
+    const outcome = this.toCancelOutcome(next);
+    if (outcome.upstreamCancelled && outcome.providerAck === null) {
+      throw executionRuntimeError("upstreamCancelled requires provider acknowledgment");
+    }
+    return outcome;
+  }
+
+  /** Disconnect-safe resume: read-only, never cancels the durable job. */
+  resumeAfterDisconnect(jobId: string, ownerId: string, now: Date = new Date()): AsyncDocumentJob {
+    return this.poll(jobId, ownerId, now);
+  }
+
+  /** Retry budget check: returns remaining, never resets the total. */
+  checkRetryBudget(totalBudgetMs: number, elapsedMs: number): number {
+    try {
+      return computeRemainingBudget(totalBudgetMs, elapsedMs);
+    } catch (error) {
+      throw executionRuntimeError(error instanceof Error ? error.message : "Budget exhausted");
+    }
+  }
+
+  /** Independent per-category deadline check (sync/create/poll/absolute/attempt). */
+  checkDocumentDeadline(elapsedMs: number, deadlineMs: number, label: string): void {
+    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
+      throw executionRuntimeError(`Deadline "${label}" must be positive`);
+    }
+    if (elapsedMs > deadlineMs) {
+      throw new GroundlaneError(
+        "DEADLINE_EXCEEDED",
+        "document-execution",
+        `Document deadline "${label}" exceeded`,
+      );
+    }
+  }
+
+  private toCancelOutcome(state: InternalDocumentJobState): DocumentCancelOutcome {
+    const base = {
+      job: state.job,
+      callerWaitCancelled: state.callerWaitCancelled,
+      groundlaneDispatchCancelled: state.groundlaneDispatchCancelled,
+      upstreamRequested: state.upstreamRequested,
+      upstreamCancelled: state.upstreamAck !== null,
+    };
+    if (state.upstreamAck === null) {
+      return { ...base, providerAck: null };
+    }
+    return { ...base, providerAck: state.upstreamAck };
+  }
+
+  private resolve(jobId: string, ownerId: string, now: Date): InternalDocumentJobState {
+    assertBoundedId(jobId, "jobId", MAX_DOCUMENT_HASH_CHARS);
+    assertBoundedId(ownerId, "ownerId", MAX_DOCUMENT_OWNER_CHARS);
+    const state = this.store.get(jobId);
+    if (state === undefined) {
+      throw executionRuntimeError(`Unknown document job "${jobId.slice(0, 32)}"`);
+    }
+    if (state.job.ownerId !== ownerId) {
+      throw executionRuntimeError("Owner mismatch: caller does not own this document job");
+    }
+    if (new Date(state.job.expiresAt).getTime() <= now.getTime()) {
+      throw new GroundlaneError(
+        "DEADLINE_EXCEEDED",
+        "document-execution",
+        "Document job has expired",
+      );
+    }
+    return state;
+  }
+
+  private assertNonTerminal(state: InternalDocumentJobState): void {
+    const terminal: readonly string[] = ["completed", "failed", "cancelled", "deleted", "expired"];
+    if (terminal.includes(state.job.status)) {
+      throw executionRuntimeError(
+        `Cannot transition from terminal status "${state.job.status}"`,
+      );
+    }
+  }
 }
