@@ -14,6 +14,7 @@ import {
   BoundedAuditLog,
   isManagedTokenFormat,
   authenticateManagedToken,
+  parseManagedToken,
   ManagedTokenError,
   RotateIdempotencyStore,
   systemUtcClock,
@@ -163,6 +164,32 @@ async function authenticateManagedRequest(
   try {
     const principal = await authenticateManagedToken(token, store, subtle, getManagedClock(env));
     if (principal === null) {
+      // TEMPORARY debug stage reporting (no secrets); reverted after probing.
+      if ((env as Record<string, unknown>).GROUNDLANE_DEBUG_AUTH === "1") {
+        const parsed = parseManagedToken(token);
+        if (parsed === null) {
+          return {
+            ok: false,
+            response: jsonError(401, "dbg_parse_null", "debug", requestId),
+          };
+        }
+        const row = await store.getById(parsed.id);
+        if (row === null) {
+          return {
+            ok: false,
+            response: jsonError(401, "dbg_row_null", "debug", requestId),
+          };
+        }
+        return {
+          ok: false,
+          response: jsonError(
+            401,
+            `dbg_row_${row.status}`,
+            "debug",
+            requestId,
+          ),
+        };
+      }
       return {
         ok: false,
         response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
