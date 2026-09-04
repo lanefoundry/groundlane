@@ -226,6 +226,20 @@ void test("SearchRouter excludes unhealthy providers and validates its public bo
   await assert.rejects(new SearchRouter([provider("a", "ok")], ["a"]).search({ query: "q", maxResults: 51 }, new AbortController().signal), { code: "INVALID_INPUT" });
 });
 
+void test("SearchRouter skips providers whose supports() returns false during auto routing", async () => {
+  const router = new SearchRouter(
+    [provider("a", "ok", false), provider("b", "ok")],
+    ["a", "b"],
+  );
+  const result = await router.search(
+    { query: "test", maxResults: 1, provider: "auto" },
+    new AbortController().signal,
+  );
+  assert.equal(result.provider, "b");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0]?.provider, "b");
+});
+
 void test("SearchRouter skips exhausted monthly budgets and counts attempts", async () => {
   const budget = new MonthlySearchBudget({ a: 0, b: 1 });
   const router = new SearchRouter(

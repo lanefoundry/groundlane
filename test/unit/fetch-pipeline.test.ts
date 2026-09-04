@@ -18,6 +18,48 @@ void test("FetchPipeline uses HTTP without browser fallback for ordinary errors"
   assert.equal(result.raw.status, 404); assert.equal(browserCalls, 0);
 });
 
+void test("FetchPipeline stays on engine=http for a normal SSR page under render auto", async () => {
+  let browserCalls = 0;
+  const http: HttpFetcher = {
+    fetch: () => Promise.resolve(raw("<html><head><title>About Us</title></head><body><main><h1>About Us</h1><p>We build reliable software for teams around the world.</p></main></body></html>")),
+  };
+  const browser: BrowserBackend = {
+    ready: () => Promise.resolve(true),
+    fetch: () => { browserCalls += 1; return Promise.resolve(raw("browser", "browser")); },
+  };
+  const result = await new FetchPipeline(http, browser).fetch({
+    url: "https://example.com",
+    format: "text",
+    render: "auto",
+    maxBytes: 10_000,
+    maxOutputChars: 10_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+  assert.equal(result.raw.engine, "http");
+  assert.equal(browserCalls, 0);
+});
+
+void test("FetchPipeline render never skips browser even for JS-empty documents", async () => {
+  let browserCalls = 0;
+  const http: HttpFetcher = { fetch: () => Promise.resolve(raw("<html><script>render()</script></html>")) };
+  const browser: BrowserBackend = {
+    ready: () => Promise.resolve(true),
+    fetch: () => { browserCalls += 1; return Promise.resolve(raw("browser", "browser")); },
+  };
+  const result = await new FetchPipeline(http, browser).fetch({
+    url: "https://example.com",
+    format: "text",
+    render: "never",
+    maxBytes: 1_000,
+    maxOutputChars: 1_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+  assert.equal(result.raw.engine, "http");
+  assert.equal(browserCalls, 0);
+});
+
 void test("FetchPipeline browser fallback consumes the original Deadline", async () => {
   let sameDeadline = false; const deadline = new Deadline(1_000);
   const http: HttpFetcher = { fetch: (request) => { sameDeadline = request.deadline === deadline; return Promise.resolve(raw("<html><script>render()</script></html>")); } };
@@ -509,6 +551,51 @@ void test("FetchPipeline resolves Markdown through scoped llms.txt when direct c
   ]);
   assert.equal(result.raw.backend, "source:llms.txt");
   assert.match(result.content, /Account API overview/u);
+});
+
+void test("FetchPipeline preserves finalUrl when HTTP fetcher follows a redirect", async () => {
+  const http: HttpFetcher = {
+    fetch: () => Promise.resolve({
+      requestedUrl: "https://example.com/old",
+      finalUrl: "https://example.com/new",
+      status: 200,
+      headers: {},
+      contentType: "text/html",
+      body: new TextEncoder().encode("<main>Redirected content.</main>"),
+      engine: "http",
+      backend: "direct",
+    }),
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser).fetch({ url: "https://example.com/old", format: "text", render: "never", maxBytes: 1_000, maxOutputChars: 1_000, maxRedirects: 3, deadline: new Deadline(1_000) });
+  assert.equal(result.raw.requestedUrl, "https://example.com/old");
+  assert.equal(result.raw.finalUrl, "https://example.com/new");
+  assert.equal(result.raw.status, 200);
+});
+
+void test("FetchPipeline passes maxBytes to the HTTP fetcher and reflects the bounded body size", async () => {
+  const maxBytes = 64;
+  const cappedBody = "A".repeat(maxBytes);
+  let receivedMaxBytes = 0;
+  const http: HttpFetcher = {
+    fetch: (request) => {
+      receivedMaxBytes = request.maxBytes;
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: {},
+        contentType: "text/html",
+        body: new TextEncoder().encode(cappedBody),
+        engine: "http",
+        backend: "direct",
+      });
+    },
+  };
+  const browser: BrowserBackend = { ready: () => Promise.resolve(false), fetch: () => Promise.reject(new Error("must not run")) };
+  const result = await new FetchPipeline(http, browser).fetch({ url: "https://example.com", format: "text", render: "never", maxBytes, maxOutputChars: 1_000, maxRedirects: 3, deadline: new Deadline(1_000) });
+  assert.equal(receivedMaxBytes, maxBytes);
+  assert.equal(result.bytes, maxBytes);
 });
 
 void test("validateFetchPipelineRequest enforces byte, output, redirect and selector bounds", () => {

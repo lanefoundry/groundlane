@@ -6,10 +6,10 @@ import { ProviderBalanceRegistry } from "../../src/core/provider-balance.js";
 import { ConcurrencyLimiter } from "../../src/core/limits.js";
 import { CompositeSearchBudget, DailySearchBudget, MonthlySearchBudget } from "../../src/core/search-budget.js";
 import { createMcpRegistry } from "../../src/mcp/registry.js";
-import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
-import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
-import { createProviderQuotaModule } from "../../src/tools/provider-quota.js";
-import { createSearchBudgetStatusModule } from "../../src/tools/search-budget-status.js";
+import { createProviderBalanceModule, providerBalanceInputSchema } from "../../src/tools/provider-balance.js";
+import { createProviderCapabilitiesModule, providerCapabilitiesInputSchema } from "../../src/tools/provider-capabilities.js";
+import { createProviderQuotaModule, providerQuotaInputSchema } from "../../src/tools/provider-quota.js";
+import { createSearchBudgetStatusModule, searchBudgetStatusInputSchema } from "../../src/tools/search-budget-status.js";
 
 type RegisteredHandler = (input: { provider?: string; timeoutMs?: number }, extra: { signal?: AbortSignal }) => unknown;
 
@@ -271,4 +271,48 @@ void test("provider_quota tool combines account balance, local budgets, and capa
     ],
   });
   assert.ok(provider?.groundlaneTools?.includes("provider_quota"));
+});
+
+// --- Invalid input tests ---
+
+void test("providerBalanceInputSchema rejects unknown provider name", () => {
+  assert.throws(
+    () => providerBalanceInputSchema.parse({ provider: "nonexistent_provider" }),
+  );
+});
+
+void test("providerBalanceInputSchema rejects timeoutMs below minimum", () => {
+  assert.throws(
+    () => providerBalanceInputSchema.parse({ provider: "all", timeoutMs: 500 }),
+  );
+});
+
+void test("providerBalanceInputSchema rejects timeoutMs above maximum", () => {
+  assert.throws(
+    () => providerBalanceInputSchema.parse({ provider: "all", timeoutMs: 200_000 }),
+  );
+});
+
+void test("providerCapabilitiesInputSchema rejects unknown provider name", () => {
+  assert.throws(
+    () => providerCapabilitiesInputSchema.parse({ provider: "nonexistent_provider" }),
+  );
+});
+
+void test("providerQuotaInputSchema rejects unknown provider name", () => {
+  assert.throws(
+    () => providerQuotaInputSchema.parse({ provider: "nonexistent_provider" }),
+  );
+});
+
+void test("providerQuotaInputSchema rejects timeoutMs below minimum", () => {
+  assert.throws(
+    () => providerQuotaInputSchema.parse({ provider: "all", timeoutMs: 100 }),
+  );
+});
+
+void test("searchBudgetStatusInputSchema rejects unknown provider name", () => {
+  assert.throws(
+    () => searchBudgetStatusInputSchema.parse({ provider: "nonexistent_provider" }),
+  );
 });

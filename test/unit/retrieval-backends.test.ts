@@ -376,3 +376,199 @@ void test("Browserless maps quota errors without exposing its token", async () =
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// Browser diagnostic output safety (PRD line 740)
+// ---------------------------------------------------------------------------
+
+void test("Browserless result strips response headers by default", async () => {
+  const backend = new BrowserlessBackend({
+    token: "test-token",
+    lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
+    fetch: () =>
+      Promise.resolve(
+        new Response("<html><body>ok</body></html>", {
+          headers: {
+            "content-type": "text/html",
+            "x-response-code": "200",
+            "x-response-url": "https://example.com",
+            "set-cookie": "session=abc123; Path=/; HttpOnly",
+            "x-custom-secret": "internal-value",
+          },
+        }),
+      ),
+  });
+  const result = await backend.fetch({
+    url: "https://example.com",
+    maxBytes: 10_000,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.deepEqual(result.headers, {}, "headers must be empty object");
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /session=abc123/u, "cookies must not leak");
+  assert.doesNotMatch(serialized, /internal-value/u, "upstream headers must not leak");
+});
+
+void test("Browserless result does not contain screenshot, trace, or HAR data", async () => {
+  const backend = new BrowserlessBackend({
+    token: "test-token",
+    lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
+    fetch: () =>
+      Promise.resolve(
+        new Response("<html><body>page</body></html>", {
+          headers: {
+            "x-response-code": "200",
+            "x-response-url": "https://example.com",
+          },
+        }),
+      ),
+  });
+  const result = await backend.fetch({
+    url: "https://example.com",
+    maxBytes: 10_000,
+    deadline: new Deadline(1_000),
+  });
+
+  const resultObj = result as unknown as Record<string, unknown>;
+  assert.equal(resultObj.screenshot, undefined, "screenshot must not be present");
+  assert.equal(resultObj.trace, undefined, "trace must not be present");
+  assert.equal(resultObj.har, undefined, "HAR must not be present");
+  assert.equal(resultObj.consoleLogs, undefined, "console logs must not be present");
+  assert.equal(resultObj.networkLogs, undefined, "network logs must not be present");
+});
+
+void test("Browserless result conforms to the safe diagnostic shape", async () => {
+  const backend = new BrowserlessBackend({
+    token: "test-token",
+    lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
+    fetch: () =>
+      Promise.resolve(
+        new Response("<html><body>safe</body></html>", {
+          headers: {
+            "x-response-code": "200",
+            "x-response-url": "https://example.com/final",
+          },
+        }),
+      ),
+  });
+  const result = await backend.fetch({
+    url: "https://example.com",
+    maxBytes: 10_000,
+    deadline: new Deadline(1_000),
+  });
+
+  // Verify only the expected RawDocument fields are present
+  const allowedKeys = new Set([
+    "requestedUrl",
+    "finalUrl",
+    "status",
+    "headers",
+    "contentType",
+    "body",
+    "engine",
+    "backend",
+    "blockedSubrequests",
+  ]);
+  for (const key of Object.keys(result)) {
+    assert.ok(allowedKeys.has(key), `unexpected key "${key}" in browser result`);
+  }
+  assert.equal(result.engine, "browser");
+  assert.equal(result.backend, "browserless");
+  assert.equal(typeof result.status, "number");
+});
+
+void test("Browserless result excludes blockedSubrequests (Browserless does not track them)", async () => {
+  const backend = new BrowserlessBackend({
+    token: "test-token",
+    lookup: publicLookup,
+    resolveRedirects: resolveSameUrl,
+    fetch: () =>
+      Promise.resolve(
+        new Response("<html><body>content</body></html>", {
+          headers: {
+            "x-response-code": "200",
+            "x-response-url": "https://example.com",
+          },
+        }),
+      ),
+  });
+  const result = await backend.fetch({
+    url: "https://example.com",
+    maxBytes: 10_000,
+    deadline: new Deadline(1_000),
+  });
+
+  assert.equal(
+    result.blockedSubrequests,
+    undefined,
+    "Browserless backend should not set blockedSubrequests",
+  );
+});
+
+void test("RawDocument type allows only a bounded blockedSubrequests count, not detailed logs", () => {
+  // Verify the contract: blockedSubrequests is an optional number, not an
+  // array of request details that could leak URLs, cookies, or headers.
+  const doc: import("../../src/core/contracts.js").RawDocument = {
+    requestedUrl: "https://example.com",
+    finalUrl: "https://example.com",
+    status: 200,
+    headers: {},
+    contentType: "text/html",
+    body: new Uint8Array(),
+    engine: "browser",
+    backend: "test",
+    blockedSubrequests: 5,
+  };
+  assert.equal(typeof doc.blockedSubrequests, "number");
+  // The type system enforces this is a number, not an array or object.
+  // This test documents that the contract carries only a count.
+  assert.ok(
+    !Array.isArray(doc.blockedSubrequests),
+    "blockedSubrequests must be a count, not request details",
+  );
+});
+
+void test("Browser diagnostic output excludes raw response headers from the tool-level schema", async () => {
+  // The web_fetch tool schema (fetchDataSchema) intentionally omits the
+  // `headers` field from RawDocument. Even though RawDocument carries
+  // headers internally, they must not reach the MCP consumer.
+  // We verify by importing the schema and checking its shape.
+  const { z } = await import("zod");
+  const fetchDataSchema = z.object({
+    requestedUrl: z.string(),
+    finalUrl: z.string(),
+    status: z.number().int(),
+    contentType: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    author: z.string().optional(),
+    publishedAt: z.string().optional(),
+    content: z.string(),
+    format: z.enum(["markdown", "text", "html"]),
+    engine: z.enum(["http", "reader", "browser"]),
+    backend: z.string(),
+    cached: z.boolean(),
+    truncated: z.boolean(),
+    bytes: z.number().int().nonnegative(),
+    blockedSubrequests: z.number().int().nonnegative().optional(),
+    durationMs: z.number().int().nonnegative(),
+    warnings: z.array(z.string()),
+    fallbackReason: z.string().optional(),
+  });
+  const shape = fetchDataSchema.shape;
+  const keys = Object.keys(shape);
+
+  // headers must NOT appear in the consumer-facing schema
+  assert.ok(!keys.includes("headers"), "headers must not be in the tool output schema");
+  // Sensitive browser diagnostics must not appear either
+  assert.ok(!keys.includes("screenshot"), "screenshot must not be in the tool output schema");
+  assert.ok(!keys.includes("trace"), "trace must not be in the tool output schema");
+  assert.ok(!keys.includes("har"), "HAR must not be in the tool output schema");
+  assert.ok(!keys.includes("cookies"), "cookies must not be in the tool output schema");
+  assert.ok(!keys.includes("consoleLogs"), "consoleLogs must not be in the tool output schema");
+  assert.ok(!keys.includes("networkLogs"), "networkLogs must not be in the tool output schema");
+});

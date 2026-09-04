@@ -56,6 +56,12 @@ const searchDataSchema = z.object({
   providersSelected: z.array(z.string()).optional(),
   providersAttempted: z.array(z.string()).optional(),
   providersSucceeded: z.array(z.string()).optional(),
+  providerDetails: z.array(z.object({
+    providerId: z.string(),
+    backend: z.enum(["api", "http-compatible"]),
+    ownership: z.enum(["built-in", "operator-hosted"]),
+    protocolVersion: z.string(),
+  })).optional(),
 });
 
 export interface WebSearchModuleOptions {

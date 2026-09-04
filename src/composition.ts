@@ -54,6 +54,7 @@ import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
 import { MapRouter } from "./core/map-router.js";
 import { NewsRouter } from "./core/news-router.js";
 import { ProviderBalanceRegistry } from "./core/provider-balance.js";
+import { builtInRegistry, type ProviderCapabilities } from "./core/provider-registry.js";
 import { ResearchRouter } from "./core/research-router.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
@@ -82,153 +83,121 @@ export interface GroundlaneServices {
   close(): Promise<void>;
 }
 
-export function createSearchProviders(config: GroundlaneConfig): SearchProvider[] {
-  const providers: SearchProvider[] = [];
-  if (config.providerKeys.tavily !== undefined) {
-    providers.push(new TavilySearchProvider({ apiKey: config.providerKeys.tavily }));
+interface AdapterEntry<T> {
+  readonly providerId: string;
+  readonly create: (apiKey?: string) => T;
+  readonly requiresKey: boolean;
+}
+
+function providerKey(config: GroundlaneConfig, id: string): string | undefined {
+  return (config.providerKeys as Partial<Record<string, string>>)[id];
+}
+
+function buildProviders<T>(
+  capability: keyof ProviderCapabilities,
+  adapters: readonly AdapterEntry<T>[],
+  config: GroundlaneConfig,
+): T[] {
+  const providers: T[] = [];
+  for (const adapter of adapters) {
+    const reg = builtInRegistry.get(adapter.providerId);
+    if (!reg?.capabilities[capability]) continue;
+    const key = providerKey(config, adapter.providerId);
+    if (adapter.requiresKey && key === undefined) continue;
+    providers.push(adapter.create(key));
   }
-  if (config.providerKeys.exa !== undefined) {
-    providers.push(new ExaSearchProvider({ apiKey: config.providerKeys.exa }));
-  }
-  if (config.providerKeys.brave !== undefined) {
-    providers.push(new BraveSearchProvider({ apiKey: config.providerKeys.brave }));
-  }
-  if (config.providerKeys.firecrawl !== undefined) {
-    providers.push(new FirecrawlSearchProvider({ apiKey: config.providerKeys.firecrawl }));
-  }
-  if (config.providerKeys.serpapi !== undefined) {
-    providers.push(new SerpApiSearchProvider({ apiKey: config.providerKeys.serpapi }));
-  }
-  if (config.providerKeys.searchapi !== undefined) {
-    providers.push(new SearchApiSearchProvider({ apiKey: config.providerKeys.searchapi }));
-  }
-  if (config.providerKeys.browserbase !== undefined) {
-    providers.push(new BrowserbaseSearchProvider({ apiKey: config.providerKeys.browserbase }));
-  }
-  if (config.providerKeys.parallel !== undefined) {
-    providers.push(new ParallelSearchProvider({ apiKey: config.providerKeys.parallel }));
-  }
-  if (config.providerKeys.linkup !== undefined) {
-    providers.push(new LinkupSearchProvider({ apiKey: config.providerKeys.linkup }));
-  }
-  if (config.providerKeys.tinyfish !== undefined) {
-    providers.push(new TinyFishSearchProvider({ apiKey: config.providerKeys.tinyfish }));
-  }
-  providers.push(new KeenableSearchProvider(
-    config.providerKeys.keenable === undefined
-      ? {}
-      : { apiKey: config.providerKeys.keenable },
-  ));
-  if (config.providerKeys.serper !== undefined) {
-    providers.push(new SerperSearchProvider({ apiKey: config.providerKeys.serper }));
-  }
-  providers.push(new YouSearchProvider(
-    config.providerKeys.you !== undefined ? { apiKey: config.providerKeys.you } : {},
-  ));
   return providers;
+}
+
+const SEARCH_ADAPTERS: readonly AdapterEntry<SearchProvider>[] = [
+  { providerId: "tavily", create: (key) => new TavilySearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "exa", create: (key) => new ExaSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "brave", create: (key) => new BraveSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "firecrawl", create: (key) => new FirecrawlSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "serpapi", create: (key) => new SerpApiSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "searchapi", create: (key) => new SearchApiSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "browserbase", create: (key) => new BrowserbaseSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "parallel", create: (key) => new ParallelSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "linkup", create: (key) => new LinkupSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "tinyfish", create: (key) => new TinyFishSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "keenable", create: (key) => new KeenableSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
+  { providerId: "serper", create: (key) => new SerperSearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "you", create: (key) => new YouSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
+];
+
+const ANSWER_ADAPTERS: readonly AdapterEntry<AnswerProvider>[] = [
+  { providerId: "linkup", create: (key) => new LinkupAnswerProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "you", create: (key) => new YouAnswerProvider({ apiKey: key! }), requiresKey: true },
+];
+
+const RESEARCH_ADAPTERS: readonly AdapterEntry<ResearchProvider>[] = [
+  { providerId: "linkup", create: (key) => new LinkupResearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "you", create: (key) => new YouResearchProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "parallel", create: (key) => new ParallelResearchProvider({ apiKey: key! }), requiresKey: true },
+];
+
+const CONTENT_ADAPTERS: readonly AdapterEntry<ContentProvider>[] = [
+  { providerId: "linkup", create: (key) => new LinkupContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "you", create: (key) => new YouContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "exa", create: (key) => new ExaContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "tavily", create: (key) => new TavilyContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "firecrawl", create: (key) => new FirecrawlContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "tinyfish", create: (key) => new TinyFishContentProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "keenable", create: (key) => new KeenableContentProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
+];
+
+const MAP_ADAPTERS: readonly AdapterEntry<MapProvider>[] = [
+  { providerId: "firecrawl", create: (key) => new FirecrawlMapProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "tavily", create: (key) => new TavilyMapProvider({ apiKey: key! }), requiresKey: true },
+];
+
+const CRAWL_ADAPTERS: readonly AdapterEntry<CrawlProvider>[] = [
+  { providerId: "firecrawl", create: (key) => new FirecrawlCrawlProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "tavily", create: (key) => new TavilyCrawlProvider({ apiKey: key! }), requiresKey: true },
+];
+
+const NEWS_ADAPTERS: readonly AdapterEntry<NewsProvider>[] = [
+  { providerId: "brave", create: (key) => new BraveNewsProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "serper", create: (key) => new SerperNewsProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "serpapi", create: (key) => new SerpApiNewsProvider({ apiKey: key! }), requiresKey: true },
+];
+
+const IMAGES_ADAPTERS: readonly AdapterEntry<ImagesProvider>[] = [
+  { providerId: "brave", create: (key) => new BraveImagesProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "serper", create: (key) => new SerperImagesProvider({ apiKey: key! }), requiresKey: true },
+  { providerId: "serpapi", create: (key) => new SerpApiImagesProvider({ apiKey: key! }), requiresKey: true },
+];
+
+export function createSearchProviders(config: GroundlaneConfig): SearchProvider[] {
+  return buildProviders("search", SEARCH_ADAPTERS, config);
 }
 
 export function createAnswerProviders(config: GroundlaneConfig): AnswerProvider[] {
-  const providers: AnswerProvider[] = [];
-  if (config.providerKeys.linkup !== undefined) {
-    providers.push(new LinkupAnswerProvider({ apiKey: config.providerKeys.linkup }));
-  }
-  if (config.providerKeys.you !== undefined) {
-    providers.push(new YouAnswerProvider({ apiKey: config.providerKeys.you }));
-  }
-  return providers;
+  return buildProviders("answer", ANSWER_ADAPTERS, config);
 }
 
 export function createResearchProviders(config: GroundlaneConfig): ResearchProvider[] {
-  const providers: ResearchProvider[] = [];
-  if (config.providerKeys.linkup !== undefined) {
-    providers.push(new LinkupResearchProvider({ apiKey: config.providerKeys.linkup }));
-  }
-  if (config.providerKeys.you !== undefined) {
-    providers.push(new YouResearchProvider({ apiKey: config.providerKeys.you }));
-  }
-  if (config.providerKeys.parallel !== undefined) {
-    providers.push(new ParallelResearchProvider({ apiKey: config.providerKeys.parallel }));
-  }
-  return providers;
+  return buildProviders("research", RESEARCH_ADAPTERS, config);
 }
 
 export function createContentProviders(config: GroundlaneConfig): ContentProvider[] {
-  const providers: ContentProvider[] = [];
-  if (config.providerKeys.linkup !== undefined) {
-    providers.push(new LinkupContentProvider({ apiKey: config.providerKeys.linkup }));
-  }
-  if (config.providerKeys.you !== undefined) {
-    providers.push(new YouContentProvider({ apiKey: config.providerKeys.you }));
-  }
-  if (config.providerKeys.exa !== undefined) {
-    providers.push(new ExaContentProvider({ apiKey: config.providerKeys.exa }));
-  }
-  if (config.providerKeys.tavily !== undefined) {
-    providers.push(new TavilyContentProvider({ apiKey: config.providerKeys.tavily }));
-  }
-  if (config.providerKeys.firecrawl !== undefined) {
-    providers.push(new FirecrawlContentProvider({ apiKey: config.providerKeys.firecrawl }));
-  }
-  if (config.providerKeys.tinyfish !== undefined) {
-    providers.push(new TinyFishContentProvider({ apiKey: config.providerKeys.tinyfish }));
-  }
-  providers.push(new KeenableContentProvider(
-    config.providerKeys.keenable === undefined
-      ? {}
-      : { apiKey: config.providerKeys.keenable },
-  ));
-  return providers;
+  return buildProviders("content", CONTENT_ADAPTERS, config);
 }
 
 export function createMapProviders(config: GroundlaneConfig): MapProvider[] {
-  const providers: MapProvider[] = [];
-  if (config.providerKeys.firecrawl !== undefined) {
-    providers.push(new FirecrawlMapProvider({ apiKey: config.providerKeys.firecrawl }));
-  }
-  if (config.providerKeys.tavily !== undefined) {
-    providers.push(new TavilyMapProvider({ apiKey: config.providerKeys.tavily }));
-  }
-  return providers;
+  return buildProviders("map", MAP_ADAPTERS, config);
 }
 
 export function createCrawlProviders(config: GroundlaneConfig): CrawlProvider[] {
-  const providers: CrawlProvider[] = [];
-  if (config.providerKeys.firecrawl !== undefined) {
-    providers.push(new FirecrawlCrawlProvider({ apiKey: config.providerKeys.firecrawl }));
-  }
-  if (config.providerKeys.tavily !== undefined) {
-    providers.push(new TavilyCrawlProvider({ apiKey: config.providerKeys.tavily }));
-  }
-  return providers;
+  return buildProviders("crawl", CRAWL_ADAPTERS, config);
 }
 
 export function createNewsProviders(config: GroundlaneConfig): NewsProvider[] {
-  const providers: NewsProvider[] = [];
-  if (config.providerKeys.brave !== undefined) {
-    providers.push(new BraveNewsProvider({ apiKey: config.providerKeys.brave }));
-  }
-  if (config.providerKeys.serper !== undefined) {
-    providers.push(new SerperNewsProvider({ apiKey: config.providerKeys.serper }));
-  }
-  if (config.providerKeys.serpapi !== undefined) {
-    providers.push(new SerpApiNewsProvider({ apiKey: config.providerKeys.serpapi }));
-  }
-  return providers;
+  return buildProviders("news", NEWS_ADAPTERS, config);
 }
 
 export function createImagesProviders(config: GroundlaneConfig): ImagesProvider[] {
-  const providers: ImagesProvider[] = [];
-  if (config.providerKeys.brave !== undefined) {
-    providers.push(new BraveImagesProvider({ apiKey: config.providerKeys.brave }));
-  }
-  if (config.providerKeys.serper !== undefined) {
-    providers.push(new SerperImagesProvider({ apiKey: config.providerKeys.serper }));
-  }
-  if (config.providerKeys.serpapi !== undefined) {
-    providers.push(new SerpApiImagesProvider({ apiKey: config.providerKeys.serpapi }));
-  }
-  return providers;
+  return buildProviders("images", IMAGES_ADAPTERS, config);
 }
 
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {

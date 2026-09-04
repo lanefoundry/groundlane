@@ -141,6 +141,16 @@ export interface SearchResultItem {
   sources?: readonly SearchResultSource[];
 }
 
+export type ProviderBackend = "api" | "http-compatible";
+export type ProviderOwnership = "built-in" | "operator-hosted";
+
+export interface ProviderDetail {
+  providerId: string;
+  backend: ProviderBackend;
+  ownership: ProviderOwnership;
+  protocolVersion: string;
+}
+
 export interface SearchResult {
   query: string;
   provider: SearchProviderId;
@@ -151,6 +161,7 @@ export interface SearchResult {
   providersSelected?: readonly SearchProviderId[];
   providersAttempted?: readonly SearchProviderId[];
   providersSucceeded?: readonly SearchProviderId[];
+  providerDetails?: readonly ProviderDetail[];
 }
 
 export interface SearchProvider {
