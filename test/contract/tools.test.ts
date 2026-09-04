@@ -30,6 +30,8 @@ import type {
 } from "../../src/core/contracts.js";
 import { AnswerRouter } from "../../src/core/answer-router.js";
 import { ContentRouter } from "../../src/core/content-router.js";
+import { CorpusStore, InMemoryCorpusBackend } from "../../src/core/corpus-runtime.js";
+import { CrawlJobManager } from "../../src/core/crawl-jobs.js";
 import { CrawlRouter } from "../../src/core/crawl-router.js";
 import { FetchPipeline } from "../../src/core/fetch-pipeline.js";
 import { ImagesRouter } from "../../src/core/images-router.js";
@@ -43,6 +45,10 @@ import { SearchRouter } from "../../src/core/search-router.js";
 import { createContainerApp } from "../../src/container/app.js";
 import { createMcpRegistry } from "../../src/mcp/registry.js";
 import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
+import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
+import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
+import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
+import { createWebExtractSchemaModule } from "../../src/tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
 import { createProviderQuotaModule } from "../../src/tools/provider-quota.js";
@@ -351,6 +357,29 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       maxResponseBytes: 100_000,
       maxOutputChars: 10_000,
     }),
+    createCrawlJobsModule({
+      manager: new CrawlJobManager(),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createWebExtractSchemaModule({
+      providers: [],
+      benchmarkReport: null,
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createDocumentPolicyModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+    }),
+    createCorpusToolsModule({
+      store: new CorpusStore(new InMemoryCorpusBackend()),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
   ];
   const app = createContainerApp({
     authToken: "test-token-that-is-long-enough-for-tests",
@@ -373,6 +402,18 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
       [
+        "corpus_create",
+        "corpus_delete",
+        "corpus_enroll",
+        "corpus_remove",
+        "corpus_search",
+        "corpus_status",
+        "corpus_update",
+        "crawl_cancel",
+        "crawl_create",
+        "crawl_result",
+        "crawl_status",
+        "document_policy",
         "parse",
         "provider_balance",
         "provider_capabilities",
@@ -382,6 +423,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "web_content",
         "web_crawl",
         "web_extract",
+        "web_extract_schema",
         "web_fetch",
         "web_images",
         "web_map",
@@ -714,6 +756,136 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       text: "Docs",
       internal: true,
     });
+
+    const crawlCreateResult = await client.callTool({
+      name: "crawl_create",
+      arguments: { seedUrl: "https://example.com", ttlSeconds: 600 },
+    });
+    const crawlCreateEnvelope = crawlCreateResult.structuredContent as {
+      ok?: boolean;
+      data?: { job?: { groundlaneJobId?: string; status?: string }; reused?: boolean };
+    };
+    assert.equal(crawlCreateEnvelope.ok, true);
+    const crawlJobId = crawlCreateEnvelope.data?.job?.groundlaneJobId;
+    assert.match(crawlJobId ?? "", /^gl-crawl-/u);
+    assert.equal(crawlCreateEnvelope.data?.reused, false);
+
+    const crawlStatusResult = await client.callTool({
+      name: "crawl_status",
+      arguments: { groundlaneJobId: crawlJobId },
+    });
+    const crawlStatusEnvelope = crawlStatusResult.structuredContent as {
+      ok?: boolean;
+      data?: { job?: { status?: string } };
+    };
+    assert.equal(crawlStatusEnvelope.ok, true);
+    assert.equal(crawlStatusEnvelope.data?.job?.status, "created");
+
+    const crawlResultResult = await client.callTool({
+      name: "crawl_result",
+      arguments: { groundlaneJobId: crawlJobId, pageSize: 10 },
+    });
+    const crawlResultEnvelope = crawlResultResult.structuredContent as {
+      ok?: boolean;
+      data?: { items?: unknown[]; nextCursor?: string | null };
+    };
+    assert.equal(crawlResultEnvelope.ok, true);
+    assert.deepEqual(crawlResultEnvelope.data?.items, []);
+    assert.equal(crawlResultEnvelope.data?.nextCursor, null);
+
+    const crawlCancelResult = await client.callTool({
+      name: "crawl_cancel",
+      arguments: { groundlaneJobId: crawlJobId, kind: "caller" },
+    });
+    const crawlCancelEnvelope = crawlCancelResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        job?: { status?: string };
+        cancelResult?: { callerCancelled?: boolean; upstreamCancelled?: boolean };
+      };
+    };
+    assert.equal(crawlCancelEnvelope.ok, true);
+    assert.equal(crawlCancelEnvelope.data?.job?.status, "cancelled_by_caller");
+    assert.equal(crawlCancelEnvelope.data?.cancelResult?.callerCancelled, true);
+    assert.equal(crawlCancelEnvelope.data?.cancelResult?.upstreamCancelled, false);
+
+    const schemaResult = await client.callTool({
+      name: "web_extract_schema",
+      arguments: {
+        url: "https://example.com",
+        schema: { type: "object", properties: { title: { type: "string" } } },
+        providerBacked: true,
+      },
+    });
+    const schemaEnvelope = schemaResult.structuredContent as {
+      ok?: boolean;
+      error?: { code?: string };
+    };
+    assert.equal(schemaEnvelope.ok, false);
+    assert.equal(schemaEnvelope.error?.code, "PROVIDER_UNAVAILABLE");
+
+    const policyResult = await client.callTool({
+      name: "document_policy",
+      arguments: {},
+    });
+    const policyEnvelope = policyResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        cache?: { effectiveExpiresAt?: string };
+        upload?: { effectiveExpiresAt?: string };
+        artifact?: { effectiveExpiresAt?: string };
+        corpus?: { effectiveExpiresAt?: string };
+      };
+    };
+    assert.equal(policyEnvelope.ok, true);
+    assert.match(policyEnvelope.data?.cache?.effectiveExpiresAt ?? "", /^\d{4}-/u);
+    assert.match(policyEnvelope.data?.upload?.effectiveExpiresAt ?? "", /^\d{4}-/u);
+    assert.match(policyEnvelope.data?.artifact?.effectiveExpiresAt ?? "", /^\d{4}-/u);
+    assert.match(policyEnvelope.data?.corpus?.effectiveExpiresAt ?? "", /^\d{4}-/u);
+
+    const corpusCreateResult = await client.callTool({
+      name: "corpus_create",
+      arguments: { displayName: "contract-fixture" },
+    });
+    const corpusCreateEnvelope = corpusCreateResult.structuredContent as {
+      ok?: boolean;
+      data?: { corpus?: { corpusId?: string } };
+    };
+    assert.equal(corpusCreateEnvelope.ok, true);
+    const corpusId = corpusCreateEnvelope.data?.corpus?.corpusId;
+    assert.match(corpusId ?? "", /^gl-corpus-/u);
+
+    const corpusEnrollResult = await client.callTool({
+      name: "corpus_enroll",
+      arguments: {
+        corpusId,
+        sourceId: "doc-1",
+        contentHash: "hash-1",
+        acl: ["role:reader"],
+      },
+    });
+    const corpusEnrollEnvelope = corpusEnrollResult.structuredContent as { ok?: boolean };
+    assert.equal(corpusEnrollEnvelope.ok, true);
+
+    const corpusSearchResult = await client.callTool({
+      name: "corpus_search",
+      arguments: { corpusId, query: "groundlane", maxResults: 5 },
+    });
+    const corpusSearchEnvelope = corpusSearchResult.structuredContent as {
+      ok?: boolean;
+      data?: { toolFamily?: string; corpusId?: string; results?: unknown[] };
+    };
+    assert.equal(corpusSearchEnvelope.ok, true);
+    assert.equal(corpusSearchEnvelope.data?.toolFamily, "corpus_search");
+    assert.equal(corpusSearchEnvelope.data?.corpusId, corpusId);
+    assert.ok(Array.isArray(corpusSearchEnvelope.data?.results));
+
+    const corpusDeleteResult = await client.callTool({
+      name: "corpus_delete",
+      arguments: { corpusId },
+    });
+    const corpusDeleteEnvelope = corpusDeleteResult.structuredContent as { ok?: boolean };
+    assert.equal(corpusDeleteEnvelope.ok, true);
   } finally {
     await client.close();
     await new Promise<void>((resolve, reject) =>

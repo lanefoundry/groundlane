@@ -43,6 +43,11 @@ Groundlane does use mature open-source crawler, browser, parser, and document-in
                 web_crawl      |                       |
                  web_news      |                       |
                 web_images     |                       |
+    web_extract_schema         |                       |  document_policy
+   crawl_create/status         |                       |  corpus_create/enroll
+   crawl_result/cancel         |                       |  corpus_update/remove
+                               |                       |  corpus_status/search
+                               |                       |  corpus_delete
                       |          |                       |
           provider routers  FetchPipeline          local HTML parser
                       |          +----------+------------+

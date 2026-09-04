@@ -60,6 +60,12 @@ import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
+import { CrawlJobManager } from "./core/crawl-jobs.js";
+import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
+import { createCrawlJobsModule } from "./tools/crawl-jobs.js";
+import { createCorpusToolsModule } from "./tools/corpus-tools.js";
+import { createDocumentPolicyModule } from "./tools/document-policy.js";
+import { createWebExtractSchemaModule } from "./tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
 import { createProviderQuotaModule } from "./tools/provider-quota.js";
@@ -355,6 +361,32 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxResponseBytes: config.maxResponseBytes,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createCrawlJobsModule({
+      manager: new CrawlJobManager(),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createWebExtractSchemaModule({
+      // No extraction provider adapter is registered by default and no
+      // benchmark report exists, so the tool stays closed behind the
+      // benchmark gate (PROVIDER_UNAVAILABLE) until both land.
+      providers: [],
+      benchmarkReport: null,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentPolicyModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+    }),
+    createCorpusToolsModule({
+      store: new CorpusStore(new InMemoryCorpusBackend()),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
     }),
     createErrorLogModule({
