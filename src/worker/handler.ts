@@ -14,7 +14,6 @@ import {
   BoundedAuditLog,
   isManagedTokenFormat,
   authenticateManagedToken,
-  parseManagedToken,
   ManagedTokenError,
   RotateIdempotencyStore,
   systemUtcClock,
@@ -146,17 +145,6 @@ async function authenticateManagedRequest(
   // are handled by the static/OAuth paths.
   if (token === undefined || !isManagedTokenFormat(token)) {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
-    // TEMPORARY debug (no secrets); reverted after probing.
-    return {
-      ok: false,
-      response: jsonError(
-        401,
-        token === undefined ? "dbg_no_bearer" : "dbg_not_managed_format",
-        "debug",
-        requestId,
-      ),
-    };
-  }
     return {
       ok: false,
       response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
@@ -175,29 +163,11 @@ async function authenticateManagedRequest(
   try {
     const principal = await authenticateManagedToken(token, store, subtle, getManagedClock(env));
     if (principal === null) {
-      // TEMPORARY debug stage reporting (no secrets); reverted after probing.
-      const parsed = parseManagedToken(token);
-      if (parsed === null) {
-        return {
-          ok: false,
-          response: jsonError(401, "dbg_parse_null", "debug", requestId),
-        };
-      }
-      const row = await store.getById(parsed.id);
-      if (row === null) {
-        return {
-          ok: false,
-          response: jsonError(401, "dbg_row_null", "debug", requestId),
-        };
-      }
       return {
         ok: false,
-        response: jsonError(
-          401,
-          `dbg_row_${row.status}`,
-          "debug",
-          requestId,
-        ),
+        response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
+          "www-authenticate": 'Bearer realm="groundlane"',
+        }),
       };
     }
     return { ok: true };
