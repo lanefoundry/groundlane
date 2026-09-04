@@ -109,7 +109,7 @@ void test("PRD 636: unknown client rejected", () => {
   const matrix: ClientCapabilityMatrix = {
     entries: [
       makeClientEntry("claude"),
-      makeClientEntry("unknown-client" as string),
+      makeClientEntry("unknown-client"),
     ],
   };
   assert.throws(
