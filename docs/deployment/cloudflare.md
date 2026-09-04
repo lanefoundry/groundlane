@@ -141,6 +141,62 @@ synchronized when adding configuration.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars` and keep the file untracked.
 
+## Managed credentials (D1) and artifact storage (R2)
+
+The managed-credential data plane (single-tenant multi-credential auth,
+rotation/revoke/audit) and durable async artifact storage need Cloudflare
+resources that are intentionally **not** in the default deploy path. The
+checked-in `wrangler.jsonc` keeps both bindings commented out, and the Worker
+fails closed when they are absent: the admin surface reports unavailable while
+existing data-plane profiles keep serving.
+
+> [!IMPORTANT]
+> Provisioning the resources below does not light up the data plane yet. The
+> D1-backed `ManagedTokenStore` adapter and the R2 artifact storage backend
+> are still pending; until they land, managed tokens stay unavailable and
+> durable `ArtifactRef` values stay in-memory only. Provision now to unblock
+> that work, not to enable it.
+
+1. Create the D1 database and the R2 bucket, then record their identifiers:
+
+   ```bash
+   pnpm exec wrangler d1 create groundlane-managed-tokens
+   pnpm exec wrangler r2 bucket create groundlane-artifacts
+   ```
+
+2. Uncomment `d1_databases` and `r2_buckets` in `wrangler.jsonc` and paste the
+   real `database_id`. Never commit placeholder IDs.
+3. Apply the checked-in migration to the new database:
+
+   ```bash
+   pnpm exec wrangler d1 migrations apply MANAGED_TOKEN_D1
+   ```
+
+   `migrations/0001_managed_tokens.sql` stores verifiers/digests and bounded
+   metadata only — raw bearer secrets are never persisted. Planned rotation
+   must run as a single atomic conditional write (see the SQL comments); a
+   lost race returns a stable conflict instead of a second successor.
+4. Set the two operator secrets through `pnpm secrets:setup` (they are part
+   of the checked-in manifest). Generate each with `openssl rand -hex 32`
+   and keep all five values distinct — `GROUNDLANE_AUTH_TOKEN`,
+   `OAUTH_OWNER_PASSPHRASE`, provider keys, `GROUNDLANE_ADMIN_TOKEN`, and
+   `GROUNDLANE_INTERNAL_SIGNING_SECRET` must never be reused across roles:
+
+   - `GROUNDLANE_ADMIN_TOKEN` bootstraps and recovers managed credentials
+     via `/admin/credentials` only; it cannot call `/mcp`.
+   - `GROUNDLANE_INTERNAL_SIGNING_SECRET` signs the bounded Worker-to-
+     Container internal principal context; raw caller credentials never
+     cross that boundary.
+5. Deploy with `pnpm run deploy` as usual.
+
+Future adapter constraints, recorded here so the wiring PR cannot miss them:
+authorization reads must use the D1 Sessions API with a primary/sequential
+constraint (unconstrained replicas must not back authorization); KV must not
+become managed-token truth; R2 objects must stay content-addressed with
+owner binding, content hash, and retention/deletion policy, and must never be
+addressable through caller-supplied keys or presigned URLs passed as tool
+input.
+
 ## OAuth for interactive cloud connectors
 
 Headless/CLI clients and headless/scheduled cloud automation keep using the

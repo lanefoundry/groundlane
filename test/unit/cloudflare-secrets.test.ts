@@ -23,6 +23,8 @@ void test("Cloudflare secret manifest contains runtime-forwarded credentials", (
     [
       "GROUNDLANE_AUTH_TOKEN",
       "OAUTH_OWNER_PASSPHRASE",
+      "GROUNDLANE_ADMIN_TOKEN",
+      "GROUNDLANE_INTERNAL_SIGNING_SECRET",
       "TAVILY_API_KEY",
       "EXA_API_KEY",
       "BRAVE_API_KEY",
@@ -167,7 +169,7 @@ void test("provider selection accepts comma-separated numbers and ranges", () =>
     (definition) => !definition.required,
   );
   assert.deepEqual(
-    parseSecretSelection("1, 3-4, 3", providers).map(
+    parseSecretSelection("3, 5-6, 5", providers).map(
       (definition) => definition.name,
     ),
     ["TAVILY_API_KEY", "BRAVE_API_KEY", "FIRECRAWL_API_KEY"],
@@ -180,7 +182,10 @@ void test("provider selection rejects invalid choices", () => {
   const providers = CLOUDFLARE_SECRET_DEFINITIONS.filter(
     (definition) => !definition.required,
   );
-  assert.throws(() => parseSecretSelection("0", providers), /between 1 and 14/u);
+  assert.throws(
+    () => parseSecretSelection("0", providers),
+    new RegExp(`between 1 and ${String(providers.length)}`, "u"),
+  );
   assert.throws(() => parseSecretSelection("4-2", providers), /Invalid range/u);
   assert.throws(() => parseSecretSelection("tavily", providers), /Invalid selection/u);
 });
