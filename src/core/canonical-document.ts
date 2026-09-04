@@ -417,7 +417,7 @@ export function aggregateStatus(
 export function extractContentCore(
   envelope: CanonicalDocumentEnvelope,
 ): CanonicalContentCore {
-  return {
+  const core: CanonicalContentCore = {
     schemaVersion: envelope.schemaVersion,
     canonicalContentId: envelope.canonicalContentId,
     blocks: envelope.blocks,
@@ -427,9 +427,16 @@ export function extractContentCore(
     warnings: envelope.warnings,
     errors: envelope.errors,
     provenance: envelope.provenance,
-    metadata: envelope.metadata,
-    citations: envelope.citations,
   };
+  if (envelope.metadata !== undefined) {
+    (core as { metadata: readonly MetadataRecord[] }).metadata =
+      envelope.metadata;
+  }
+  if (envelope.citations !== undefined) {
+    (core as { citations: readonly CitationRecord[] }).citations =
+      envelope.citations;
+  }
+  return core;
 }
 
 export function computeContentHash(blocks: readonly DocumentBlock[]): string {
