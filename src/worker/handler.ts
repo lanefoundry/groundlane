@@ -146,6 +146,18 @@ async function authenticateManagedRequest(
   // are handled by the static/OAuth paths.
   if (token === undefined || !isManagedTokenFormat(token)) {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+    // TEMPORARY debug (no secrets); reverted after probing.
+    if ((env as unknown as Record<string, unknown>).GROUNDLANE_DEBUG_AUTH === "1") {
+      return {
+        ok: false,
+        response: jsonError(
+          401,
+          token === undefined ? "dbg_no_bearer" : "dbg_not_managed_format",
+          "debug",
+          requestId,
+        ),
+      };
+    }
     return {
       ok: false,
       response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
