@@ -19,7 +19,13 @@ import {
   type ClientCapabilityMatrix,
   type CrawlCancelResult,
   type DurableCrawlJob,
+  AsyncJobManager,
+  InMemoryAsyncJobStore,
+  sanitizeUpstreamError,
+  type AsyncProviderPort,
+  type CreateAsyncJobInput,
 } from "../../src/core/async-lifecycle.js";
+import { GroundlaneError } from "../../src/core/errors.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -510,4 +516,315 @@ void test("PRD 646: three cancel types map to three distinct async job statuses"
     "cancelled_by_upstream",
   ];
   assert.equal(new Set(cancelStatuses).size, 3);
+});
+
+// ---------------------------------------------------------------------------
+// PRD 636/722 runtime: AsyncJobManager (in-memory deterministic)
+// Failing-first regression coverage for the complete async tool lifecycle:
+// ownership, TTL/expiry, provider mapping isolation, credential binding,
+// status monotonicity, billing provenance, sanitized errors, three
+// independent cancels, capability evidence, idempotency/replay guards.
+// ---------------------------------------------------------------------------
+
+interface FakeAsyncProvider extends AsyncProviderPort {
+  readonly created: string[];
+  readonly cancelled: string[];
+  ackNextCancel: boolean;
+}
+
+function makeFakeAsyncProvider(): FakeAsyncProvider {
+  const created: string[] = [];
+  const cancelled: string[] = [];
+  let counter = 0;
+  const port: FakeAsyncProvider = {
+    created,
+    cancelled,
+    ackNextCancel: true,
+    createTask: () => {
+      counter += 1;
+      const id = `prov-task-${String(counter).padStart(3, "0")}`;
+      created.push(id);
+      return id;
+    },
+    cancelTask: (providerJobId: string) => {
+      cancelled.push(providerJobId);
+      if (port.ackNextCancel) {
+        return {
+          providerResponseCode: 200,
+          acknowledgedAt: "2026-02-01T00:00:00.000Z",
+        };
+      }
+      return null;
+    },
+  };
+  return port;
+}
+
+const CREATE_NOW = new Date("2026-02-01T00:00:00.000Z");
+const OP_NOW = new Date("2026-02-01T00:00:10.000Z");
+const CALLER = { ownerId: "owner-abc", credentialBinding: "BINDING-1" };
+
+function makeCreateInput(overrides?: Partial<CreateAsyncJobInput>): CreateAsyncJobInput {
+  return {
+    ownerId: CALLER.ownerId,
+    credentialBinding: CALLER.credentialBinding,
+    providerId: "firecrawl",
+    ttlSeconds: 3600,
+    now: CREATE_NOW,
+    ...overrides,
+  };
+}
+
+function makeManager(): { manager: AsyncJobManager; provider: FakeAsyncProvider } {
+  const provider = makeFakeAsyncProvider();
+  const manager = new AsyncJobManager({
+    store: new InMemoryAsyncJobStore(),
+    provider,
+  });
+  return { manager, provider };
+}
+
+function expectGroundlaneError(fn: () => unknown, code: string, pattern: RegExp): void {
+  try {
+    fn();
+  } catch (error) {
+    assert.ok(error instanceof GroundlaneError, "expected a GroundlaneError");
+    assert.equal(error.code, code);
+    assert.match(error.message, pattern);
+    return;
+  }
+  assert.fail("expected function to throw");
+}
+
+void test("PRD 636 runtime: create returns public job with no provider job ID", () => {
+  const { manager, provider } = makeManager();
+  const { job, reused } = manager.create(makeCreateInput());
+  assert.equal(reused, false);
+  assert.equal(job.ownerId, CALLER.ownerId);
+  assert.equal(job.status, "pending");
+  assert.equal(job.expiresAt, "2026-02-01T01:00:00.000Z");
+  assert.equal(provider.created.length, 1);
+  const leaked = provider.created[0] ?? "";
+  assert.ok(!JSON.stringify(job).includes(leaked), "provider job ID must not leak");
+});
+
+void test("PRD 722 runtime: idempotent create reuses job without new provider task", () => {
+  const { manager, provider } = makeManager();
+  const first = manager.create(makeCreateInput({ idempotencyKey: "idem-001" }));
+  const second = manager.create(makeCreateInput({ idempotencyKey: "idem-001" }));
+  assert.equal(first.reused, false);
+  assert.equal(second.reused, true);
+  assert.equal(second.job.jobId, first.job.jobId);
+  assert.equal(provider.created.length, 1);
+});
+
+void test("PRD 636 runtime: poll enforces owner binding", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  expectGroundlaneError(
+    () => manager.poll(job.jobId, { ...CALLER, ownerId: "owner-evil" }, OP_NOW),
+    "INVALID_INPUT",
+    /Owner mismatch/,
+  );
+});
+
+void test("PRD 636 runtime: poll on unknown job returns stable error", () => {
+  const { manager } = makeManager();
+  expectGroundlaneError(
+    () => manager.poll("ajob-999999", CALLER, OP_NOW),
+    "INVALID_INPUT",
+    /Unknown async job/,
+  );
+});
+
+void test("PRD 636 runtime: poll on expired job is rejected without mutation", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput({ ttlSeconds: 60 }));
+  expectGroundlaneError(
+    () => manager.poll(job.jobId, CALLER, new Date("2026-02-01T02:00:00.000Z")),
+    "DEADLINE_EXCEEDED",
+    /expired/,
+  );
+  // Non-expired poll still works and status is unchanged.
+  const fresh = manager.poll(job.jobId, CALLER, new Date("2026-02-01T00:00:30.000Z"));
+  assert.equal(fresh.status, "pending");
+});
+
+void test("PRD 636 runtime: credential binding mismatch is rejected", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  expectGroundlaneError(
+    () => manager.poll(job.jobId, { ...CALLER, credentialBinding: "BINDING-OTHER" }, OP_NOW),
+    "INVALID_INPUT",
+    /Credential binding mismatch/,
+  );
+});
+
+void test("PRD 636 runtime: manager enforces status monotonicity", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  manager.markCompleted(job.jobId, CALLER, { title: "done" }, { now: OP_NOW });
+  const done = manager.result(job.jobId, CALLER, OP_NOW);
+  assert.equal(done.status, "completed");
+  expectGroundlaneError(
+    () => manager.cancelCallerWait(job.jobId, CALLER, OP_NOW),
+    "INVALID_INPUT",
+    /terminal/,
+  );
+});
+
+void test("PRD 636 runtime: billing provenance survives caller cancel", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  manager.recordPaidCall(job.jobId, CALLER, { inputUnits: 42, outputUnits: 7 }, OP_NOW);
+  const cancelled = manager.cancelCallerWait(job.jobId, CALLER, OP_NOW);
+  assert.equal(cancelled.status, "cancelled_by_caller");
+  assert.equal(cancelled.billingProvenance.inputUnits, 42);
+  assert.equal(cancelled.billingProvenance.outputUnits, 7);
+  assert.equal(cancelled.billingProvenance.providerId, "firecrawl");
+});
+
+void test("PRD 636 runtime: upstream errors are sanitized", () => {
+  const raw = new Error(
+    "fetch failed with Bearer secret-abc-123 token=xyz\n    at secretFunc (/app/secret.ts:1:1)\nAuthorization: Bearer secret-abc-123",
+  );
+  const sanitized = sanitizeUpstreamError(raw, "async-job");
+  assert.ok(!sanitized.includes("secret-abc-123"), "secret must be redacted");
+  assert.ok(!sanitized.includes("at secretFunc"), "stack frames must not leak");
+  assert.ok(sanitized.length <= 500, "sanitized error must be bounded");
+  assert.ok(sanitized.length > 0, "sanitized error must not be empty");
+});
+
+void test("PRD 636 runtime: caller and groundlane cancels are independent", () => {
+  const first = makeManager();
+  const created = first.manager.create(makeCreateInput());
+  const callerOnly = first.manager.cancelCallerWait(created.job.jobId, CALLER, OP_NOW);
+  assert.equal(callerOnly.status, "cancelled_by_caller");
+  assert.equal(callerOnly.callerCancelled, true);
+  assert.equal(callerOnly.groundlanePollingCancelled, false);
+  assert.equal(callerOnly.upstreamCancelled, false);
+
+  const second = makeManager();
+  const created2 = second.manager.create(makeCreateInput());
+  const groundlaneOnly = second.manager.cancelGroundlanePolling(created2.job.jobId, CALLER, OP_NOW);
+  assert.equal(groundlaneOnly.status, "cancelled_by_groundlane");
+  assert.equal(groundlaneOnly.callerCancelled, false);
+  assert.equal(groundlaneOnly.groundlanePollingCancelled, true);
+  assert.equal(groundlaneOnly.upstreamCancelled, false);
+});
+
+void test("PRD 636 runtime: upstream cancel without ack must not report success", () => {
+  const { manager, provider } = makeManager();
+  provider.ackNextCancel = false;
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  const outcome = manager.requestUpstreamCancel(job.jobId, CALLER, OP_NOW);
+  assert.equal(outcome.cancelResult.upstreamCancelled, false);
+  assert.equal(outcome.cancelResult.providerAcknowledgment, undefined);
+  // Job stays running; only the request flag is recorded.
+  assert.equal(outcome.job.status, "running");
+  assert.equal(outcome.job.upstreamCancelRequested, true);
+  assert.equal(outcome.job.upstreamCancelled, false);
+  assert.equal(provider.cancelled.length, 1);
+});
+
+void test("PRD 636 runtime: upstream cancel with ack transitions to cancelled_by_upstream", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  const outcome = manager.requestUpstreamCancel(job.jobId, CALLER, OP_NOW);
+  assert.equal(outcome.cancelResult.upstreamCancelled, true);
+  assert.equal(outcome.cancelResult.providerAcknowledgment?.providerResponseCode, 200);
+  assert.equal(outcome.job.status, "cancelled_by_upstream");
+  assert.equal(outcome.job.upstreamCancelled, true);
+});
+
+void test("PRD 722 runtime: paid call and artifact writes have replay guards", () => {
+  const { manager } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  const firstCall = manager.recordPaidCall(job.jobId, CALLER, { inputUnits: 5, outputUnits: 5 }, OP_NOW);
+  const replayCall = manager.recordPaidCall(job.jobId, CALLER, { inputUnits: 500, outputUnits: 500 }, OP_NOW);
+  assert.equal(firstCall.reused, false);
+  assert.equal(replayCall.reused, true);
+  const after = manager.poll(job.jobId, CALLER, OP_NOW);
+  assert.equal(after.billingProvenance.inputUnits, 5);
+
+  const firstWrite = manager.recordArtifactWrite(job.jobId, CALLER, { ref: "artifact-1" }, OP_NOW);
+  const replayWrite = manager.recordArtifactWrite(job.jobId, CALLER, { ref: "artifact-2" }, OP_NOW);
+  assert.equal(firstWrite.reused, false);
+  assert.equal(replayWrite.reused, true);
+  assert.deepEqual(replayWrite.result, { ref: "artifact-1" });
+});
+
+void test("PRD 636 runtime: SDK-types-only matrix is insufficient without operation evidence", () => {
+  const { manager } = makeManager();
+  // Matrix-level verification passes, but no per-operation evidence exists yet.
+  verifyClientMatrix({
+    entries: [
+      makeClientEntry("claude"),
+      makeClientEntry("codex"),
+      makeClientEntry("cursor"),
+    ],
+  });
+  expectGroundlaneError(
+    () => manager.verifiedCreate("claude", makeCreateInput()),
+    "INVALID_INPUT",
+    /No verified .* evidence/,
+  );
+});
+
+void test("PRD 636 runtime: per-client create/poll/result/cancel/resume evidence gates operations", () => {
+  const { manager } = makeManager();
+  const operations = ["create", "poll", "result", "cancel", "resume"] as const;
+  for (const clientId of ["claude", "codex", "cursor"] as const) {
+    for (const operation of operations) {
+      manager.recordClientEvidence({
+        clientId,
+        operation,
+        verifiedAt: "2026-02-01T00:00:00.000Z",
+        transport: operation === "create" ? "mcp-tasks" : "explicit-polling",
+      });
+    }
+  }
+  const { job } = manager.verifiedCreate("claude", makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  const polled = manager.verifiedPoll("claude", job.jobId, CALLER, OP_NOW);
+  assert.equal(polled.status, "running");
+  // Disconnect does not cancel: resume returns the same running job unmutated.
+  const resumed = manager.resumeAfterDisconnect("claude", job.jobId, CALLER, OP_NOW);
+  assert.equal(resumed.jobId, job.jobId);
+  assert.equal(resumed.status, "running");
+  const result = manager.verifiedResult("claude", job.jobId, CALLER, OP_NOW);
+  assert.equal(result.status, "running");
+  const cancelled = manager.verifiedCancel("claude", job.jobId, CALLER, "caller", OP_NOW);
+  assert.equal(cancelled.status, "cancelled_by_caller");
+});
+
+void test("PRD 636 runtime: untrusted caller URLs are rejected at create", () => {
+  const { manager } = makeManager();
+  expectGroundlaneError(
+    () => manager.create(makeCreateInput({ sourceUrl: "https://user:pass@example.com/page" })),
+    "INVALID_INPUT",
+    /credentials/,
+  );
+  expectGroundlaneError(
+    () => manager.create(makeCreateInput({ sourceUrl: "ftp://example.com/file" })),
+    "INVALID_INPUT",
+    /HTTP/,
+  );
+});
+
+void test("PRD 636 runtime: public job view never exposes provider job ID or secrets", () => {
+  const { manager, provider } = makeManager();
+  const { job } = manager.create(makeCreateInput());
+  manager.markRunning(job.jobId, CALLER, OP_NOW);
+  manager.markFailed(job.jobId, CALLER, new Error("boom Bearer topsecret-1"), OP_NOW);
+  const failed = manager.result(job.jobId, CALLER, OP_NOW);
+  const serialised = JSON.stringify(failed);
+  assert.ok(!serialised.includes(provider.created[0] ?? "prov-task-"), "provider job ID leaked");
+  assert.ok(!serialised.includes("topsecret-1"), "raw upstream secret leaked");
+  assert.ok((failed.sanitizedError ?? "").length > 0, "sanitized error must be present");
 });

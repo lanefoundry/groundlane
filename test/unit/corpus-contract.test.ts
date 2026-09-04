@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -34,6 +35,27 @@ import {
   type RetryIdempotencyGuard,
   type SearchResultProvenance,
 } from "../../src/core/corpus-contract.js";
+import {
+  CorpusStore,
+  IdempotencyStore,
+  InMemoryArtifactStorageBackend,
+  InMemoryCorpusBackend,
+  InMemoryDurableStateStore,
+  PUBLIC_WEB_TOOL_FAMILY,
+  SCOPED_CORPUS_TOOL_FAMILY,
+  createDurableArtifact,
+  fakePublicWebSearch,
+  resolveSearchToolFamily,
+  resolveStorageBackendName,
+  resolveUpstreamCancel,
+  type CallerPrincipal,
+  type CorpusRetentionCaps,
+  type EnrollSourceInput,
+} from "../../src/core/corpus-runtime.js";
+import {
+  getDocumentPolicyView,
+  resolveSectionExpiry,
+} from "../../src/core/document-policy.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -588,4 +610,416 @@ void test("PRD 747: index rebuild with changed content hash rejected", () => {
     () => verifyManifestStableAfterRebuild(before, after),
     { message: /content hash changed/ },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Runtime helpers (PRD 665/666/667/723/724/725/726): corpus-runtime +
+// document-policy. Failing-first coverage for the new runtime modules.
+// ---------------------------------------------------------------------------
+
+function makeCaller(overrides?: Partial<CallerPrincipal>): CallerPrincipal {
+  return {
+    principalId: "owner-001",
+    roles: ["role:reader", "role:writer"],
+    ...overrides,
+  };
+}
+
+function makeCaps(overrides?: Partial<CorpusRetentionCaps>): CorpusRetentionCaps {
+  return {
+    operatorCapExpiresAt: null,
+    projectCapExpiresAt: null,
+    corpusCapExpiresAt: null,
+    sourceCapExpiresAt: null,
+    minimumBoundMs: 3600_000,
+    ...overrides,
+  };
+}
+
+function makeEnrollInput(overrides?: Partial<EnrollSourceInput>): EnrollSourceInput {
+  return {
+    sourceId: "src-001",
+    contentHash: "hash-abc",
+    acl: ["role:reader", "role:writer"],
+    retentionPolicy: "90d",
+    deletionPolicy: "on_expiry",
+    lifecycleProvenance: "groundlane-enroll",
+    citationProvenance: "original",
+    backendProvenance: "mem-fake-v1",
+    callerExpiresAt: "2026-12-31T23:59:59.000Z",
+    cacheBindings: ["cache-1"],
+    ...overrides,
+  };
+}
+
+function makeStore(nowMs = Date.parse("2026-01-15T00:00:00Z")): {
+  store: CorpusStore;
+  backend: InMemoryCorpusBackend;
+} {
+  const backend = new InMemoryCorpusBackend();
+  const store = new CorpusStore(backend, () => new Date(nowMs));
+  return { store, backend };
+}
+
+void test("PRD 665/725: create corpus uses opaque Groundlane ID, never backend ID", () => {
+  const { store, backend } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  assert.match(view.corpusId, /^gl-corpus-/u);
+  assert.equal(view.state, "active");
+  assert.equal(view.sourceCount, 0);
+  // Backend-internal index key must not leak into the public view.
+  assert.ok(!Object.keys(view).some((k) => /backend|index|job/iu.test(k)));
+  assert.ok(!/^idx[-_]/iu.test(view.corpusId));
+  assert.equal(backend.internalIndexKeyCount(), 1);
+});
+
+void test("PRD 665/725: enroll creates corpus-owned source lifecycle record", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  const enrollment = store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  assert.equal(enrollment.sourceId, "src-001");
+  assert.equal(enrollment.corpusId, view.corpusId);
+  assert.equal(enrollment.sourceRecord.lifecycle, "enrolled");
+  assert.equal(enrollment.sourceRecord.contentHash, "hash-abc");
+  assert.deepEqual(enrollment.sourceRecord.cacheBindings, ["cache-1"]);
+  const status = store.corpusStatus(view.corpusId, makeCaller());
+  assert.equal(status.sourceCount, 1);
+});
+
+void test("PRD 665/725: retention takes earliest of caller request and hard caps", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  const enrollment = store.enrollSource(
+    view.corpusId,
+    makeEnrollInput({ callerExpiresAt: "2026-12-31T23:59:59.000Z" }),
+    makeCaller(),
+    makeCaps({ corpusCapExpiresAt: "2026-03-01T00:00:00.000Z" }),
+  );
+  assert.equal(enrollment.expiresAt, "2026-03-01T00:00:00.000Z");
+});
+
+void test("PRD 665/725: update (re-enroll) does not reset expiry", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  const first = store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  const updated = store.updateSource(
+    view.corpusId,
+    "src-001",
+    { contentHash: "hash-def", citationProvenance: "re-crawled" },
+    makeCaller(),
+  );
+  assert.equal(updated.expiresAt, first.expiresAt);
+  assert.equal(updated.sourceRecord.contentHash, "hash-def");
+});
+
+void test("PRD 665/725: delete immediately revokes access and cache bindings", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  const deletion = store.deleteCorpus(view.corpusId, makeCaller());
+  assert.equal(deletion.isComplete, true);
+  assert.equal(store.isCacheBindingHittable("cache-1"), false);
+  const status = store.corpusStatus(view.corpusId, makeCaller());
+  assert.equal(status.state, "deleted");
+  assert.throws(
+    () => store.searchCorpus(view.corpusId, "hello", makeCaller()),
+    { message: /deleted|revoked|access/i },
+  );
+});
+
+void test("PRD 665/725: backend partial failure maps to stable degraded state", () => {
+  const { store, backend } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  backend.setIndexHealthy(view.corpusId, false);
+  const status = store.corpusStatus(view.corpusId, makeCaller());
+  assert.equal(status.state, "degraded");
+});
+
+void test("PRD 665/725: incomplete deletion never claims complete", () => {
+  const { store, backend } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  backend.setFailDelete(true);
+  const deletion = store.deleteCorpus(view.corpusId, makeCaller());
+  assert.equal(deletion.isComplete, false);
+  const status = store.corpusStatus(view.corpusId, makeCaller());
+  assert.notEqual(status.state, "deleted");
+});
+
+void test("PRD 726: manifest is truth source, derived index rebuild keeps identity", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  const before = store.corpusStatus(view.corpusId, makeCaller()).manifest;
+  const after = store.rebuildDerivedIndex(view.corpusId, makeCaller());
+  assert.doesNotThrow(() => verifyManifestStableAfterRebuild(before, after));
+  const entry = after.sources[0];
+  assert.ok(entry);
+  assert.ok(entry.acl.length > 0);
+  assert.ok(entry.retentionPolicy);
+  assert.ok(entry.deletionPolicy);
+  assert.ok(entry.lifecycleProvenance);
+  assert.ok(entry.citationProvenance);
+  assert.ok(entry.backendProvenance);
+});
+
+void test("PRD 725/726: ACL enforced on scoped search", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  store.enrollSource(
+    view.corpusId,
+    makeEnrollInput({ acl: ["role:writer"] }),
+    makeCaller(),
+    makeCaps(),
+  );
+  assert.throws(
+    () => store.searchCorpus(view.corpusId, "hello", makeCaller({ principalId: "intruder", roles: ["role:other"] })),
+    { message: /access denied/i },
+  );
+  const response = store.searchCorpus(view.corpusId, "hello", makeCaller());
+  assert.equal(response.results.length, 1);
+});
+
+void test("PRD 724: scoped corpus search uses its own tool family and provenance", () => {
+  const { store } = makeStore();
+  const view = store.createCorpus({
+    displayName: "My Corpus",
+    ownerId: "owner-001",
+    tenantId: "tenant-001",
+    callerExpiresAt: null,
+    caps: makeCaps(),
+  });
+  store.enrollSource(view.corpusId, makeEnrollInput(), makeCaller(), makeCaps());
+  const response = store.searchCorpus(view.corpusId, "hello", makeCaller());
+  assert.equal(response.toolFamily, SCOPED_CORPUS_TOOL_FAMILY);
+  assert.notEqual(response.toolFamily, PUBLIC_WEB_TOOL_FAMILY);
+  const hit = response.results[0];
+  assert.ok(hit);
+  assert.equal(hit.provenance.sourceKind, "corpus");
+  assert.equal(hit.provenance.corpusBoundary, view.corpusId);
+  assert.ok(hit.provenance.provider);
+  assert.ok(hit.provenance.backend);
+  assert.ok(hit.provenance.freshnessTimestamp);
+  assert.equal(resolveSearchToolFamily(hit.provenance.sourceKind), SCOPED_CORPUS_TOOL_FAMILY);
+});
+
+void test("PRD 724: public web fake result never carries a corpus boundary", () => {
+  const response = fakePublicWebSearch("hello", "brave", "brave-api", new Date("2026-01-15T00:00:00Z"));
+  assert.equal(response.toolFamily, PUBLIC_WEB_TOOL_FAMILY);
+  const hit = response.results[0];
+  assert.ok(hit);
+  assert.equal(hit.provenance.sourceKind, "public_web");
+  assert.equal(hit.provenance.corpusBoundary, null);
+  assert.equal(resolveSearchToolFamily(hit.provenance.sourceKind), PUBLIC_WEB_TOOL_FAMILY);
+});
+
+void test("PRD 667: same idempotency key reuses result without re-executing effect", () => {
+  const idempotency = new IdempotencyStore();
+  let executions = 0;
+  const effect = () => {
+    executions += 1;
+    return {
+      result: "done",
+      providerTaskCreated: true,
+      paidCallCompleted: true,
+      artifactWriteCompleted: true,
+    };
+  };
+  const first = idempotency.run("key-001", "attempt-001", effect);
+  assert.equal(first.reused, false);
+  assert.equal(first.result, "done");
+  const second = idempotency.run("key-001", "attempt-002", effect);
+  assert.equal(second.reused, true);
+  assert.equal(second.result, "done");
+  assert.equal(executions, 1);
+});
+
+void test("PRD 667: retry that re-creates provider task / paid call / artifact write throws", () => {
+  const idempotency = new IdempotencyStore();
+  idempotency.recordUnfinishedAttempt("key-002", "attempt-001", {
+    providerTaskCreated: true,
+    paidCallCompleted: true,
+    artifactWriteCompleted: true,
+  });
+  assert.throws(
+    () => idempotency.run("key-002", "attempt-002", () => ({
+      result: "again",
+      providerTaskCreated: true,
+      paidCallCompleted: false,
+      artifactWriteCompleted: false,
+    })),
+    { message: /already created/ },
+  );
+  assert.throws(
+    () => idempotency.run("key-002", "attempt-002", () => ({
+      result: "again",
+      providerTaskCreated: false,
+      paidCallCompleted: true,
+      artifactWriteCompleted: false,
+    })),
+    { message: /re-bill/ },
+  );
+  assert.throws(
+    () => idempotency.run("key-002", "attempt-002", () => ({
+      result: "again",
+      providerTaskCreated: false,
+      paidCallCompleted: false,
+      artifactWriteCompleted: true,
+    })),
+    { message: /duplicate/ },
+  );
+});
+
+void test("PRD 667: no provider acknowledgment never reports upstream cancel confirmed", () => {
+  assert.equal(resolveUpstreamCancel(true, false).status, "uncertain");
+  assert.equal(resolveUpstreamCancel(true, true).status, "confirmed");
+  assert.equal(resolveUpstreamCancel(false, false).status, "not_requested");
+});
+
+void test("PRD 723: durable state store rejects large inline content", () => {
+  const durable = new InMemoryDurableStateStore();
+  assert.throws(
+    () => durable.put({ key: "k1", inlineBytes: MAX_INLINE_BYTES + 1, ref: null }),
+    { message: /exceeds durable state limit/ },
+  );
+  assert.doesNotThrow(
+    () => durable.put({ key: "k1", inlineBytes: 128, ref: null }),
+  );
+});
+
+void test("PRD 723/667: durable ArtifactRef is storage-neutral with tenant/owner binding", () => {
+  const ref = createDurableArtifact({
+    tenantId: "tenant-001",
+    ownerId: "owner-001",
+    contentHash: "hash-abc",
+    byteSize: 1024,
+    retentionPolicy: "90d",
+    deletionPolicy: "on_expiry",
+    expiresAt: "2026-12-31T23:59:59.000Z",
+  });
+  const keys = Object.keys(ref);
+  for (const field of ["storageBackend", "bucket", "r2Binding", "endpoint"]) {
+    assert.ok(!keys.includes(field));
+  }
+  assert.equal(ref.tenantId, "tenant-001");
+  assert.equal(ref.ownerId, "owner-001");
+  assert.equal(resolveStorageBackendName("cloudflare"), "r2");
+  assert.equal(resolveStorageBackendName("local"), "in-memory-fake");
+});
+
+void test("PRD 723: storage backend enforces tenant/owner binding and content hash", () => {
+  const storage = new InMemoryArtifactStorageBackend();
+  const bytes = new TextEncoder().encode("hello corpus");
+  const digest = "9b4b3a8a2d8b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b";
+  assert.throws(
+    () => storage.storeBlob("tenant-001", "owner-001", digest, bytes),
+    { message: /content hash mismatch/i },
+  );
+  // Round-trip through a caller-computed content hash.
+  const realHash: string = createHash("sha256").update(bytes).digest("hex");
+  storage.storeBlob("tenant-001", "owner-001", realHash, bytes);
+  assert.deepEqual(
+    Array.from(storage.loadBlob("tenant-001", "owner-001", realHash)),
+    Array.from(bytes),
+  );
+  assert.throws(
+    () => storage.loadBlob("tenant-002", "owner-001", realHash),
+    { message: /not found or access denied/i },
+  );
+});
+
+void test("PRD 666: policy view announces defaults, caps, and effective absolute expiry", () => {
+  const nowMs = Date.parse("2026-01-15T00:00:00Z");
+  const view = getDocumentPolicyView(nowMs);
+  for (const section of [view.cache, view.upload, view.artifact, view.corpus]) {
+    assert.ok(section.defaultTtlSeconds > 0);
+    assert.ok(section.minTtlSeconds <= section.defaultTtlSeconds);
+    assert.ok(section.defaultTtlSeconds <= section.maxTtlSeconds);
+    assert.ok(section.effectiveExpiresAtMs > nowMs);
+    assert.equal(
+      section.effectiveExpiresAt,
+      new Date(section.effectiveExpiresAtMs).toISOString(),
+    );
+  }
+  assert.ok(view.upload.defaultTtlSeconds <= view.artifact.defaultTtlSeconds);
+});
+
+void test("PRD 666: relative and absolute expiry are mutually exclusive", () => {
+  assert.throws(
+    () => resolveSectionExpiry(
+      { relativeTtlSeconds: 3600, absoluteExpiresAtMs: Date.parse("2026-01-16T00:00:00Z") },
+      { defaultTtlSeconds: 900, minTtlSeconds: 60, maxTtlSeconds: 3600 },
+      Date.parse("2026-01-15T00:00:00Z"),
+    ),
+    { message: /mutually exclusive/ },
+  );
+});
+
+void test("PRD 666: out-of-bounds TTL is a validation error, never clamped", () => {
+  const nowMs = Date.parse("2026-01-15T00:00:00Z");
+  const bounds = { defaultTtlSeconds: 900, minTtlSeconds: 60, maxTtlSeconds: 3600 };
+  assert.throws(
+    () => resolveSectionExpiry({ relativeTtlSeconds: 7200 }, bounds, nowMs),
+    { message: /exceeds maximum/ },
+  );
+  assert.throws(
+    () => resolveSectionExpiry({ relativeTtlSeconds: 10 }, bounds, nowMs),
+    { message: /below minimum/ },
+  );
+  const effective = resolveSectionExpiry({ relativeTtlSeconds: 600 }, bounds, nowMs);
+  assert.equal(effective, nowMs + 600_000);
 });

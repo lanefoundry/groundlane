@@ -13,6 +13,18 @@ import {
   type ExtractionResult,
   type ExtractionSchema,
 } from "../../src/core/schema-extraction-contract.js";
+import { GroundlaneError } from "../../src/core/errors.js";
+import {
+  createFakeSchemaExtractionProvider,
+  digestExtractionFields,
+  parseBoundedSchema,
+  runSchemaExtraction,
+  summarizeRepeatability,
+  validateProviderOutput,
+  type SchemaExtractionProvider,
+  type SchemaExtractionRuntimeOptions,
+} from "../../src/core/schema-extraction-runtime.js";
+import type { DnsLookup } from "../../src/core/url-policy.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -423,4 +435,355 @@ void test("PRD 655: gate with multiple entries — all must pass thresholds", ()
   );
   assert.equal(result.allowed, false);
   assert.ok(result.reason.includes("s2"));
+});
+
+// ---------------------------------------------------------------------------
+// PRD 652: Provider-backed schema extraction runtime v1
+// ---------------------------------------------------------------------------
+
+const publicLookup: DnsLookup = () =>
+  Promise.resolve([{ address: "93.184.216.34", family: 4 }]);
+
+const callerSchema: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    title: { type: "string", required: true },
+    price: { type: "number", required: true },
+    inStock: { type: "boolean" },
+    link: { type: "url" },
+    published: { type: "date" },
+    tags: { type: "array", items: { type: "string" } },
+  },
+};
+
+function makeRuntime(
+  provider?: SchemaExtractionProvider,
+  report?: ExtractionBenchmarkReport | null,
+): SchemaExtractionRuntimeOptions {
+  return {
+    providers: [
+      provider ??
+      createFakeSchemaExtractionProvider({
+        data: {
+          title: "Widget",
+          price: 19.99,
+          inStock: true,
+          link: "https://shop.example.com/widget",
+          published: "2026-01-15",
+          tags: ["sale", "new"],
+        },
+        billedUnits: 5,
+      }),
+    ],
+    benchmarkReport: report === undefined ? makeBenchmarkReport() : report,
+    thresholds: makeThresholds(),
+    lookup: publicLookup,
+  };
+}
+
+function makeRequest(overrides?: Record<string, unknown>): {
+  url: string;
+  schema: unknown;
+  providerBacked: true;
+  provider?: string;
+  timeoutMs?: number;
+  maxOutputChars?: number;
+  maxStringChars?: number;
+} {
+  return {
+    url: "https://shop.example.com/widget",
+    schema: callerSchema,
+    providerBacked: true,
+    ...overrides,
+  };
+}
+
+function expectSyncCode(fn: () => unknown, code: string, pattern?: RegExp): void {
+  try {
+    fn();
+  } catch (error) {
+    assert.ok(error instanceof GroundlaneError, `expected GroundlaneError, got ${String(error)}`);
+    assert.equal(error.code, code);
+    if (pattern !== undefined) assert.match(error.message, pattern);
+    return;
+  }
+  assert.fail(`expected GroundlaneError ${code}`);
+}
+
+async function expectAsyncCode(promise: Promise<unknown>, code: string, pattern?: RegExp): Promise<void> {
+  try {
+    await promise;
+  } catch (error) {
+    assert.ok(error instanceof GroundlaneError, `expected GroundlaneError, got ${String(error)}`);
+    assert.equal(error.code, code);
+    if (pattern !== undefined) assert.match(error.message, pattern);
+    return;
+  }
+  assert.fail(`expected GroundlaneError ${code}`);
+}
+
+void test("PRD 652: parser accepts all six bounded field types", () => {
+  const parsed = parseBoundedSchema(callerSchema);
+  assert.equal(parsed.fields.length, 6);
+  const byName = new Map(parsed.fields.map((field) => [field.name, field]));
+  assert.equal(byName.get("title")?.type, "string");
+  assert.equal(byName.get("price")?.type, "number");
+  assert.equal(byName.get("inStock")?.type, "boolean");
+  assert.equal(byName.get("link")?.type, "url");
+  assert.equal(byName.get("published")?.type, "date");
+  assert.equal(byName.get("tags")?.type, "array");
+});
+
+void test("PRD 652: parser rejects remote $ref", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({
+        type: "object",
+        properties: { nested: { $ref: "https://evil.example.com/schema.json" } },
+      }),
+    "INVALID_INPUT",
+    /\$ref/i,
+  );
+});
+
+void test("PRD 652: parser rejects local $ref in v1 (no ref resolution)", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({
+        type: "object",
+        properties: { nested: { $ref: "#/definitions/Address" } },
+      }),
+    "INVALID_INPUT",
+    /\$ref/i,
+  );
+});
+
+void test("PRD 652: parser rejects unknown field type", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({
+        type: "object",
+        properties: { nested: { type: "object" } },
+      }),
+    "INVALID_INPUT",
+    /type/i,
+  );
+});
+
+void test("PRD 652: parser rejects invalid field name", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({ type: "object", properties: { "9lives": { type: "string" } } }),
+    "INVALID_INPUT",
+    /name/i,
+  );
+});
+
+void test("PRD 652: parser rejects empty properties", () => {
+  expectSyncCode(
+    () => parseBoundedSchema({ type: "object", properties: {} }),
+    "INVALID_INPUT",
+    /at least one field/i,
+  );
+});
+
+void test("PRD 652: parser rejects array without items", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({ type: "object", properties: { tags: { type: "array" } } }),
+    "INVALID_INPUT",
+    /items/i,
+  );
+});
+
+void test("PRD 652: parser rejects nested array items", () => {
+  expectSyncCode(
+    () =>
+      parseBoundedSchema({
+        type: "object",
+        properties: { matrix: { type: "array", items: { type: "array", items: { type: "string" } } } },
+      }),
+    "INVALID_INPUT",
+    /item/i,
+  );
+});
+
+void test("PRD 652: parser enforces maxFields bound", () => {
+  const properties: Record<string, unknown> = {};
+  for (let i = 0; i < 10; i++) properties[`field_${String(i)}`] = { type: "string" };
+  expectSyncCode(
+    () => parseBoundedSchema({ type: "object", properties }, { maxFields: 5 }),
+    "INVALID_INPUT",
+    /field/i,
+  );
+});
+
+void test("PRD 652: local validation reports present/missing/invalid", () => {
+  const parsed = parseBoundedSchema(callerSchema);
+  const { fields, truncated } = validateProviderOutput(
+    {
+      title: "Widget",
+      price: "free",
+      inStock: true,
+      link: "https://shop.example.com/widget",
+      published: "not-a-date-at-all-xyz",
+      tags: ["sale", 42],
+    },
+    parsed,
+  );
+  assert.equal(truncated, false);
+  const byName = new Map(fields.map((field) => [field.name, field]));
+  assert.equal(byName.get("title")?.status, "present");
+  assert.equal(byName.get("price")?.status, "invalid");
+  assert.equal(byName.get("inStock")?.status, "present");
+  assert.equal(byName.get("link")?.status, "present");
+  assert.equal(byName.get("published")?.status, "invalid");
+  assert.equal(byName.get("tags")?.status, "invalid");
+});
+
+void test("PRD 652: explicit opt-in required, no silent provider path", async () => {
+  await expectAsyncCode(
+    runSchemaExtraction(
+      { ...makeRequest(), providerBacked: false as unknown as true },
+      makeRuntime(),
+    ),
+    "INVALID_INPUT",
+    /opt-in/i,
+  );
+});
+
+void test("PRD 652: non-HTTP URL rejected before provider dispatch", async () => {
+  const fake = createFakeSchemaExtractionProvider({ data: { title: "x" } });
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest({ url: "ftp://example.com/file" }), makeRuntime(fake)),
+    "URL_BLOCKED",
+  );
+  assert.equal(fake.calls.length, 0);
+});
+
+void test("PRD 652: private-literal URL rejected before provider dispatch", async () => {
+  const fake = createFakeSchemaExtractionProvider({ data: { title: "x" } });
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest({ url: "http://10.0.0.1/admin" }), makeRuntime(fake)),
+    "URL_BLOCKED",
+  );
+  assert.equal(fake.calls.length, 0);
+});
+
+void test("PRD 652: full run returns fields plus provider/model/source/billing provenance", async () => {
+  const outcome = await runSchemaExtraction(makeRequest(), makeRuntime());
+  assert.equal(outcome.result.provenance.provider, "fake-extract");
+  assert.equal(outcome.result.provenance.model, "fake-extract-v1");
+  assert.equal(outcome.result.provenance.source, "https://shop.example.com/widget");
+  assert.equal(outcome.result.provenance.billedUnits, 5);
+  const byName = new Map(outcome.result.fields.map((field) => [field.name, field]));
+  assert.equal(byName.get("title")?.status, "present");
+  assert.equal(byName.get("title")?.value, "Widget");
+  assert.ok(outcome.digest.length > 0);
+  assert.ok(outcome.durationMs >= 0);
+});
+
+void test("PRD 652: repeatability — same input yields same digest", async () => {
+  const options = makeRuntime();
+  const first = await runSchemaExtraction(makeRequest(), options);
+  const second = await runSchemaExtraction(makeRequest(), options);
+  assert.equal(first.digest, second.digest);
+  const summary = summarizeRepeatability([first.digest, second.digest]);
+  assert.equal(summary.repeatabilityScore, 1);
+});
+
+void test("PRD 652: repeatability detects differing provider output", () => {
+  const parsed = parseBoundedSchema(callerSchema);
+  const a = validateProviderOutput({ title: "Widget", price: 1 }, parsed).fields;
+  const b = validateProviderOutput({ title: "Gadget", price: 1 }, parsed).fields;
+  assert.notEqual(digestExtractionFields(a), digestExtractionFields(b));
+  const summary = summarizeRepeatability([
+    digestExtractionFields(a),
+    digestExtractionFields(a),
+    digestExtractionFields(b),
+  ]);
+  assert.equal(summary.totalRuns, 3);
+  assert.equal(summary.matchingRuns, 2);
+});
+
+void test("PRD 652: benchmark gate blocks production routing without report", async () => {
+  const fake = createFakeSchemaExtractionProvider({ data: { title: "x" } });
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest(), makeRuntime(fake, null)),
+    "PROVIDER_UNAVAILABLE",
+    /benchmark/i,
+  );
+  assert.equal(fake.calls.length, 0);
+});
+
+void test("PRD 652: explicit unknown provider is not silently substituted", async () => {
+  const fake = createFakeSchemaExtractionProvider({ data: { title: "x" } });
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest({ provider: "no-such-provider" }), makeRuntime(fake)),
+    "PROVIDER_UNAVAILABLE",
+  );
+  assert.equal(fake.calls.length, 0);
+});
+
+void test("PRD 652: provider raw errors are sanitized", async () => {
+  const fake = createFakeSchemaExtractionProvider({
+    error: new Error("upstream 500 secret-key=abc123 session=zzz"),
+  });
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest(), makeRuntime(fake)),
+    "UPSTREAM_ERROR",
+  );
+  try {
+    await runSchemaExtraction(makeRequest(), makeRuntime(fake));
+    assert.fail("expected UPSTREAM_ERROR");
+  } catch (error) {
+    assert.ok(error instanceof GroundlaneError);
+    assert.ok(!error.message.includes("abc123"), "raw provider payload must not leak");
+  }
+});
+
+void test("PRD 652: overlong strings truncate with flag; oversized total hits output cap", async () => {
+  const long = await runSchemaExtraction(
+    makeRequest({ maxStringChars: 5 }),
+    makeRuntime(
+      createFakeSchemaExtractionProvider({ data: { title: "Widget Pro Max" }, billedUnits: 1 }),
+    ),
+  );
+  const title = long.result.fields.find((field) => field.name === "title");
+  assert.equal(title?.status, "present");
+  assert.equal(title?.value, "Widge");
+  assert.equal(long.truncated, true);
+
+  await expectAsyncCode(
+    runSchemaExtraction(
+      makeRequest({ maxOutputChars: 50 }),
+      makeRuntime(
+        createFakeSchemaExtractionProvider({
+          data: { title: "A very long widget title that blows the tiny budget" },
+          billedUnits: 1,
+        }),
+      ),
+    ),
+    "OUTPUT_LIMIT",
+  );
+});
+
+void test("PRD 652: cancellation propagates as CANCELLED", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expectAsyncCode(
+    runSchemaExtraction(makeRequest(), makeRuntime(), controller.signal),
+    "CANCELLED",
+  );
+});
+
+void test("PRD 652: negative billedUnits from provider rejected", async () => {
+  await expectAsyncCode(
+    runSchemaExtraction(
+      makeRequest(),
+      makeRuntime(createFakeSchemaExtractionProvider({ data: { title: "x" }, billedUnits: -2 })),
+    ),
+    "UPSTREAM_ERROR",
+    /bill/i,
+  );
 });
