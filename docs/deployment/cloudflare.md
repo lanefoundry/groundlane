@@ -145,31 +145,34 @@ For local Worker development, copy `.dev.vars.example` to `.dev.vars` and keep t
 
 The managed-credential data plane (single-tenant multi-credential auth,
 rotation/revoke/audit) and durable async artifact storage need Cloudflare
-resources that are intentionally **not** in the default deploy path. The
-checked-in `wrangler.jsonc` keeps both bindings commented out, and the Worker
-fails closed when they are absent: the admin surface reports unavailable while
-existing data-plane profiles keep serving.
+resources. The reference bindings are checked in and live:
+
+- D1 database `groundlane-managed-tokens` (`MANAGED_TOKEN_D1`), migrated
+  with `migrations/0001_managed_tokens.sql`;
+- R2 bucket `groundlane-artifacts` (`GROUNDLANE_ARTIFACTS`).
 
 > [!IMPORTANT]
-> Provisioning the resources below does not light up the data plane yet. The
-> D1-backed `ManagedTokenStore` adapter and the R2 artifact storage backend
-> are still pending; until they land, managed tokens stay unavailable and
-> durable `ArtifactRef` values stay in-memory only. Provision now to unblock
-> that work, not to enable it.
+> Bound resources do not light up the data plane yet. The D1-backed
+> `ManagedTokenStore` adapter and the R2 artifact storage backend are still
+> pending; until they land, managed tokens stay unavailable (fail closed)
+> and durable `ArtifactRef` values stay in-memory only.
 
-1. Create the D1 database and the R2 bucket, then record their identifiers:
+1. (Already done for the reference deployment; repeat only for a new
+   account.) Create the D1 database and the R2 bucket, then record their
+   identifiers:
 
    ```bash
    pnpm exec wrangler d1 create groundlane-managed-tokens
    pnpm exec wrangler r2 bucket create groundlane-artifacts
    ```
 
-2. Uncomment `d1_databases` and `r2_buckets` in `wrangler.jsonc` and paste the
-   real `database_id`. Never commit placeholder IDs.
-3. Apply the checked-in migration to the new database:
+2. Fill the real `database_id` into `wrangler.jsonc`'s `d1_databases`
+   entry. Never commit placeholder IDs.
+3. Apply the checked-in migration to the database (remote shown; drop
+   `--remote` for the local dev copy):
 
    ```bash
-   pnpm exec wrangler d1 migrations apply MANAGED_TOKEN_D1
+   pnpm exec wrangler d1 migrations apply groundlane-managed-tokens --remote
    ```
 
    `migrations/0001_managed_tokens.sql` stores verifiers/digests and bounded
