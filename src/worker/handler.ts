@@ -147,17 +147,16 @@ async function authenticateManagedRequest(
   if (token === undefined || !isManagedTokenFormat(token)) {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
     // TEMPORARY debug (no secrets); reverted after probing.
-    if ((env as unknown as Record<string, unknown>).GROUNDLANE_DEBUG_AUTH === "1") {
-      return {
-        ok: false,
-        response: jsonError(
-          401,
-          token === undefined ? "dbg_no_bearer" : "dbg_not_managed_format",
-          "debug",
-          requestId,
-        ),
-      };
-    }
+    return {
+      ok: false,
+      response: jsonError(
+        401,
+        token === undefined ? "dbg_no_bearer" : "dbg_not_managed_format",
+        "debug",
+        requestId,
+      ),
+    };
+  }
     return {
       ok: false,
       response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
@@ -177,36 +176,28 @@ async function authenticateManagedRequest(
     const principal = await authenticateManagedToken(token, store, subtle, getManagedClock(env));
     if (principal === null) {
       // TEMPORARY debug stage reporting (no secrets); reverted after probing.
-      if ((env as Record<string, unknown>).GROUNDLANE_DEBUG_AUTH === "1") {
-        const parsed = parseManagedToken(token);
-        if (parsed === null) {
-          return {
-            ok: false,
-            response: jsonError(401, "dbg_parse_null", "debug", requestId),
-          };
-        }
-        const row = await store.getById(parsed.id);
-        if (row === null) {
-          return {
-            ok: false,
-            response: jsonError(401, "dbg_row_null", "debug", requestId),
-          };
-        }
+      const parsed = parseManagedToken(token);
+      if (parsed === null) {
         return {
           ok: false,
-          response: jsonError(
-            401,
-            `dbg_row_${row.status}`,
-            "debug",
-            requestId,
-          ),
+          response: jsonError(401, "dbg_parse_null", "debug", requestId),
+        };
+      }
+      const row = await store.getById(parsed.id);
+      if (row === null) {
+        return {
+          ok: false,
+          response: jsonError(401, "dbg_row_null", "debug", requestId),
         };
       }
       return {
         ok: false,
-        response: jsonError(401, "unauthorized", "A valid bearer token is required", requestId, {
-          "www-authenticate": 'Bearer realm="groundlane"',
-        }),
+        response: jsonError(
+          401,
+          `dbg_row_${row.status}`,
+          "debug",
+          requestId,
+        ),
       };
     }
     return { ok: true };
