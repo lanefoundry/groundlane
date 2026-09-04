@@ -173,7 +173,11 @@ export function generateRawSecret(random: RandomBytes): string {
 }
 
 export function formatManagedToken(id: string, rawSecret: string): string {
-  return `${MANAGED_TOKEN_PREFIX}${id}_${rawSecret}`;
+  // `.` separates id from secret because it appears in NEITHER alphabet:
+  // ids are [A-Za-z0-9_-] and secrets are base64url. The previous `_`
+  // separator was ambiguous (both sides may contain `_`) and misparsed
+  // ~63% of random secrets to the wrong credential id.
+  return `${MANAGED_TOKEN_PREFIX}${id}.${rawSecret}`;
 }
 
 export function isManagedTokenFormat(token: string): boolean {
@@ -185,12 +189,13 @@ export function parseManagedToken(
 ): { id: string; secret: string } | null {
   if (!rawToken.startsWith(MANAGED_TOKEN_PREFIX)) return null;
   const rest = rawToken.slice(MANAGED_TOKEN_PREFIX.length);
-  const sep = rest.lastIndexOf("_");
+  const sep = rest.indexOf(".");
   if (sep <= 0 || sep + 1 >= rest.length) return null;
   const id = rest.slice(0, sep);
   const secret = rest.slice(sep + 1);
   if (!isValidCredentialId(id)) return null;
   if (secret.length < 43 || secret.length > 128) return null;
+  // Base64url only: `.` is the separator and must not appear in the secret.
   if (!/^[A-Za-z0-9_-]+$/u.test(secret)) return null;
   return { id, secret };
 }

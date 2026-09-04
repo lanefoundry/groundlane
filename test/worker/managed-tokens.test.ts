@@ -180,6 +180,36 @@ void test("696 create mints >=256-bit secret and stores verifier only", async ()
   assert.ok(!serialized.toLowerCase().includes("authorization"));
 });
 
+void test("token separator survives underscores in id and secret", async () => {
+  // Regression: the old `_` separator misparsed any secret containing `_`
+  // to the wrong credential id (401 for ~63% of random secrets). `.` is in
+  // neither alphabet, so exactly one split point exists.
+  const id = "cred_ab_cdEfGh012345";
+  const secret = `xy_zQ${"9".repeat(58)}`;
+  const token = formatManagedToken(id, secret);
+  const parsed = parseManagedToken(token);
+  assert.ok(parsed !== null);
+  assert.equal(parsed.id, id);
+  assert.equal(parsed.secret, secret);
+  const store = new FakeManagedTokenStore();
+  const clock = new FakeClock(START);
+  const verifier = await computeVerifier(secret, subtle);
+  await store.insert({
+    id,
+    verifier,
+    principalId: "owner",
+    scopes: ["mcp"],
+    label: "regression",
+    status: "active",
+    createdAt: START,
+    updatedAt: START,
+    expiresAt: START + 3_600_000,
+  });
+  const principal = await authenticateManagedToken(token, store, subtle, clock);
+  assert.ok(principal !== null);
+  assert.equal(principal.credentialId, id);
+});
+
 void test("696 lookup uses indexed single-row then constant-time compare", async () => {
   const store = new FakeManagedTokenStore();
   const clock = new FakeClock(START);
