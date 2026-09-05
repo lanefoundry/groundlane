@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Dedicated PRD acceptance environment. Never reuse production bindings.
+  "name": "groundlane-prd-staging",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "2c8eb7a54b224ea2a8d6835edfa6ecb3" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "MANAGED_TOKEN_D1",
+      "database_name": "groundlane-prd-staging",
+      "database_id": "d71fcdaf-71c8-4986-98e6-abdd37442dba",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "GROUNDLANE_ARTIFACTS", "bucket_name": "groundlane-prd-staging-artifacts" }
+  ],
+  "vars": {
+    "GROUNDLANE_MCP_PROTOCOL_MODE": "legacy-only",
+    "READER_BACKEND": "disabled",
+    "BROWSER_BACKEND": "disabled",
+    "REQUEST_TIMEOUT_MS": "30000",
+    "MAX_RESPONSE_BYTES": "2000000",
+    "MAX_OUTPUT_CHARS": "100000",
+    "MAX_CONCURRENCY": "2",
+    "MAX_QUEUE": "4",
+    "DOCUMENT_UPLOAD_MAX_TTL_SECONDS": "3600",
+    "DOCUMENT_ARTIFACT_MAX_TTL_SECONDS": "86400",
+    "DOCUMENT_CACHE_EDGE_ENABLED": "true",
+    "DOCUMENT_OUTPUT_EDGE_ENABLED": "false",
+    "DOCUMENT_ASYNC_EDGE_ENABLED": "false",
+    "DOCUMENT_CACHE_DEFAULT_TTL_SECONDS": "86400",
+    "DOCUMENT_CACHE_MAX_TTL_SECONDS": "86400",
+    "R2_ACCOUNT_ID": "1ff43f0d4c3ad3bd98ce5ab767546a68",
+    "R2_BUCKET_NAME": "groundlane-prd-staging-artifacts"
+  },
+  "triggers": { "crons": ["0 * * * *", "* * * * *"] },
+  "durable_objects": {
+    "bindings": [{ "name": "GROUNDLANE_CONTAINER", "class_name": "GroundlaneContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroundlaneContainer"] }],
+  "containers": [{
+    "class_name": "GroundlaneContainer",
+    "image": "./Dockerfile",
+    "instance_type": "basic",
+    "max_instances": 1
+  }],
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

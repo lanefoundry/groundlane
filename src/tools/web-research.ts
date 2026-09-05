@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { ResearchResult } from "../core/contracts.js";
@@ -88,13 +88,13 @@ export function createWebResearchModule(options: WebResearchModuleOptions): McpM
           outputSchema: resultEnvelopeSchema(researchDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const result = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   (signal) =>
@@ -115,7 +115,7 @@ export function createWebResearchModule(options: WebResearchModuleOptions): McpM
                       signal,
                     ),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "web_research",
                 ),
             );

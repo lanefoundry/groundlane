@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import test from "node:test";
-
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { DisabledBrowserBackend } from "../../src/adapters/browser/disabled.js";
 import type {
   AnswerProvider,
@@ -48,6 +44,7 @@ import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
 import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
+import { createDocumentUploadModule } from "../../src/tools/document-upload.js";
 import { createDocumentParseModule } from "../../src/tools/document-parse.js";
 import { createWebExtractSchemaModule } from "../../src/tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
@@ -403,6 +400,9 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       limiter,
       requestTimeoutMs: 5_000,
     }),
+    createDocumentUploadModule({
+      caller: { ownerId: "owner", credentialBinding: "static:test" },
+    }),
     createDocumentParseModule({
       pipeline,
       caller: { ownerId: "owner", credentialBinding: "static:test" },
@@ -431,9 +431,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
   const client = new Client({ name: "groundlane-test", version: "1.0.0" });
 
   try {
-    // SDK 1.29's optional callback declarations conflict under
-    // exactOptionalPropertyTypes, though this class implements Transport.
-    await client.connect(transport as Transport);
+    await client.connect(transport);
     assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
     const tools = await client.listTools();
     assert.deepEqual(
@@ -450,8 +448,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "crawl_create",
         "crawl_result",
         "crawl_status",
+        "document_artifact_delete",
         "document_parse",
         "document_policy",
+        "document_upload_complete",
+        "document_upload_create",
         "parse",
         "provider_balance",
         "provider_capabilities",

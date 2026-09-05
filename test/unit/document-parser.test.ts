@@ -6,7 +6,27 @@ import { zipSync } from "fflate";
 import {
   MAX_DOCUMENT_TABLE_CELLS,
   parseBoundedDocument,
+  resolveDocumentParserProfile,
 } from "../../src/adapters/document/bounded-document-parser.js";
+import {
+  documentCacheBindingIdentity,
+} from "../../src/tools/document-parse.js";
+
+void test("parser profile distinguishes filename-sensitive text formats for cache identity", () => {
+  assert.equal(resolveDocumentParserProfile("text/plain", "data.csv"), "csv");
+  assert.equal(resolveDocumentParserProfile("text/plain", "notes.txt"), "text");
+  assert.equal(resolveDocumentParserProfile("application/octet-stream", "book.epub"), "epub");
+});
+
+void test("document cache source bindings are credential-scoped without exposing the credential", () => {
+  const source = { kind: "artifact", refId: "artifact-a" };
+  const first = documentCacheBindingIdentity(source, "managed:credential-a");
+  const repeated = documentCacheBindingIdentity(source, "managed:credential-a");
+  const other = documentCacheBindingIdentity(source, "managed:credential-b");
+  assert.equal(first, repeated);
+  assert.notEqual(first, other);
+  assert.equal(first.includes("credential-a"), false);
+});
 
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
 

@@ -24,7 +24,20 @@ import {
 } from "./managed-tokens.js";
 import { handleAdminCredentialsRequest } from "./admin-credentials.js";
 import { D1ManagedTokenStore } from "./d1-managed-store.js";
+import { maybeHandleEdgeTasks } from "./tasks-runtime.js";
+import { maybeHandleEdgeDocumentJobs } from "./document-job-runtime.js";
+import {
+  edgeArtifactErrorResponse,
+  maybeHandleEdgeArtifacts,
+  maybePrepareArtifactParseRequest,
+} from "./artifact-runtime.js";
+import { INTERNAL_ARTIFACT_PURPOSE } from "../mcp/artifact-bridge.js";
 import { jsonError } from "./http.js";
+import {
+  mcpBodyTooLargeResponse,
+  mcpRoutingRejectionResponse,
+  validateMcpRoutingHeaders,
+} from "../core/mcp-routing.js";
 import {
   buildContainerRequestWithInternalContext,
   mintInternalContext,
@@ -53,6 +66,84 @@ type ExtendedEnv = WorkerEnv & {
 
 const sharedAdminAudit = new BoundedAuditLog();
 const sharedRotateIdempotency = new RotateIdempotencyStore();
+const MCP_EDGE_BODY_LIMIT_BYTES = 1024 * 1024;
+
+async function readBoundedMcpBody(
+  request: Request,
+): Promise<{ tooLarge: boolean; text: string }> {
+  const body = request.clone().body;
+  if (body === null) return { tooLarge: false, text: "" };
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.byteLength;
+      if (total > MCP_EDGE_BODY_LIMIT_BYTES) {
+        // A cloned Request body is a tee. Awaiting cancellation of one branch
+        // can wait for the untouched forwarding branch and deadlock the edge
+        // rejection path, so signal cancellation without awaiting it.
+        void reader.cancel("MCP edge body limit exceeded");
+        return { tooLarge: true, text: "" };
+      }
+      text += decoder.decode(part.value, { stream: true });
+    }
+    text += decoder.decode();
+    return { tooLarge: false, text };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function validateMcpEdgeRequest(
+  request: Request,
+  requestId: string,
+): Promise<Response | undefined> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/mcp" || request.method !== "POST") return undefined;
+
+  const mediaType = request.headers.get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (mediaType !== "application/json") return undefined;
+
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const bytes = Number(declaredLength);
+    if (Number.isFinite(bytes) && bytes > MCP_EDGE_BODY_LIMIT_BYTES) {
+      return mcpBodyTooLargeResponse(requestId);
+    }
+  }
+
+  const bounded = await readBoundedMcpBody(request);
+  if (bounded.tooLarge) {
+    return mcpBodyTooLargeResponse(requestId);
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(bounded.text) as unknown;
+  } catch {
+    // The authenticated Container remains the source of truth for JSON-RPC
+    // parsing errors. Edge validation only rejects proven header/body drift.
+    return undefined;
+  }
+  const rejected = validateMcpRoutingHeaders(
+    request.method,
+    {
+      protocolVersion: request.headers.get("mcp-protocol-version") ?? undefined,
+      method: request.headers.get("mcp-method") ?? undefined,
+      name: request.headers.get("mcp-name") ?? undefined,
+    },
+    body,
+  );
+  return rejected === undefined
+    ? undefined
+    : mcpRoutingRejectionResponse(rejected, requestId, body);
+}
 
 function getManagedStore(env: ExtendedEnv): ManagedTokenStore | null {
   if ("__MANAGED_STORE__" in env) {
@@ -96,18 +187,55 @@ async function proxyDataPlane(
   principal: AuthenticatedPrincipal,
   credentialBinding: string,
 ): Promise<Response> {
+  const edgeRejection = await validateMcpEdgeRequest(request, requestId);
+  if (edgeRejection !== undefined) return edgeRejection;
+  const documentJob = await maybeHandleEdgeDocumentJobs(request, env, principal, credentialBinding, requestId);
+  if (documentJob !== undefined) return documentJob;
+  const edgeArtifact = await maybeHandleEdgeArtifacts(
+    request,
+    env,
+    principal,
+    credentialBinding,
+    requestId,
+  );
+  if (edgeArtifact !== undefined) return edgeArtifact;
+  let artifactParseRequest: Request | undefined;
+  try {
+    artifactParseRequest = await maybePrepareArtifactParseRequest(
+      request,
+      env,
+      principal,
+      credentialBinding,
+    );
+  } catch (error) {
+    return edgeArtifactErrorResponse(request, error, requestId);
+  }
+  const edgeTask = await maybeHandleEdgeTasks(
+    request,
+    env,
+    principal,
+    credentialBinding,
+    requestId,
+  );
+  if (edgeTask !== undefined) return edgeTask;
   const profile = resolveWorkerAuthProfile({
     ...(env.GROUNDLANE_INTERNAL_SIGNING_SECRET === undefined
       ? {}
       : { GROUNDLANE_INTERNAL_SIGNING_SECRET: env.GROUNDLANE_INTERNAL_SIGNING_SECRET }),
   });
-  const sanitized = stripCallerInternalHeaders(request);
+  const sanitized = stripCallerInternalHeaders(artifactParseRequest ?? request);
   if (profile === "worker_internal_context") {
     const signingSecret = env.GROUNDLANE_INTERNAL_SIGNING_SECRET ?? "";
     if (signingSecret.length === 0) {
       return jsonError(503, "internal_context_unavailable", "Internal context is not configured", requestId);
     }
-    const url = new URL(request.url);
+    const url = new URL(sanitized.url);
+    let bodySha256: string | undefined;
+    if (artifactParseRequest !== undefined) {
+      const body = new Uint8Array(await artifactParseRequest.clone().arrayBuffer());
+      const digest = await crypto.subtle.digest("SHA-256", body);
+      bodySha256 = `sha256-${[...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+    }
     const token = await mintInternalContext(
       {
         signingSecret,
@@ -117,6 +245,9 @@ async function proxyDataPlane(
         requestId,
         principal,
         credentialBinding,
+        ...(bodySha256 === undefined
+          ? {}
+          : { purpose: INTERNAL_ARTIFACT_PURPOSE, bodySha256 }),
       },
       subtle,
       getManagedClock(env),
@@ -129,7 +260,8 @@ async function proxyDataPlane(
       const headers = new Headers(response.headers);
       headers.set("x-request-id", requestId);
       return new Response(response.body, { status: response.status, headers });
-    } catch {
+    } catch (error: unknown) {
+      if (request.signal.aborted) throw error;
       return jsonError(502, "container_unavailable", "The MCP runtime is unavailable", requestId);
     }
   }

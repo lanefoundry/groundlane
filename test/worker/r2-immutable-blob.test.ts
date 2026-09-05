@@ -40,6 +40,16 @@ const bytes = new TextEncoder().encode("immutable artifact bytes");
 const digest = `sha256-${createHash("sha256").update(bytes).digest("hex")}`;
 const blobKey = `blobs/${createHash("sha256").update("internal-key").digest("hex")}`;
 
+void test("R2 publication owns its byte snapshot across asynchronous digest verification", async () => {
+  const bucket = new FakeR2();
+  const store = new R2ImmutableBlobStore(bucket);
+  const mutable = bytes.slice();
+  const write = store.putIfAbsent({ blobKey, ownerId: "owner", digest, bytes: mutable });
+  mutable.fill(0);
+  assert.equal((await write).status, "created");
+  assert.deepEqual(await store.get({ blobKey, ownerId: "owner", digest, maxBytes: 1024 }), bytes);
+});
+
 void test("R2 immutable adapter creates once and reuses identical content", async () => {
   const bucket = new FakeR2();
   const store = new R2ImmutableBlobStore(bucket);

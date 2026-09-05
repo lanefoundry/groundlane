@@ -1,0 +1,25 @@
+{
+  "tool": "fixture_echo",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "string",
+        "maxLength": 32
+      }
+    },
+    "required": ["value"]
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "string"
+      }
+    },
+    "required": ["value"],
+    "additionalProperties": false
+  }
+}

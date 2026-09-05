@@ -311,7 +311,7 @@ export class DurableDocumentJobRepository {
       if (record === null) throw jobError("Unknown durable document job");
       const current = decode(record);
       assertCaller(current.job, caller);
-      if (nowMs < current.job.expiresAt || current.job.status === "expired") {
+      if (nowMs < current.job.expiresAt || current.job.status === "expired" || current.job.status === "cancelled") {
         return current;
       }
       const expired: DurableDocumentJob = {
@@ -338,6 +338,22 @@ export class DurableDocumentJobRepository {
     nowMs: number,
   ): Promise<VersionedDurableDocumentJob> {
     return this.get(jobId, caller, nowMs);
+  }
+
+  /** Source authority revocation wins over lazy expiry for work not yet terminal. */
+  async revokeSource(jobId: string, caller: DurableDocumentJobCaller, nowMs: number): Promise<VersionedDurableDocumentJob> {
+    assertBounded(jobId, "jobId", MAX_DOCUMENT_JOB_IDENTITY_CHARS); assertTimestamp(nowMs, "nowMs");
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const record = await this.store.get(recordKey(jobId));
+      if (record === null) throw jobError("Unknown durable document job");
+      const current = decode(record); assertCaller(current.job, caller);
+      if (TERMINAL_STATUSES.has(current.job.status)) return current;
+      const job: DurableDocumentJob = { ...current.job, status: "cancelled", updatedAt: nowMs };
+      const changed = await this.store.compareAndSwap(record.key, current.revision, { value: encode(job), nowMs, expiresAt: null });
+      if (changed.status === "updated") return decode(changed.record);
+      if (changed.status === "missing") throw jobError("Unknown durable document job");
+    }
+    throw jobError("Document source revocation conflicted");
   }
 
   async transition(

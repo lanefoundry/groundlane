@@ -152,10 +152,8 @@ export class D1ManagedTokenStore implements ManagedTokenStore {
   constructor(private readonly db: D1DatabaseLike) {}
 
   private readDb(): D1DatabaseLike {
-    if (typeof this.db.withSession === "function") {
-      return this.db.withSession(FIRST_PRIMARY);
-    }
-    return this.db;
+    if (typeof this.db.withSession !== "function") throw storageUnavailable();
+    return this.db.withSession(FIRST_PRIMARY);
   }
 
   private async selectById(id: string): Promise<ManagedCredentialRecord | null> {

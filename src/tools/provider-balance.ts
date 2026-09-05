@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { ProviderBalanceResult } from "../core/contracts.js";
@@ -66,7 +66,7 @@ export function createProviderBalanceModule(options: ProviderBalanceModuleOption
           outputSchema: resultEnvelopeSchema(providerBalanceDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const providers =
@@ -74,7 +74,7 @@ export function createProviderBalanceModule(options: ProviderBalanceModuleOption
             const results = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   async (signal) => {
@@ -88,7 +88,7 @@ export function createProviderBalanceModule(options: ProviderBalanceModuleOption
                     return items;
                   },
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "provider_balance",
                 ),
             );

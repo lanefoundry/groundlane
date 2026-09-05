@@ -30,6 +30,10 @@ import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwrig
 import { SafeHttpFetcher } from "./adapters/http/undici-fetcher.js";
 import { SqliteDurableRecordStore } from "./adapters/state/sqlite-durable-store.js";
 import { SqliteImmutableBlobStore } from "./adapters/state/sqlite-immutable-blob.js";
+import { DurableArtifactRepository } from "./core/durable-artifacts.js";
+import { DurableDocumentOutputRuntime } from "./core/durable-document-output.js";
+import { createDocumentResultModule } from "./tools/document-result.js";
+import { SqliteCorpusDerivedIndex } from "./adapters/state/sqlite-corpus-index.js";
 import { JinaReaderBackend } from "./adapters/reader/jina.js";
 import { BraveSearchProvider } from "./adapters/search/brave.js";
 import { BrowserbaseSearchProvider } from "./adapters/search/browserbase.js";
@@ -64,10 +68,24 @@ import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
 import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
 import { CrawlJobManager } from "./core/crawl-jobs.js";
 import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
+import {
+  DurableCorpusRuntime,
+  ImmutableBlobCorpusSourceArtifacts,
+  corpusDocumentCacheSource,
+} from "./core/durable-corpus-runtime.js";
+import { DurableCorpusRepository } from "./core/durable-corpora.js";
 import { createCrawlJobsModule } from "./tools/crawl-jobs.js";
 import { createCorpusToolsModule } from "./tools/corpus-tools.js";
 import { createDocumentPolicyModule } from "./tools/document-policy.js";
-import { createDocumentParseModule } from "./tools/document-parse.js";
+import {
+  createDocumentParseModule,
+  isParsedDocumentContent,
+  runResolvedDocumentParse,
+  type DocumentParseInput,
+  type ResolvedDocumentSource,
+} from "./tools/document-parse.js";
+import type { McpRequestContext } from "./mcp/registry.js";
+import { createDocumentUploadModule } from "./tools/document-upload.js";
 import { createWebExtractSchemaModule } from "./tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
@@ -88,8 +106,28 @@ import { createErrorLogModule } from "./tools/error-log.js";
 import { getErrorLogSink } from "./tools/common.js";
 import { NoopErrorSink } from "./core/error-log.js";
 import { DurableDocumentCacheRepository } from "./core/durable-document-cache.js";
+import { RemoteDocumentOutputRuntime } from "./container/remote-document-output.js";
+import { createArtifactRetentionPolicy } from "./core/artifact-retention-policy.js";
+import { documentCacheBindingIdentity } from "./core/document-cache-contract.js";
+import { DurableMcpTaskRuntime } from "./core/durable-mcp-tasks.js";
+import { createDocumentJobModule } from "./tools/document-job.js";
+import {
+  nodeDocumentCacheSubtle,
+  RemoteDocumentCacheRuntime,
+} from "./container/remote-document-cache.js";
+import { systemUtcClock } from "./worker/managed-tokens.js";
+import {
+  createAsyncResearchModule,
+  createLinkupResearchTaskProvider,
+} from "./tools/async-research.js";
 export interface GroundlaneServices {
   registryFactory: McpRegistryFactory;
+  parseResolvedDocument(
+    input: DocumentParseInput,
+    resolved: ResolvedDocumentSource,
+    context: McpRequestContext,
+    signal: AbortSignal,
+  ): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -211,6 +249,10 @@ export function createImagesProviders(config: GroundlaneConfig): ImagesProvider[
 }
 
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {
+  const artifactRetention = createArtifactRetentionPolicy({
+    uploadMaxTtlSeconds: config.documentUploadMaxTtlSeconds,
+    artifactMaxTtlSeconds: config.documentArtifactMaxTtlSeconds,
+  });
   const browser: BrowserBackend =
     config.browserBackend === "local"
       ? new LocalPlaywrightBrowserBackend({ maxResponseBytes: config.maxResponseBytes })
@@ -246,6 +288,93 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const documentCache = documentCacheStore === undefined || documentCachePayloads === undefined
     ? undefined
     : new DurableDocumentCacheRepository(documentCacheStore, { payloads: documentCachePayloads });
+  const documentCacheEnabled = config.documentCacheEdgeEnabled || documentCache !== undefined;
+  const documentOutputStore = config.documentArtifactStatePath === undefined ? undefined
+    : new SqliteDurableRecordStore(config.documentArtifactStatePath, "document-output-v1");
+  const documentOutputBlobs = config.documentArtifactStatePath === undefined ? undefined
+    : new SqliteImmutableBlobStore(config.documentArtifactStatePath, "document-output-v1");
+  const documentOutputIntents = config.documentArtifactStatePath === undefined ? undefined
+    : new SqliteDurableRecordStore(config.documentArtifactStatePath, "document-output-intents-v1");
+  const documentOutputRepository = documentOutputStore === undefined || documentOutputBlobs === undefined
+    ? undefined : new DurableArtifactRepository(documentOutputStore, documentOutputBlobs);
+  const documentOutput = documentOutputRepository === undefined ? undefined
+    : new DurableDocumentOutputRuntime(documentOutputRepository, Math.min(86_400, config.documentArtifactMaxTtlSeconds), Date.now, undefined, documentOutputIntents);
+  let documentOutputSweepCursor: string | null = null;
+  let documentOutputSweepInFlight = Promise.resolve();
+  const sweepDocumentOutput = (): void => {
+    documentOutputSweepInFlight = documentOutputSweepInFlight.then(async () => {
+      if (documentOutputRepository === undefined) return;
+      const page = await documentOutputRepository.sweepExpired(Date.now(), documentOutputSweepCursor, 100);
+      documentOutputSweepCursor = page.nextCursor;
+    }).catch(() => { /* Retry on the next bounded maintenance tick. */ });
+  };
+  if (documentOutputRepository !== undefined) sweepDocumentOutput();
+  const documentOutputSweep = documentOutputRepository === undefined ? undefined
+    : setInterval(sweepDocumentOutput, 60_000);
+  documentOutputSweep?.unref();
+  const documentCacheForContext = (
+    context: McpRequestContext,
+  ) => {
+    if (!config.documentCacheEdgeEnabled) return documentCache;
+    if (config.internalSigningSecret === undefined) {
+      throw new Error("Document cache edge mode requires an internal signing secret");
+    }
+    return new RemoteDocumentCacheRuntime({
+      signingSecret: config.internalSigningSecret,
+      principal: context.principal,
+      credentialBinding: context.credentialBinding,
+      subtle: nodeDocumentCacheSubtle,
+      clock: systemUtcClock(),
+      validateData: isParsedDocumentContent,
+      defaultTimeoutMs: config.requestTimeoutMs,
+    });
+  };
+  const documentOutputForContext = (context: McpRequestContext) => {
+    if (!config.documentOutputEdgeEnabled) return documentOutput;
+    if (config.internalSigningSecret === undefined) throw new Error("Document output edge mode requires an internal signing secret");
+    return new RemoteDocumentOutputRuntime({ signingSecret: config.internalSigningSecret,
+      principal: context.principal, credentialBinding: context.credentialBinding,
+      subtle: nodeDocumentCacheSubtle, timeoutMs: config.requestTimeoutMs });
+  };
+  const corpusRecordStore = config.corpusStatePath === undefined
+    ? undefined
+    : new SqliteDurableRecordStore(config.corpusStatePath, "corpora-v1");
+  const corpusBlobStore = config.corpusStatePath === undefined
+    ? undefined
+    : new SqliteImmutableBlobStore(config.corpusStatePath, "corpus-source-blobs-v1");
+  const corpusIndex = config.corpusStatePath === undefined
+    ? undefined
+    : new SqliteCorpusDerivedIndex(config.corpusStatePath, "corpus-index-v1");
+  const corpusForContext = (context?: McpRequestContext) => corpusRecordStore === undefined || corpusBlobStore === undefined || corpusIndex === undefined
+    ? undefined
+    : new DurableCorpusRuntime({
+        repository: new DurableCorpusRepository(corpusRecordStore),
+        artifacts: new ImmutableBlobCorpusSourceArtifacts(corpusBlobStore),
+        index: corpusIndex,
+        maxSourceBytes: config.corpusMaxSourceBytes,
+        cache: { revoke: async ({ corpusId, sourceId, contentHash, binding }) => {
+          const cache = context === undefined ? documentCache : documentCacheForContext(context);
+          await cache?.revokeAllSourceBindings({
+            ownershipScope: binding.ownerId,
+            sourceIdentity: documentCacheBindingIdentity(corpusDocumentCacheSource(corpusId, sourceId, contentHash, binding.tenantId), binding.credentialBinding),
+            nowMs: Date.now(),
+          });
+        } },
+      });
+  const durableCorpus = corpusForContext();
+  const asyncTaskStore = config.asyncTaskStatePath === undefined
+    ? undefined
+    : new SqliteDurableRecordStore(config.asyncTaskStatePath, "mcp-tasks-v1");
+  const asyncLinkup = asyncTaskStore === undefined || config.providerKeys.linkup === undefined
+    ? undefined
+    : new LinkupResearchProvider({ apiKey: config.providerKeys.linkup });
+  const asyncTaskRuntime = asyncTaskStore === undefined || asyncLinkup === undefined
+    ? undefined
+    : new DurableMcpTaskRuntime(
+        asyncTaskStore,
+        createLinkupResearchTaskProvider(asyncLinkup),
+        5_000,
+      );
   let documentCacheSweepInFlight = documentCache?.sweepExpired(Date.now()).catch(() => 0) ?? Promise.resolve(0);
   const documentCacheSweep = documentCache === undefined
     ? undefined
@@ -396,24 +525,14 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
     }),
-    createDocumentPolicyModule({
-      limiter,
-      requestTimeoutMs: config.requestTimeoutMs,
-      runtime: { cacheEnabled: documentCache !== undefined },
-      bounds: {
-        cache: {
-          defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
-          minTtlSeconds: 60,
-          maxTtlSeconds: config.documentCacheMaxTtlSeconds,
-        },
-      },
-    }),
-    createCorpusToolsModule({
-      store: new CorpusStore(new InMemoryCorpusBackend()),
-      limiter,
-      requestTimeoutMs: config.requestTimeoutMs,
-      maxOutputChars: config.maxOutputChars,
-    }),
+    ...(durableCorpus === undefined
+      ? [createCorpusToolsModule({
+          store: new CorpusStore(new InMemoryCorpusBackend()),
+          limiter,
+          requestTimeoutMs: config.requestTimeoutMs,
+          maxOutputChars: config.maxOutputChars,
+        })]
+      : []),
     createErrorLogModule({
       sink: getErrorLogSink() ?? new NoopErrorSink(),
       cloudflareQuery: undefined,
@@ -421,15 +540,68 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   ];
 
   return {
+    parseResolvedDocument: (input, resolved, context, signal) => {
+      const requestDocumentCache = documentCacheForContext(context);
+      const requestDocumentOutput = documentOutputForContext(context);
+      return runResolvedDocumentParse(input, resolved, {
+        ...(requestDocumentOutput === undefined ? {} : { outputRuntime: requestDocumentOutput }),
+        pipeline: fetchPipeline,
+        caller: {
+          ownerId: context.principal.principalId,
+          credentialBinding: context.credentialBinding,
+        },
+        limiter,
+        requestTimeoutMs: config.requestTimeoutMs,
+        maxResponseBytes: config.maxResponseBytes,
+        maxOutputChars: config.maxOutputChars,
+        ...(requestDocumentCache === undefined
+          ? {}
+          : {
+              cache: requestDocumentCache,
+              cacheConfig: {
+                enabled: true,
+                defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
+                operatorMaxTtlSeconds: config.documentCacheMaxTtlSeconds,
+              },
+            }),
+      }, signal);
+    },
     registryFactory: async (context) => {
       if (context === undefined) {
         throw new Error("Authenticated MCP request context is required");
       }
       await documentCacheSweepInFlight;
+      const requestCorpus = corpusForContext(context);
+      const requestDocumentCache = documentCacheForContext(context);
+      const requestDocumentOutput = documentOutputForContext(context);
       return createMcpRegistry([
         ...modules,
+        createDocumentPolicyModule({
+          limiter,
+          requestTimeoutMs: config.requestTimeoutMs,
+          requestState: context.requestState,
+          runtime: {
+            cacheEnabled: documentCacheEnabled,
+            uploadAvailable: config.artifactEdgeEnabled,
+            artifactSourceAvailable: config.artifactEdgeEnabled,
+            durableCorporaAvailable: durableCorpus !== undefined,
+          },
+          bounds: {
+            cache: {
+              defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
+              minTtlSeconds: 60,
+              maxTtlSeconds: config.documentCacheMaxTtlSeconds,
+            },
+            upload: artifactRetention.upload,
+            artifact: artifactRetention.artifact,
+          },
+        }),
         createDocumentParseModule({
           pipeline: fetchPipeline,
+          ...(requestCorpus === undefined ? {} : { corpusReader: { readSource: (corpusId: string, sourceId: string) => requestCorpus.readSource(corpusId, sourceId, {
+            tenantId: config.corpusTenantId, ownerId: context.principal.principalId,
+            credentialBinding: context.credentialBinding, roles: context.principal.scopes,
+          }) } }),
           caller: {
             ownerId: context.principal.principalId,
             credentialBinding: context.credentialBinding,
@@ -438,10 +610,11 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
           requestTimeoutMs: config.requestTimeoutMs,
           maxResponseBytes: config.maxResponseBytes,
           maxOutputChars: config.maxOutputChars,
-          ...(documentCache === undefined
+          ...(requestDocumentOutput === undefined ? {} : { outputRuntime: requestDocumentOutput }),
+          ...(requestDocumentCache === undefined
             ? {}
             : {
-                cache: documentCache,
+                cache: requestDocumentCache,
                 cacheConfig: {
                   enabled: true,
                   defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
@@ -449,6 +622,30 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
                 },
               }),
         }),
+        createDocumentUploadModule({
+          caller: {
+            ownerId: context.principal.principalId,
+            credentialBinding: context.credentialBinding,
+          },
+        }),
+        createDocumentJobModule({ caller: { ownerId: context.principal.principalId, credentialBinding: context.credentialBinding } }),
+        ...(requestDocumentOutput === undefined ? [] : [createDocumentResultModule(requestDocumentOutput, {
+          ownerId: context.principal.principalId, credentialBinding: context.credentialBinding,
+        }, { limiter, requestTimeoutMs: config.requestTimeoutMs, maxOutputChars: config.maxOutputChars })]),
+        ...(requestCorpus === undefined
+          ? []
+          : [createCorpusToolsModule({
+              runtime: requestCorpus,
+              caller: {
+                tenantId: config.corpusTenantId,
+                ownerId: context.principal.principalId,
+                credentialBinding: context.credentialBinding,
+                roles: context.principal.scopes,
+              },
+              limiter,
+              requestTimeoutMs: config.requestTimeoutMs,
+              maxOutputChars: config.maxOutputChars,
+            })]),
         createCrawlJobsModule({
           manager: crawlJobManager,
           caller: {
@@ -459,13 +656,30 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
           requestTimeoutMs: config.requestTimeoutMs,
           maxOutputChars: config.maxOutputChars,
         }),
+        createAsyncResearchModule({
+          ...(asyncTaskRuntime === undefined ? {} : { runtime: asyncTaskRuntime }),
+          advertiseTasks: asyncTaskRuntime !== undefined || config.asyncTaskEdgeEnabled,
+          caller: {
+            ownerId: context.principal.principalId,
+            credentialBinding: context.credentialBinding,
+          },
+        }),
       ]);
     },
     async close(): Promise<void> {
+      if (documentOutputSweep !== undefined) clearInterval(documentOutputSweep);
+      await documentOutputSweepInFlight;
+      documentOutputStore?.close();
+      documentOutputIntents?.close();
+      documentOutputBlobs?.close();
       if (documentCacheSweep !== undefined) clearInterval(documentCacheSweep);
       await documentCacheSweepInFlight;
       documentCacheStore?.close();
       documentCachePayloads?.close();
+      corpusRecordStore?.close();
+      corpusBlobStore?.close();
+      corpusIndex?.close();
+      asyncTaskStore?.close();
       await browser.close?.();
     },
   };

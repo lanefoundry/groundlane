@@ -32,6 +32,8 @@ export interface InternalContextPayload {
   readonly requestId: string;
   readonly principal: AuthenticatedPrincipal;
   readonly credentialBinding: string;
+  readonly purpose?: string;
+  readonly bodySha256?: string;
 }
 
 function bytesToHex(bytes: ArrayBuffer): string {
@@ -141,6 +143,7 @@ export function stripCallerInternalHeaders(request: Request): Request {
 
 export async function mintInternalContext(
   options: {
+    issuer?: string;
     signingSecret: string;
     audience: string;
     method: string;
@@ -149,6 +152,8 @@ export async function mintInternalContext(
     principal: AuthenticatedPrincipal;
     credentialBinding: string;
     ttlMs?: number;
+    purpose?: string;
+    bodySha256?: string;
   },
   subtle: TimingSafeSubtleCrypto,
   clock: ManagedClock,
@@ -156,6 +161,10 @@ export async function mintInternalContext(
   void subtle;
   if (options.signingSecret.length === 0) {
     throw new Error("signing secret is required");
+  }
+  const issuer = options.issuer ?? INTERNAL_ISSUER;
+  if (!/^[a-z0-9._-]{1,64}$/u.test(issuer)) {
+    throw new Error("invalid issuer");
   }
   if (options.audience.length === 0 || options.audience.length > 128) {
     throw new Error("invalid audience");
@@ -175,13 +184,21 @@ export async function mintInternalContext(
   ) {
     throw new Error("invalid credential binding");
   }
+  if ((options.purpose === undefined) !== (options.bodySha256 === undefined)) {
+    throw new Error("purpose and body digest must be provided together");
+  }
+  if (options.purpose !== undefined &&
+      (!/^[a-z0-9._-]{1,64}$/u.test(options.purpose) ||
+       !/^sha256-[a-f0-9]{64}$/u.test(options.bodySha256 ?? ""))) {
+    throw new Error("invalid internal body binding");
+  }
   const ttl = options.ttlMs ?? INTERNAL_DEFAULT_TTL_MS;
   if (!Number.isInteger(ttl) || ttl <= 0 || ttl > INTERNAL_MAX_TTL_MS) {
     throw new Error("ttl must be 1..60000 ms");
   }
   const now = clock.now();
   const payload: InternalContextPayload = {
-    iss: INTERNAL_ISSUER,
+    iss: issuer,
     aud: options.audience,
     iat: now,
     exp: now + ttl,
@@ -190,6 +207,8 @@ export async function mintInternalContext(
     requestId: options.requestId,
     principal: options.principal,
     credentialBinding: options.credentialBinding,
+    ...(options.purpose === undefined ? {} : { purpose: options.purpose }),
+    ...(options.bodySha256 === undefined ? {} : { bodySha256: options.bodySha256 }),
   };
   const payloadB64 = base64UrlEncodeString(JSON.stringify(payload));
   const sig = await computeSignature(payloadB64, options.signingSecret);
@@ -198,10 +217,13 @@ export async function mintInternalContext(
 
 export interface VerifyInternalOptions {
   readonly signingSecret: string;
+  readonly expectedIssuer?: string | undefined;
   readonly expectedAudience: string;
   readonly expectedMethod: string;
   readonly expectedPath: string;
   readonly expectedRequestId?: string | undefined;
+  readonly expectedPurpose?: string | undefined;
+  readonly expectedBodySha256?: string | undefined;
 }
 
 /**
@@ -247,7 +269,7 @@ export async function verifyInternalContext(
     return { ok: false, reason: "malformed" };
   }
   const payload = decoded as Partial<InternalContextPayload>;
-  if (payload.iss !== INTERNAL_ISSUER) return { ok: false, reason: "issuer" };
+  if (payload.iss !== (options.expectedIssuer ?? INTERNAL_ISSUER)) return { ok: false, reason: "issuer" };
   if (payload.aud !== options.expectedAudience) return { ok: false, reason: "audience" };
   if (payload.method !== options.expectedMethod.toUpperCase()) return { ok: false, reason: "method" };
   if (payload.path !== options.expectedPath) return { ok: false, reason: "path" };
@@ -265,6 +287,20 @@ export async function verifyInternalContext(
     payload.principal.scopes.some((scope) => typeof scope !== "string" || scope.length === 0 || scope.length > 128)
   ) {
     return { ok: false, reason: "principal" };
+  }
+  if (!(payload.purpose === undefined ||
+      (typeof payload.purpose === "string" && /^[a-z0-9._-]{1,64}$/u.test(payload.purpose)))) {
+    return { ok: false, reason: "purpose" };
+  }
+  if (!(payload.bodySha256 === undefined ||
+      (typeof payload.bodySha256 === "string" && /^sha256-[a-f0-9]{64}$/u.test(payload.bodySha256)))) {
+    return { ok: false, reason: "body_binding" };
+  }
+  if (options.expectedPurpose !== undefined && payload.purpose !== options.expectedPurpose) {
+    return { ok: false, reason: "purpose" };
+  }
+  if (options.expectedBodySha256 !== undefined && payload.bodySha256 !== options.expectedBodySha256) {
+    return { ok: false, reason: "body_binding" };
   }
   if (
     typeof payload.credentialBinding !== "string" ||
@@ -324,6 +360,8 @@ export async function verifyContainerAuth(
     expectedAudience: string;
     expectedMethod: string;
     expectedPath: string;
+    expectedPurpose?: string;
+    expectedBodySha256?: string;
   },
   subtle: TimingSafeSubtleCrypto,
   clock: ManagedClock,
@@ -339,6 +377,8 @@ export async function verifyContainerAuth(
         expectedMethod: options.expectedMethod,
         expectedPath: options.expectedPath,
         ...(requestIdHeader === null ? {} : { expectedRequestId: requestIdHeader }),
+        ...(options.expectedPurpose === undefined ? {} : { expectedPurpose: options.expectedPurpose }),
+        ...(options.expectedBodySha256 === undefined ? {} : { expectedBodySha256: options.expectedBodySha256 }),
       },
       subtle,
       clock,

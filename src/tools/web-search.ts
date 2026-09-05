@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { SearchResult } from "../core/contracts.js";
@@ -90,13 +90,13 @@ export function createWebSearchModule(options: WebSearchModuleOptions): McpModul
           outputSchema: resultEnvelopeSchema(searchDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const result = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   (signal) =>
@@ -116,7 +116,7 @@ export function createWebSearchModule(options: WebSearchModuleOptions): McpModul
                       signal,
                     ),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "search",
                 ),
             );

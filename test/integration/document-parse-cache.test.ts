@@ -4,10 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 
 import { createGroundlaneServices } from "../../src/composition.js";
@@ -30,6 +27,7 @@ const resultSchema = z.object({
     }).passthrough(),
     envelope: z.object({
       sourceIdentity: z.object({ filename: z.string().optional() }).passthrough(),
+      blocks: z.array(z.object({ type: z.string() }).passthrough()),
     }).passthrough(),
   }).passthrough(),
 });
@@ -103,7 +101,7 @@ async function startServer(cachePath: string): Promise<{
     { requestInit: { headers: { authorization: `Bearer ${authToken}` } } },
   );
   const client = new Client({ name: "document-cache-integration", version: "1.0.0" });
-  await client.connect(transport as Transport);
+  await client.connect(transport);
 
   return {
     call: async (
@@ -179,6 +177,14 @@ void test("document_parse MCP cache survives restart and rebinds identical conte
   const rebound = await firstServer.call("second.txt");
   assert.equal(rebound.data.cached, true);
   assert.equal(rebound.data.envelope.sourceIdentity.filename, "second.txt");
+
+  const ambiguousText = Buffer.from("name,value\nalpha,1", "utf8");
+  const csv = await firstServer.call("profile.csv", "use", ambiguousText);
+  assert.equal(csv.data.cached, false);
+  assert.equal(csv.data.envelope.blocks[0]?.type, "table");
+  const plain = await firstServer.call("profile.txt", "use", ambiguousText);
+  assert.equal(plain.data.cached, false);
+  assert.equal(plain.data.envelope.blocks[0]?.type, "text");
 
   const refreshed = await firstServer.call("second.txt", "refresh");
   assert.equal(refreshed.data.cached, false);

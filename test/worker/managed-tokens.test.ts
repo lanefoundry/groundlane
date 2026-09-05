@@ -772,6 +772,27 @@ void test("707 internal context mints bounded short-lived verifiable context", a
   assert.equal((await verifyInternalContext(token, { signingSecret: "signing-secret-0123456789abcdef", expectedAudience: "groundlane-mcp", expectedMethod: "POST", expectedPath: "/mcp" }, subtle, clock)).ok, false);
 });
 
+void test("internal context direction is issuer-bound", async () => {
+  const clock = new FakeClock(START);
+  const token = await mintInternalContext(
+    { issuer: "groundlane-container", signingSecret: "signing-secret-0123456789abcdef", audience: "groundlane-worker-cache-v1", method: "POST", path: "/v1/lookup", requestId: "cache-req-1", principal: { principalId: "owner", authMethod: "managed_token", scopes: ["mcp"] }, credentialBinding: "managed:credential", purpose: "document-cache-lookup", bodySha256: `sha256-${"a".repeat(64)}` },
+    subtle,
+    clock,
+  );
+  assert.equal((await verifyInternalContext(
+    token,
+    { signingSecret: "signing-secret-0123456789abcdef", expectedIssuer: "groundlane-container", expectedAudience: "groundlane-worker-cache-v1", expectedMethod: "POST", expectedPath: "/v1/lookup", expectedRequestId: "cache-req-1", expectedPurpose: "document-cache-lookup", expectedBodySha256: `sha256-${"a".repeat(64)}` },
+    subtle,
+    clock,
+  )).ok, true);
+  assert.equal((await verifyInternalContext(
+    token,
+    { signingSecret: "signing-secret-0123456789abcdef", expectedAudience: "groundlane-worker-cache-v1", expectedMethod: "POST", expectedPath: "/v1/lookup" },
+    subtle,
+    clock,
+  )).ok, false);
+});
+
 void test("707 worker strips caller internal headers and raw never crosses boundary", async () => {
   const clock = new FakeClock(START);
   const original = new Request("https://w.test/mcp", {

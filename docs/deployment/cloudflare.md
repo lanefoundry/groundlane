@@ -1,5 +1,16 @@
 # Deploying Groundlane on Cloudflare
 
+Document result storage can be enabled explicitly with
+`DOCUMENT_OUTPUT_EDGE_ENABLED=true`. The private Container outbound route
+`groundlane-output.internal` uses existing D1/R2 bindings and the internal
+signing secret; S3 access credentials are not required for result storage.
+The reference flag remains disabled pending controlled deployment acceptance.
+Encoded requests are capped at 16 MiB; metadata stays in D1 and bytes in R2.
+Hourly maintenance scans at most four pages of 100 due records. Disable the
+flag to roll back the surface while preserving storage for later cleanup.
+Local workerd/D1/R2 tests are separate from production and full Container
+network-path evidence.
+
 This guide describes the intended production topology: a Cloudflare Worker exposes the authenticated MCP endpoint, while a Cloudflare Container runs the Node/Playwright service and Groundlane Browser workload.
 
 > [!IMPORTANT]
@@ -13,7 +24,8 @@ Headless/CLI client          Interactive cloud connector
     | HTTPS + static bearer token  | HTTPS + OAuth 2.1 access token
     v                              v
 Cloudflare Worker
-    | legacy bearer check first, else OAuth (workers-oauth-provider)
+    | authenticate; MCP Tasks -> D1 + Linkup at edge
+    | all other MCP traffic -> signed principal context
     v
 Cloudflare Container
     | Node MCP server
@@ -159,22 +171,123 @@ resources. The reference bindings are checked in and live:
 > as one atomic batch (guarded INSERT first, guarded UPDATE second); a lost
 > race changes zero rows and returns a stable conflict. Live SQL smoke on the
 > provisioned database confirmed rotate 1/0, revoke first-wins, and zero
-> residue rows. Bounded D1/SQLite metadata adapters, an immutable R2 binding
-> adapter, durable cache/job/artifact/corpus repositories, and a durable
-> side-effect journal are now implemented and covered by deterministic
-> race/reopen/integrity tests. The self-hosted Node service can mount the cache
-> repository on SQLite with `DOCUMENT_CACHE_STATE_PATH`; the Cloudflare
-> Container does not forward that setting and does not yet compose the cache on
-> D1. MCP upload, artifact, durable corpus, and async-job lifecycles also remain
-> unavailable in the deployed tool path.
+> residue rows. A [2026-09-05 controlled public MCP smoke](../verification/managed-revoke-2026-09-05.json)
+> also confirmed three successful initializations before direct D1 revoke and
+> ten consecutive 401 responses after commit, with a healthy control and zero
+> fixture residue. This verifies deployed authorization, not the admin revoke
+> API, multi-region behavior, or modern protocol. To repeat deliberately, use
+> `pnpm exec tsx scripts/smoke-managed-revoke.mts --run` with protected
+> `GROUNDLANE_AUTH_TOKEN` and authenticated Wrangler remote-D1 write access.
+> It creates/revokes/removes only its own 10-minute fixture; without `--run`
+> it performs no I/O. No provider calls or existing credential mutations occur.
+> The Worker now has a protocol-neutral, revision-fenced upload
+> lifecycle over D1 and R2. When the R2 S3 presigning settings below and the
+> internal signing secret are present, `document_upload_create` returns a
+> short-lived conditional PUT handoff, `document_upload_complete` verifies and
+> immutably finalizes the bytes, `document_artifact_delete` immediately revokes
+> a source ref and its processing-cache bindings, and artifact-backed `document_parse` uses a
+> purpose/body-bound binary request to the existing Container parser. Owner and
+> exact credential binding are checked on every intent/ref operation. Storage
+> keys, presigned URLs, S3 credentials, and caller bearer tokens never enter the
+> public ArtifactRef or Container environment. Deterministic fake-D1/R2 and
+> bridge tests pass; this checkout has not yet supplied a controlled production
+> or target-client transcript. The checked-in hourly cron performs bounded
+> staging/final cleanup, revokes logical access and cache bindings before deleting final bytes,
+> and leaves partial failures pending for retry. Result artifacts, Cloudflare
+> processing-cache deployment proof, a Cloudflare corpus backend, and document async
+> jobs remain open. Linkup research Tasks are a
+> separate path: when D1 and `LINKUP_API_KEY` are present, authenticated task
+> start/get/update/cancel requests execute at the Worker edge in the
+> `mcp-tasks-v1` namespace. The Container receives only a derived discovery
+> flag; D1 and caller credentials are never forwarded to it. This path has
+> deterministic fake-D1/reconnect coverage but has not yet been verified by a
+> controlled deployment or target-client smoke.
+
+The Worker and `document_policy` share the same operator caps:
+`DOCUMENT_UPLOAD_MAX_TTL_SECONDS` defaults to `3600`, and
+`DOCUMENT_ARTIFACT_MAX_TTL_SECONDS` defaults to `2592000`. Requests above the
+advertised cap fail validation; they are never silently shortened.
+
+### Isolated PRD staging
+
+`wrangler.staging.jsonc` targets `groundlane-prd-staging` with its own D1,
+R2 bucket, OAuth KV and single Container. Always pass
+`--config wrangler.staging.jsonc`; omitting it selects the production config.
+The staging profile enables cache, keeps legacy-only protocol and disables
+browser execution. It does not inherit production secrets or provider keys.
+Resources incur Cloudflare usage; retain them only while acceptance is active.
+Wrangler's generated `.wrangler/` bundles are excluded from source linting, so
+running validation alongside deployment does not lint generated third-party code.
+
+```bash
+pnpm exec wrangler d1 migrations apply groundlane-prd-staging --remote --config wrangler.staging.jsonc
+pnpm exec wrangler deploy --dry-run --config wrangler.staging.jsonc
+pnpm exec wrangler deploy --config wrangler.staging.jsonc
+```
+
+Provision independent auth/admin/internal-signing secrets before accepting
+traffic. For real upload handoff, create an R2 **Object Read & Write** token
+scoped only to `groundlane-prd-staging-artifacts`, then enter its values through
+the interactive prompts (never put values in argv, logs or chat):
+
+```bash
+pnpm exec wrangler secret put R2_ACCESS_KEY_ID --config wrangler.staging.jsonc
+pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY --config wrangler.staging.jsonc
+```
+
+With the staging URL in `GROUNDLANE_MCP_URL` and its credential supplied securely
+in `GROUNDLANE_AUTH_TOKEN`, run `pnpm exec tsx scripts/smoke-document-cache.mts --run`.
+Without `--run` the runner performs no network or file I/O. It checks inline
+use/hit/refresh/bypass and, when upload is available, verified source deletion
+and same-content source isolation. Missing upload support is reported as skipped,
+not passed. Its `fullAcceptance` remains false: scoped D1/R2 evidence of actual
+scheduled physical cleanup is a separate requirement. It does not run providers
+or prove Claude/Codex/Cursor compatibility.
+
+### Self-hosted and edge cache composition
+
+Parser engine `groundlane-bounded-document-v3` changes the processing-cache key,
+so the upgraded parser does not reuse earlier engine entries. No cache migration
+or manual deletion is required; old entries expire under their existing policy.
 
 For a self-hosted Node deployment, `DOCUMENT_CACHE_STATE_PATH` enables a local
 SQLite cache containing revision-fenced metadata and immutable parsed-payload
 blobs. `DOCUMENT_CACHE_DEFAULT_TTL_SECONDS` and
 `DOCUMENT_CACHE_MAX_TTL_SECONDS` configure the advertised default and hard
 maximum. Startup and hourly sweeps remove expired records and payload bytes.
-These variables are intentionally absent from the Worker-to-Container allowlist;
-they do not enable the Cloudflare D1/R2 path.
+For Cloudflare, the checked-in `DOCUMENT_CACHE_EDGE_ENABLED=true` setting is an
+explicit opt-in. The Container receives that derived flag and the TTL values
+only when D1, R2, and the internal signing secret are available. It then sends
+versioned, body-bound lookup/commit requests to the private
+`groundlane-cache.internal` outbound handler; D1/R2 bindings never enter the
+Container, and the Container cannot override Worker-owned cache policy. The
+private host mapping must be registered through the Container SDK's inherited
+`outboundByHost` setter (the Worker uses a static-block assignment). An ES2022
+static field with the same name shadows that setter and leaves the proxy
+registry empty; a compile/evaluation regression protects both cache and output
+host registrations. The
+hourly cron scans a bounded number of cache pages and deletes expired immutable
+payload bytes before the matching metadata CAS, so an interrupted pass is
+retryable. The [2026-09-05 isolated staging evidence](../verification/staging-cache-2026-09-05.json)
+records nine successful public MCP cache checks (miss/hit/rebind/refresh/bypass).
+Full acceptance remains open pending verified-source upload/delete isolation
+and separately recorded scheduled physical cleanup; this is not production or
+Claude/Codex/Cursor acceptance.
+
+For a self-hosted Node deployment, `CORPUS_STATE_PATH` separately enables the
+durable corpus composition over revision-fenced SQLite manifests, immutable
+normalized source blobs, and a rebuildable derived text index. Set
+`CORPUS_TENANT_ID` to the deployment tenant boundary and bound enrollment with
+`CORPUS_MAX_SOURCE_BYTES`. Do not set this filesystem path in the Cloudflare
+Container; a Worker-owned D1/R2 corpus composition has not yet been implemented
+or verified.
+
+`ASYNC_TASK_STATE_PATH` separately enables revision-fenced SQLite metadata for
+durable Linkup research. It requires `LINKUP_API_KEY`; without both, the four
+explicit async tools remain discoverable but fail closed. In Cloudflare, do not
+set this filesystem path. The Worker derives `ASYNC_TASK_EDGE_ENABLED` from the
+D1 binding plus Linkup key so `server/discover` can advertise the extension,
+then owns the D1 execution path itself.
 
 1. (Already done for the reference deployment; repeat only for a new
    account.) Create the D1 database and the R2 bucket, then record their
@@ -197,32 +310,60 @@ they do not enable the Cloudflare D1/R2 path.
    `migrations/0001_managed_tokens.sql` stores verifiers/digests and bounded
    metadata only — raw bearer secrets are never persisted.
    `migrations/0002_durable_records.sql` creates a separate namespaced,
-   revision-fenced metadata table for future job/upload/artifact/cache/corpus
+   revision-fenced metadata table for job/upload/artifact/cache/corpus
    repositories; large bytes must remain in R2. Planned rotation
    must run as a single atomic conditional write (see the SQL comments); a
    lost race returns a stable conflict instead of a second successor.
-4. Set the two operator secrets through `pnpm secrets:setup` (they are part
-   of the checked-in manifest). Generate each with `openssl rand -hex 32`
-   and keep all five values distinct — `GROUNDLANE_AUTH_TOKEN`,
-   `OAUTH_OWNER_PASSPHRASE`, provider keys, `GROUNDLANE_ADMIN_TOKEN`, and
-   `GROUNDLANE_INTERNAL_SIGNING_SECRET` must never be reused across roles:
+4. Create a bucket-scoped R2 S3 API token with only the object permissions
+   needed for this bucket. Set `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
+   through `pnpm secrets:setup`. Set `R2_ACCOUNT_ID` and
+   `R2_BUCKET_NAME=groundlane-artifacts` as deployment variables. The native
+   `GROUNDLANE_ARTIFACTS` binding cannot create a presigned URL by itself; the
+   S3 credentials are used only by the Worker-side SigV4 signer and are never
+   forwarded to the Container or caller. The presigned request fixes
+   `Content-Type`, `Content-Length`, `If-None-Match: *`, expiry, and bounded
+   intent metadata. Missing any input keeps the feature fail-closed.
+5. Set the operator authentication/signing secrets through
+   `pnpm secrets:setup`; they are part of the checked-in manifest. Generate
+   each locally with `openssl rand -hex 32`. `GROUNDLANE_AUTH_TOKEN`,
+   `OAUTH_OWNER_PASSPHRASE`, provider keys, `GROUNDLANE_ADMIN_TOKEN`,
+   `GROUNDLANE_INTERNAL_SIGNING_SECRET`,
+   `GROUNDLANE_MCP_REQUEST_STATE_SECRET`, and both R2 S3 credential values
+   must never be reused across roles:
 
    - `GROUNDLANE_ADMIN_TOKEN` bootstraps and recovers managed credentials
      via `/admin/credentials` only; it cannot call `/mcp`.
    - `GROUNDLANE_INTERNAL_SIGNING_SECRET` signs the bounded Worker-to-
      Container internal principal context; raw caller credentials never
      cross that boundary.
-5. Deploy with `pnpm run deploy` as usual.
+   - `GROUNDLANE_MCP_REQUEST_STATE_SECRET` signs five-minute modern MRTR state
+     shared across Container instances. Use at least 32 bytes. It is not a
+     Wrangler plain-text variable; rotation invalidates outstanding flows.
+6. Deploy with `pnpm run deploy` as usual.
 
-The reference Container starts in `worker_internal_context` mode whenever the signing secret is bound. The Worker authenticates static, managed, or OAuth credentials and signs issuer, audience, issued/expiry time, HTTP method/path, request ID, principal, and a non-secret credential binding. The Container verifies every field and does not fall back to a raw caller bearer. Direct local Node operation uses the separate `local_static` mode.
+The reference Container starts in `worker_internal_context` mode whenever the signing secret is bound. The Worker authenticates static, managed, or OAuth credentials and signs issuer, audience, issued/expiry time, HTTP method/path, request ID, principal, and a non-secret credential binding. Artifact parsing additionally binds an internal-only purpose and the exact body SHA-256, uses a 10 MiB binary route rather than expanding bytes into the 1 MiB JSON-RPC body, preserves the original absolute deadline, and carries only bounded source metadata. The Container verifies every field and does not fall back to a raw caller bearer. Direct local Node operation uses the separate `local_static` mode and does not advertise the Cloudflare upload path.
 
-Future adapter constraints, recorded here so the wiring PR cannot miss them:
-authorization reads must use the D1 Sessions API with a primary/sequential
-constraint (unconstrained replicas must not back authorization); KV must not
-become managed-token truth; R2 objects must stay content-addressed with
+For authenticated modern MCP POSTs, the Worker reads at most 1 MiB from a
+clone of an `application/json` body and uses the SDK classifier to reject
+proven `MCP-Protocol-Version` or `Mcp-Method` drift. It also verifies the
+required standard headers and the method-specific `Mcp-Name`, including the
+canonical Base64 sentinel form. The original request, body, routing headers,
+and abort signal continue to the Container. This edge check is only an early
+policy gate: the Container's strict modern handler independently parses and
+validates the JSON-RPC body, envelope, standard headers, capabilities, and
+tool parameters before dispatch. Authentication, signed principal context,
+credential binding, tool deadlines, concurrency limits, and error redaction
+remain separate enforcement boundaries.
+
+Remaining adapter constraints:
+authorization reads require the D1 Sessions API with a `first-primary`
+constraint and fail closed when it is unavailable; KV must not become
+managed-token truth; R2 objects must stay content-addressed with
 owner binding, content hash, and retention/deletion policy, and must never be
 addressable through caller-supplied keys or presigned URLs passed as tool
-input.
+input. The reference `0 * * * *` cron invokes a bounded cleanup pass; verify
+the deployed trigger and an expired-object deletion before claiming the
+physical cleanup window in production.
 
 ## OAuth for interactive cloud connectors
 
@@ -260,10 +401,23 @@ MCP URL (`https://your-worker.example/mcp`). Modern clients register through
 CIMD without a separate pre-registration step. The Dynamic Client Registration
 compatibility endpoint (`POST /register`) is bearer-protected with
 `GROUNDLANE_AUTH_TOKEN`, so unsupported clients must be pre-registered by an
-operator instead of registering anonymously. After registration, the connector
+operator instead of registering anonymously. DCR requests must include
+`application_type=web` with HTTPS redirect URIs or `application_type=native`
+with HTTP loopback redirect URIs; omission and mismatched combinations fail
+with `invalid_client_metadata`. After registration, the connector
 opens `/authorize`, a groundlane-owned consent page. Enter
 `OAUTH_OWNER_PASSPHRASE` to approve. Registration alone never grants access by
 itself; only a correct passphrase does.
+
+The protected-resource document for `/mcp` names that exact canonical resource
+and the authorization-server issuer. Authorization metadata advertises the
+same issuer, CIMD, and RFC 9207 issuer response support. Successful and
+redirected-error authorization responses carry `iss`; issued access tokens are
+resource-bound, so a token minted for a different resource cannot call `/mcp`.
+Groundlane delegates protocol storage and token mechanics to the pinned
+Cloudflare provider, while repository contracts pin these configured
+invariants and the separation between data-plane, admin, internal-context, and
+provider credentials.
 
 This is single-user by design: `/authorize` gates consent with one shared
 passphrase rather than a real identity provider, matching groundlane's
@@ -370,7 +524,7 @@ Run checks from a network outside the deployment account:
 11. Private, loopback, metadata, redirect-to-private, and browser-subresource targets are blocked.
 12. Timeouts, byte/output caps, concurrency, and queue limits behave as configured.
 
-The bundled smoke client verifies the exact MCP tool list and diagnostic tools, plus `web_fetch`, `web_extract`, and inline `document_parse`, against the reserved `example.com` documentation domain:
+The bundled smoke client verifies the default profile's exact MCP tool list (including artifact deletion and explicit research lifecycle tools) and diagnostic tools, plus `web_fetch`, `web_extract`, and inline `document_parse`, against the reserved `example.com` documentation domain. An integration regression compares its independent expected inventory with the real local composition. This smoke does not invoke upload/delete or research jobs, and does not prove cache, optional output-profile, or target-client acceptance:
 
 ```bash
 GROUNDLANE_MCP_URL=https://your-worker.example/mcp \
@@ -393,7 +547,7 @@ schema. This catches stale named Container instances instead of treating
 
 ## Operations
 
-- Rotate the Groundlane token, the OAuth owner passphrase, and provider credentials on a defined schedule and after suspected exposure. Rotating `OAUTH_OWNER_PASSPHRASE` does not revoke already-issued OAuth access/refresh tokens; use `OAuthHelpers.revokeGrant` (or clear `OAUTH_KV`) if immediate revocation is required.
+- Rotate the Groundlane token, the OAuth owner passphrase, and provider credentials on a defined schedule and after suspected exposure. Rotating `OAUTH_OWNER_PASSPHRASE` does not revoke already-issued OAuth access/refresh tokens. Use `OAuthHelpers.revokeGrant` to initiate grant revocation; OAuth state remains KV-backed, so propagation is eventual and immediate cross-edge revocation is not guaranteed. The managed-token D1 revoke guarantee does not apply to OAuth grants.
 - Restrict who can view Worker/Container secrets and deployment logs.
 - Alert on authorization failures, queue saturation, blocked destinations, browser crashes, provider rate limits, and deadline errors.
 - Retain metadata only as long as operationally required; never log response bodies or browser profiles.
@@ -419,5 +573,6 @@ Tool schema changes should be backward compatible whenever possible. If a rollba
 | HTTP works but render fails | `BROWSER_BACKEND`, Browserless token/region, Container binding, Chromium installation, memory limits |
 | Search reports unavailable | Provider order, matching API key, provider quota or rate limit |
 | Requests end early | End-to-end deadline, proxy/socket timeout, Container CPU limits |
+| Modern `/mcp` returns `-32020` | Compare `MCP-Protocol-Version`, `Mcp-Method`, method-specific `Mcp-Name`, and the JSON-RPC body/envelope; headers do not replace body validation |
 | Unexpected blocked URL | DNS answers, redirect chain, IP category, port allowlist, browser subresource policy |
-| `document_parse` rejects a file | Confirm supported MIME/extension, encryption or active/external package content, archive/page/byte/output limits; artifact sources remain unavailable until the R2-backed reader is wired |
+| `document_parse` rejects a file | Confirm supported MIME/extension, encryption or active/external package content, archive/page/byte/output limits; for ArtifactRef sources also confirm D1/R2, all R2 S3 presigning settings, and internal signing are configured |

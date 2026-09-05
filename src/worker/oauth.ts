@@ -8,6 +8,56 @@ import {
 import { createAuthorizeHandler } from "./authorize.js";
 import { proxyToContainer, type WorkerEnv } from "./proxy.js";
 
+interface RegistrationRejection {
+  readonly code: "invalid_client_metadata";
+  readonly description: string;
+  readonly status: 400;
+}
+
+function registrationRejection(description: string): RegistrationRejection {
+  return { code: "invalid_client_metadata", description, status: 400 };
+}
+
+function isLoopback(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/** MCP-specific compatibility policy layered over the generic RFC 7591 DCR. */
+export function validateDcrClientMetadata(
+  clientMetadata: Record<string, unknown>,
+): RegistrationRejection | undefined {
+  const applicationType = clientMetadata.application_type;
+  if (applicationType !== "native" && applicationType !== "web") {
+    return registrationRejection("application_type must be 'native' or 'web'");
+  }
+  const redirectUris = clientMetadata.redirect_uris;
+  if (
+    !Array.isArray(redirectUris) ||
+    redirectUris.length === 0 ||
+    !redirectUris.every((uri): uri is string => typeof uri === "string")
+  ) {
+    return registrationRejection("redirect_uris must be a non-empty string array");
+  }
+  for (const value of redirectUris) {
+    let uri: URL;
+    try {
+      uri = new URL(value);
+    } catch {
+      return registrationRejection("redirect_uris contains an invalid URL");
+    }
+    if (applicationType === "web" && uri.protocol !== "https:") {
+      return registrationRejection("web clients require HTTPS redirect URIs");
+    }
+    if (
+      applicationType === "native" &&
+      (uri.protocol !== "http:" || !isLoopback(uri.hostname))
+    ) {
+      return registrationRejection("native clients require an HTTP loopback redirect URI");
+    }
+  }
+  return undefined;
+}
+
 /**
  * Interactive cloud connectors (claude.ai, ChatGPT) expect OAuth 2.1, not the
  * static bearer token used by headless/CLI clients. This provider is only
@@ -60,6 +110,8 @@ export function buildOAuthProvider(
     clientIdMetadataDocumentEnabled: true,
     // Compatibility fallback for clients that don't support CIMD yet.
     clientRegistrationEndpoint: "/register",
+    clientRegistrationCallback: ({ clientMetadata }) =>
+      validateDcrClientMetadata(clientMetadata),
     scopesSupported: ["mcp"],
   });
 }

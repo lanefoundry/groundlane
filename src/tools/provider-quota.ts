@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { ProviderBalanceResult, SearchProviderId } from "../core/contracts.js";
@@ -159,14 +159,14 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
           outputSchema: resultEnvelopeSchema(providerQuotaDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const providers = input.provider === "all" ? SEARCH_PROVIDER_IDS : [input.provider];
             const balances = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   async (signal) =>
@@ -178,7 +178,7 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
                       }
                     })),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "provider_quota",
                 ),
             );

@@ -1,0 +1,13 @@
+{
+  "requestHeaders": {
+    "accept": "application/json, text/event-stream",
+    "content-type": "application/json"
+  },
+  "expectedResponseHeaders": {
+    "content-type": "text/event-stream"
+  },
+  "requiredResponseHeaderTokens": {
+    "cache-control": ["no-cache"]
+  },
+  "forbiddenResponseHeaders": ["mcp-session-id"]
+}

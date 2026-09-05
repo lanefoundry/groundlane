@@ -140,8 +140,10 @@ export interface DocumentProvenance {
   readonly engine: string;
   readonly model: string;
   readonly version: string;
-  readonly cost: number;
-  readonly confidence: number;
+  /** null means unknown; provider credits are not a monetary cost. */
+  readonly cost: number | null;
+  /** null means the engine did not supply a confidence measurement. */
+  readonly confidence: number | null;
 }
 
 // -- PRD 678: Canonical document envelope ------------------------------------
@@ -345,10 +347,10 @@ export function validateEnvelope(envelope: CanonicalDocumentEnvelope): void {
   if (!envelope.provenance.version) {
     throw new Error("Envelope provenance must include version");
   }
-  if (envelope.provenance.cost < 0) {
+  if (envelope.provenance.cost !== null && (!Number.isFinite(envelope.provenance.cost) || envelope.provenance.cost < 0)) {
     throw new Error("Envelope provenance cost must be non-negative");
   }
-  if (envelope.provenance.confidence < 0 || envelope.provenance.confidence > 1) {
+  if (envelope.provenance.confidence !== null && (!Number.isFinite(envelope.provenance.confidence) || envelope.provenance.confidence < 0 || envelope.provenance.confidence > 1)) {
     throw new Error("Envelope provenance confidence must be between 0 and 1");
   }
 
@@ -362,12 +364,16 @@ export function validateEnvelope(envelope: CanonicalDocumentEnvelope): void {
     blockIds.add(block.blockId);
   }
 
-  // Validate reading order references existing blocks
+  // A lossless projection must visit every canonical block exactly once.
+  const orderedIds = new Set<string>();
   for (const id of envelope.readingOrder) {
     if (!blockIds.has(id)) {
       throw new Error(`Reading order references unknown block ID: "${id}"`);
     }
+    if (orderedIds.has(id)) throw new Error(`Reading order duplicates block ID: "${id}"`);
+    orderedIds.add(id);
   }
+  if (orderedIds.size !== blockIds.size) throw new Error("Reading order must include every canonical block");
 
   // Validate capability states
   for (const [, state] of Object.entries(envelope.capabilityStates)) {

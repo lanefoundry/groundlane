@@ -25,6 +25,7 @@ void test("Cloudflare secret manifest contains runtime-forwarded credentials", (
       "OAUTH_OWNER_PASSPHRASE",
       "GROUNDLANE_ADMIN_TOKEN",
       "GROUNDLANE_INTERNAL_SIGNING_SECRET",
+      "GROUNDLANE_MCP_REQUEST_STATE_SECRET",
       "TAVILY_API_KEY",
       "EXA_API_KEY",
       "BRAVE_API_KEY",
@@ -39,6 +40,8 @@ void test("Cloudflare secret manifest contains runtime-forwarded credentials", (
       "SERPER_API_KEY",
       "YOU_API_KEY",
       "BROWSERLESS_TOKEN",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
     ],
   );
   assert.equal(CLOUDFLARE_SECRET_DEFINITIONS[0]?.required, true);
@@ -169,7 +172,7 @@ void test("provider selection accepts comma-separated numbers and ranges", () =>
     (definition) => !definition.required,
   );
   assert.deepEqual(
-    parseSecretSelection("3, 5-6, 5", providers).map(
+    parseSecretSelection("4, 6-7, 6", providers).map(
       (definition) => definition.name,
     ),
     ["TAVILY_API_KEY", "BRAVE_API_KEY", "FIRECRAWL_API_KEY"],

@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { GroundlaneError, hint } from "./errors.js";
+import { DEFAULT_ARTIFACT_RETENTION_POLICY } from "./artifact-retention-policy.js";
 
 export interface PolicyExpiryRequest {
   readonly relativeTtlSeconds?: number;
@@ -61,17 +62,9 @@ export const CACHE_BOUNDS: PolicySectionBounds = {
   maxTtlSeconds: 2592000,
 };
 
-export const UPLOAD_BOUNDS: PolicySectionBounds = {
-  defaultTtlSeconds: 900,
-  minTtlSeconds: 60,
-  maxTtlSeconds: 3600,
-};
+export const UPLOAD_BOUNDS: PolicySectionBounds = DEFAULT_ARTIFACT_RETENTION_POLICY.upload;
 
-export const ARTIFACT_BOUNDS: PolicySectionBounds = {
-  defaultTtlSeconds: 86400,
-  minTtlSeconds: 300,
-  maxTtlSeconds: 7776000,
-};
+export const ARTIFACT_BOUNDS: PolicySectionBounds = DEFAULT_ARTIFACT_RETENTION_POLICY.artifact;
 
 export const CORPUS_BOUNDS: PolicySectionBounds = {
   defaultTtlSeconds: 7776000,

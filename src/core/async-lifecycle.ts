@@ -50,6 +50,7 @@ export function verifyClientMatrix(matrix: ClientCapabilityMatrix): void {
 export type AsyncJobStatus =
   | "pending"
   | "running"
+  | "input_required"
   | "completed"
   | "failed"
   | "cancelled_by_caller"
@@ -88,6 +89,7 @@ export interface BillingProvenance {
 const STATUS_ORDER: Record<AsyncJobStatus, number> = {
   pending: 0,
   running: 1,
+  input_required: 1,
   completed: 2,
   failed: 2,
   cancelled_by_caller: 2,
@@ -450,6 +452,7 @@ export interface CreateAsyncJobInput {
   readonly ttlSeconds: number;
   readonly idempotencyKey?: string;
   readonly sourceUrl?: string;
+  readonly operationInput?: unknown;
   readonly now?: Date;
 }
 
@@ -467,6 +470,8 @@ export interface CompleteAsyncJobOptions {
 export interface PublicAsyncJob {
   readonly jobId: string;
   readonly ownerId: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly status: AsyncJobStatus;
   readonly expiresAt: string;
   readonly billingProvenance: BillingProvenance;
@@ -500,6 +505,8 @@ export interface ArtifactWriteOutcome {
 /** Internal-only state. Must never be returned from a public method. */
 export interface InternalAsyncJobState {
   readonly record: AsyncJobRecord;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly idempotencyKey: string | null;
   readonly callerCancelled: boolean;
   readonly groundlanePollingCancelled: boolean;
@@ -508,6 +515,7 @@ export interface InternalAsyncJobState {
   readonly paidCallCompleted: boolean;
   readonly artifactWriteCompleted: boolean;
   readonly artifactResult: unknown;
+  readonly operationInput?: unknown;
 }
 
 /** Durable-backend port: D1/DO/Workflow snapshots plug in here. */
@@ -568,6 +576,8 @@ export function toPublicAsyncJob(state: InternalAsyncJobState): PublicAsyncJob {
   const base = {
     jobId: state.record.jobId,
     ownerId: state.record.ownerId,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
     status: state.record.status,
     expiresAt: state.record.expiresAt,
     billingProvenance: state.record.billingProvenance,
@@ -591,6 +601,7 @@ export interface AsyncJobManagerOptions {
   readonly provider?: AsyncProviderPort;
   readonly maxJobs?: number;
   readonly jobIdPrefix?: string;
+  readonly jobIdFactory?: () => string;
 }
 
 /**
@@ -603,7 +614,7 @@ export class AsyncJobManager {
   private readonly provider: AsyncProviderPort | null;
   private readonly maxJobs: number;
   private readonly jobIdPrefix: string;
-  private nextId = 1;
+  private readonly jobIdFactory: () => string;
   private readonly evidence = new Map<string, ClientOperationEvidence>();
 
   constructor(options: AsyncJobManagerOptions = {}) {
@@ -611,6 +622,7 @@ export class AsyncJobManager {
     this.provider = options.provider ?? null;
     this.maxJobs = options.maxJobs ?? MAX_ASYNC_JOBS;
     this.jobIdPrefix = options.jobIdPrefix ?? ASYNC_JOB_ID_PREFIX;
+    this.jobIdFactory = options.jobIdFactory ?? (() => crypto.randomUUID());
   }
 
   create(input: CreateAsyncJobInput): AsyncJobCreateResult {
@@ -659,8 +671,7 @@ export class AsyncJobManager {
       );
     }
 
-    const jobId = `${this.jobIdPrefix}${String(this.nextId).padStart(6, "0")}`;
-    this.nextId += 1;
+    const jobId = `${this.jobIdPrefix}${this.jobIdFactory()}`;
     const providerJobId =
       this.provider === null
         ? `deferred:${jobId}`
@@ -683,6 +694,8 @@ export class AsyncJobManager {
     validateAsyncJobRecord(record);
     const state: InternalAsyncJobState = {
       record,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
       idempotencyKey:
         input.idempotencyKey === undefined
           ? null
@@ -694,6 +707,7 @@ export class AsyncJobManager {
       paidCallCompleted: false,
       artifactWriteCompleted: false,
       artifactResult: null,
+      ...(input.operationInput === undefined ? {} : { operationInput: input.operationInput }),
     };
     this.store.set(state);
     return { job: toPublicAsyncJob(state), reused: false };
@@ -711,7 +725,23 @@ export class AsyncJobManager {
 
   markRunning(jobId: string, caller: AsyncJobCaller, now: Date = new Date()): PublicAsyncJob {
     const state = this.resolve(jobId, caller, now);
-    const next = this.transition(state, "running");
+    const next = this.transition(state, "running", now);
+    this.store.set(next);
+    return toPublicAsyncJob(next);
+  }
+
+  markInputRequired(
+    jobId: string,
+    caller: AsyncJobCaller,
+    inputRequests: unknown,
+    now: Date = new Date(),
+  ): PublicAsyncJob {
+    const state = this.resolve(jobId, caller, now);
+    const transitioned = this.transition(state, "input_required", now);
+    const next: InternalAsyncJobState = {
+      ...transitioned,
+      record: { ...transitioned.record, result: inputRequests },
+    };
     this.store.set(next);
     return toPublicAsyncJob(next);
   }
@@ -724,7 +754,7 @@ export class AsyncJobManager {
   ): PublicAsyncJob {
     const now = options.now ?? new Date();
     const state = this.resolve(jobId, caller, now);
-    const transitioned = this.transition(state, "completed");
+    const transitioned = this.transition(state, "completed", now);
     const billing: BillingProvenance =
       options.billing === undefined
         ? transitioned.record.billingProvenance
@@ -750,7 +780,7 @@ export class AsyncJobManager {
     now: Date = new Date(),
   ): PublicAsyncJob {
     const state = this.resolve(jobId, caller, now);
-    const transitioned = this.transition(state, "failed");
+    const transitioned = this.transition(state, "failed", now);
     const record: AsyncJobRecord = {
       ...transitioned.record,
       sanitizedError: sanitizeUpstreamError(upstreamError, "async-job"),
@@ -795,7 +825,7 @@ export class AsyncJobManager {
         billedAt: previous.billedAt ?? now.toISOString(),
       },
     };
-    this.store.set({ ...state, record, paidCallCompleted: true });
+    this.store.set({ ...state, record, paidCallCompleted: true, updatedAt: now.toISOString() });
     return { reused: false };
   }
 
@@ -810,7 +840,7 @@ export class AsyncJobManager {
     if (state.artifactWriteCompleted) {
       return { reused: true, result: state.artifactResult };
     }
-    this.store.set({ ...state, artifactWriteCompleted: true, artifactResult: result });
+    this.store.set({ ...state, artifactWriteCompleted: true, artifactResult: result, updatedAt: now.toISOString() });
     return { reused: false, result };
   }
 
@@ -821,7 +851,7 @@ export class AsyncJobManager {
     now: Date = new Date(),
   ): PublicAsyncJob {
     const state = this.resolve(jobId, caller, now);
-    const transitioned = this.transition(state, "cancelled_by_caller");
+    const transitioned = this.transition(state, "cancelled_by_caller", now);
     const next: InternalAsyncJobState = { ...transitioned, callerCancelled: true };
     this.store.set(next);
     return toPublicAsyncJob(next);
@@ -834,7 +864,7 @@ export class AsyncJobManager {
     now: Date = new Date(),
   ): PublicAsyncJob {
     const state = this.resolve(jobId, caller, now);
-    const transitioned = this.transition(state, "cancelled_by_groundlane");
+    const transitioned = this.transition(state, "cancelled_by_groundlane", now);
     const next: InternalAsyncJobState = { ...transitioned, groundlanePollingCancelled: true };
     this.store.set(next);
     return toPublicAsyncJob(next);
@@ -855,7 +885,11 @@ export class AsyncJobManager {
     const acknowledgment =
       this.provider === null ? null : this.provider.cancelTask(state.record.providerJobId);
     if (acknowledgment === null) {
-      const next: InternalAsyncJobState = { ...state, upstreamCancelRequested: true };
+      const next: InternalAsyncJobState = {
+        ...state,
+        upstreamCancelRequested: true,
+        updatedAt: now.toISOString(),
+      };
       this.store.set(next);
       const cancelResult: CrawlCancelResult = {
         callerCancelled: next.callerCancelled,
@@ -865,7 +899,7 @@ export class AsyncJobManager {
       validateCrawlCancelResult(cancelResult);
       return { job: toPublicAsyncJob(next), cancelResult };
     }
-    const transitioned = this.transition(state, "cancelled_by_upstream");
+    const transitioned = this.transition(state, "cancelled_by_upstream", now);
     const next: InternalAsyncJobState = {
       ...transitioned,
       upstreamCancelRequested: true,
@@ -979,6 +1013,56 @@ export class AsyncJobManager {
     return this.poll(jobId, caller, now);
   }
 
+  /** Internal provider mapping setter. The provider ID never enters public views. */
+  attachProviderTask(
+    jobId: string,
+    caller: AsyncJobCaller,
+    providerJobId: string,
+    now: Date = new Date(),
+  ): void {
+    if (providerJobId.length === 0 || providerJobId.length > 512) {
+      throw new GroundlaneError("INVALID_INPUT", "async-lifecycle", "provider job ID is invalid");
+    }
+    const state = this.resolve(jobId, caller, now);
+    this.store.set({
+      ...state,
+      record: { ...state.record, providerJobId },
+      updatedAt: now.toISOString(),
+    });
+  }
+
+  /** Internal-only provider handle lookup for resumable polling adapters. */
+  providerTaskId(jobId: string, caller: AsyncJobCaller, now: Date = new Date()): string {
+    return this.resolve(jobId, caller, now).record.providerJobId;
+  }
+
+  operationInput(jobId: string, caller: AsyncJobCaller, now: Date = new Date()): unknown {
+    return this.resolve(jobId, caller, now).operationInput;
+  }
+
+  /** Cooperative task cancellation while preserving three independent facts. */
+  cancelTask(
+    jobId: string,
+    caller: AsyncJobCaller,
+    upstreamAcknowledgment: ProviderCancelAcknowledgment | null,
+    now: Date = new Date(),
+  ): PublicAsyncJob {
+    const state = this.resolve(jobId, caller, now);
+    const target = upstreamAcknowledgment === null
+      ? "cancelled_by_caller"
+      : "cancelled_by_upstream";
+    const transitioned = this.transition(state, target, now);
+    const next: InternalAsyncJobState = {
+      ...transitioned,
+      callerCancelled: true,
+      groundlanePollingCancelled: true,
+      upstreamCancelRequested: true,
+      upstreamAcknowledgment,
+    };
+    this.store.set(next);
+    return toPublicAsyncJob(next);
+  }
+
   private resolve(jobId: string, caller: AsyncJobCaller, now: Date): InternalAsyncJobState {
     const state = this.store.get(jobId);
     if (state === undefined) {
@@ -1012,7 +1096,11 @@ export class AsyncJobManager {
     return state;
   }
 
-  private transition(state: InternalAsyncJobState, to: AsyncJobStatus): InternalAsyncJobState {
+  private transition(
+    state: InternalAsyncJobState,
+    to: AsyncJobStatus,
+    now: Date,
+  ): InternalAsyncJobState {
     try {
       validateStatusTransition(state.record.status, to);
     } catch (error) {
@@ -1022,7 +1110,11 @@ export class AsyncJobManager {
         error instanceof Error ? error.message : "Invalid async status transition",
       );
     }
-    return { ...state, record: { ...state.record, status: to } };
+    return {
+      ...state,
+      record: { ...state.record, status: to },
+      updatedAt: now.toISOString(),
+    };
   }
 
   private assertNonTerminal(state: InternalAsyncJobState): void {

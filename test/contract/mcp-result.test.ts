@@ -27,3 +27,12 @@ void test("structured errors retain structured and legacy payloads", () => {
   ]);
   assert.equal(result.isError, true);
 });
+
+void test("structured result supports every JSON root type", () => {
+  for (const value of [null, true, 42, "value", [1, "two", false]] as const) {
+    const result = structuredToolResult(value);
+    assert.deepEqual(result.structuredContent, value);
+    assert.equal(result.content[0]?.type, "text");
+    assert.equal(result.content[0]?.type === "text" ? result.content[0].text : "", JSON.stringify(value));
+  }
+});

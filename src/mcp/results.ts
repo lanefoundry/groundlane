@@ -1,15 +1,17 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 
-export type StructuredToolResult<T extends Record<string, unknown>> =
+export type StructuredToolResult<T> =
   CallToolResult & {
     structuredContent: T;
   };
 
-function legacyJson(value: Record<string, unknown>): string {
-  return JSON.stringify(value);
+function legacyJson(value: unknown): string {
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new TypeError("Structured content must be JSON-serializable");
+  return encoded;
 }
 
-export function structuredToolResult<T extends Record<string, unknown>>(
+export function structuredToolResult<T>(
   value: T,
   legacyText: string = legacyJson(value),
 ): StructuredToolResult<T> {
@@ -19,7 +21,7 @@ export function structuredToolResult<T extends Record<string, unknown>>(
   };
 }
 
-export function structuredToolError<T extends Record<string, unknown>>(
+export function structuredToolError<T>(
   value: T,
   legacyText: string = legacyJson(value),
 ): StructuredToolResult<T> {

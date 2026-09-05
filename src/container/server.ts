@@ -32,8 +32,11 @@ export function startContainerServer(
     authToken: config.authToken,
     authMode: process.env.GROUNDLANE_AUTH_MODE,
     internalSigningSecret: process.env.GROUNDLANE_INTERNAL_SIGNING_SECRET,
+    mcpRequestStateSecret: process.env.GROUNDLANE_MCP_REQUEST_STATE_SECRET,
     expectedAudience: process.env.GROUNDLANE_INTERNAL_AUDIENCE,
     registryFactory: services.registryFactory,
+    parseResolvedDocument: (input, resolved, context, signal) =>
+      services.parseResolvedDocument(input, resolved, context, signal),
     ...(options.errorLogWriter === undefined ? {} : { errorLogWriter: options.errorLogWriter }),
   });
   const server = app.listen(port, "0.0.0.0", () => {

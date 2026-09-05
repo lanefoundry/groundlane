@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { canonicalEnvelopeSchema } from "../core/canonical-document-schema.js";
 
 import {
   DOCUMENT_ENGINE_VERSION,
   MAX_DOCUMENT_BYTES,
   parseBoundedDocument,
+  resolveDocumentParserProfile,
   type ParsedDocumentContent,
 } from "../adapters/document/bounded-document-parser.js";
 import {
@@ -15,13 +16,16 @@ import {
   type SourceIdentity,
 } from "../core/canonical-document.js";
 import { GroundlaneError, hint } from "../core/errors.js";
+import type { DurableDocumentOutputRuntime } from "../core/durable-document-output.js";
 import {
   DEFAULT_CACHE_TTL_SECONDS,
+  documentCacheBindingIdentity as coreDocumentCacheBindingIdentity,
   type CacheConfig,
   type CacheMode,
+  type DocumentCacheIdentity,
+  type DocumentCacheRuntimePort,
   type ParsedPayloadCacheKey,
 } from "../core/document-cache-contract.js";
-import { DurableDocumentCacheRepository } from "../core/durable-document-cache.js";
 import { classifyDocumentBytes } from "../core/document-source.js";
 import type { FetchPipeline } from "../core/fetch-pipeline.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
@@ -48,8 +52,14 @@ const artifactSourceSchema = z.object({
   artifactKind: z.literal("source"),
 }).strict();
 
-const inputSchema = z.object({
-  source: z.discriminatedUnion("kind", [inlineSourceSchema, urlSourceSchema, artifactSourceSchema]),
+const corpusSourceSchema = z.object({
+  kind: z.literal("corpus"),
+  corpusId: z.string().trim().min(1).max(160),
+  sourceId: z.string().trim().min(1).max(160),
+}).strict();
+
+export const documentParseInputSchema = z.object({
+  source: z.discriminatedUnion("kind", [inlineSourceSchema, urlSourceSchema, artifactSourceSchema, corpusSourceSchema]),
   output: z.enum(["markdown", "structured", "text", "all"]).default("markdown"),
   maxBytes: z.number().int().min(1_024).max(MAX_DOCUMENT_BYTES).optional(),
   maxPages: z.number().int().min(1).max(500).default(100),
@@ -59,44 +69,11 @@ const inputSchema = z.object({
   cacheTtlSeconds: z.number().int().min(60).max(2_592_000).optional(),
 }).strict();
 
-const sourceSpanSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("page-bbox"), page: z.number().int().nonnegative(), x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive(), contentHash: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("char-offset"), start: z.number().int().nonnegative(), end: z.number().int().positive(), contentHash: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("sheet-cell"), sheet: z.string().min(1), startCell: z.string().min(1), endCell: z.string().min(1), contentHash: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("slide-shape"), slide: z.number().int().nonnegative(), shapeId: z.string().min(1), contentHash: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("media-time"), startMs: z.number().nonnegative(), endMs: z.number().positive(), contentHash: z.string().min(1) }).strict(),
-]);
+export type DocumentParseInput = z.infer<typeof documentParseInputSchema>;
 
-const documentBlockSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), blockId: z.string().min(1), content: z.string(), spans: z.array(sourceSpanSchema).optional() }).strict(),
-  z.object({
-    type: z.literal("table"),
-    blockId: z.string().min(1),
-    cells: z.array(z.object({ row: z.number().int().nonnegative(), col: z.number().int().nonnegative(), content: z.string(), rowSpan: z.number().int().positive().optional(), colSpan: z.number().int().positive().optional() }).strict()),
-    spans: z.array(sourceSpanSchema).optional(),
-  }).strict(),
-  z.object({ type: z.literal("asset"), blockId: z.string().min(1), assetRef: z.string().min(1), mimeType: z.string().min(1), altText: z.string().optional(), spans: z.array(sourceSpanSchema).optional() }).strict(),
-  z.object({ type: z.literal("formula"), blockId: z.string().min(1), expression: z.string(), format: z.enum(["latex", "mathml", "plain"]), spans: z.array(sourceSpanSchema).optional() }).strict(),
-]);
-
-const canonicalEnvelopeSchema = z.object({
-  schemaVersion: z.string().min(1),
-  documentId: z.string().min(1),
-  canonicalContentId: z.string().min(1),
-  sourceIdentity: z.object({ contentHash: z.string().min(1), url: z.string().optional(), filename: z.string().optional(), artifactRef: z.string().optional() }).strict(),
-  blocks: z.array(documentBlockSchema),
-  readingOrder: z.array(z.string().min(1)),
-  status: z.enum(["success", "partial", "unsupported", "failed"]),
-  capabilityStates: z.record(z.string(), z.enum(["available", "unsupported", "not_run", "failed"])),
-  warnings: z.array(z.string()),
-  errors: z.array(z.string()),
-  provenance: z.object({ engine: z.string().min(1), model: z.string(), version: z.string().min(1), cost: z.number().nonnegative(), confidence: z.number().min(0).max(1) }).strict(),
-  metadata: z.array(z.object({ key: z.string().min(1), value: z.string() }).strict()).optional(),
-  citations: z.array(z.object({ citationId: z.string().min(1), label: z.string(), target: z.string(), blockId: z.string().optional() }).strict()).optional(),
-}).strict();
 
 const documentDataSchema = z.object({
-  envelope: canonicalEnvelopeSchema,
+  envelope: canonicalEnvelopeSchema.optional(),
   projection: z.object({
     projectionVersion: z.string(),
     sourceDocumentId: z.string(),
@@ -106,7 +83,15 @@ const documentDataSchema = z.object({
     lossy: z.boolean(),
     omissions: z.array(z.string()),
     warnings: z.array(z.string()),
-  }),
+  }).optional(),
+  outputArtifact: z.object({
+    refId: z.string(),
+    artifactKind: z.literal("canonical"),
+    contentHash: z.string(),
+    byteSize: z.number().int().positive(),
+    expiresAt: z.number().int().positive(),
+    encoding: z.literal("json"),
+  }).strict().optional(),
   mediaType: z.string(),
   bytes: z.number().int(),
   cached: z.boolean(),
@@ -142,10 +127,15 @@ export interface DocumentParseModuleOptions {
   limiter: ConcurrencyLimiter;
   caller: { readonly ownerId: string; readonly credentialBinding: string };
   artifactReader?: ArtifactSourceReaderPort;
+  corpusReader?: { readSource(corpusId: string, sourceId: string): Promise<{
+    bytes: Uint8Array; mimeType: string; filename: string; contentHash: string;
+    cacheBindingIdentity: unknown; expiresAt?: number;
+  }> };
+  outputRuntime?: Pick<DurableDocumentOutputRuntime, "save" | "read" | "delete">;
   requestTimeoutMs: number;
   maxResponseBytes: number;
   maxOutputChars: number;
-  cache?: DurableDocumentCacheRepository;
+  cache?: DocumentCacheRuntimePort<ParsedDocumentContent>;
   cacheConfig?: CacheConfig;
 }
 
@@ -168,14 +158,18 @@ function documentId(ownerId: string, source: SourceIdentity, canonicalId: string
   return `doc-${createHash("sha256").update(JSON.stringify({ ownerId, source, canonicalId, version: "1" })).digest("hex").slice(0, 32)}`;
 }
 
-function cacheSourceIdentity(source: unknown): string {
-  return `source-${createHash("sha256").update(JSON.stringify(source)).digest("hex")}`;
+export function documentCacheBindingIdentity(
+  source: unknown,
+  credentialBinding: string,
+): string {
+  return coreDocumentCacheBindingIdentity(source, credentialBinding);
 }
 
 function cacheKey(
   ownerId: string,
   sourceHash: string,
   mimeType: string,
+  filename: string,
   maxPages: number,
 ): ParsedPayloadCacheKey {
   return {
@@ -185,13 +179,17 @@ function cacheKey(
     engineVersion: DOCUMENT_ENGINE_VERSION,
     modelId: "none",
     modelVersion: "none",
-    normalizedOptions: JSON.stringify({ mimeType, maxPages }),
+    normalizedOptions: JSON.stringify({
+      mimeType,
+      parserProfile: resolveDocumentParserProfile(mimeType, filename),
+      maxPages,
+    }),
     schemaVersion: "canonical-document-v1",
     policyVersion: "document-policy-v1",
   };
 }
 
-function isParsedDocumentContent(value: unknown): value is ParsedDocumentContent {
+export function isParsedDocumentContent(value: unknown): value is ParsedDocumentContent {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<ParsedDocumentContent>;
   return Array.isArray(candidate.blocks) && Array.isArray(candidate.metadata) &&
@@ -219,6 +217,178 @@ function normalizeFetchedMime(mimeType: string, filename: string): string {
   return byExtension[extension] ?? normalized;
 }
 
+export interface ResolvedDocumentSource {
+  readonly bytes: Uint8Array;
+  readonly mimeType: string;
+  readonly filename: string;
+  readonly sourceIdentity: SourceIdentity;
+  readonly cacheBindingIdentity: unknown;
+  readonly sourceExpiresAt?: number;
+  readonly requestedUrl?: string;
+}
+
+/** Shared byte-to-canonical service used by ordinary MCP and the internal artifact bridge. */
+export async function parseResolvedDocument(
+  input: DocumentParseInput,
+  resolved: ResolvedDocumentSource,
+  options: DocumentParseModuleOptions,
+  operationSignal: AbortSignal,
+  deadlineAt = Date.now() + options.requestTimeoutMs,
+): Promise<unknown> {
+  const { bytes, mimeType, filename, sourceIdentity, cacheBindingIdentity, sourceExpiresAt, requestedUrl } = resolved;
+  const maxBytes = Math.min(input.maxBytes ?? options.maxResponseBytes, options.maxResponseBytes, MAX_DOCUMENT_BYTES);
+  if (bytes.byteLength > maxBytes) {
+    throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document exceeds the configured byte limit", false, undefined, hint("document.output_limit", "Raise maxBytes within deployment policy or use a smaller document."));
+  }
+  classifyDocumentBytes(bytes, mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? mimeType, filename);
+  const executeParse = async (): Promise<ParsedDocumentContent> =>
+    parseBoundedDocument({ bytes, declaredMime: mimeType, filename, signal: operationSignal, maxPages: input.maxPages });
+  let parsed: ParsedDocumentContent;
+  let cached = false;
+  let cacheMetadata: {
+    requestedMode: CacheMode;
+    enabled: boolean;
+    stored: boolean;
+    degraded?: boolean;
+    createdAt?: number;
+    expiresAt?: number;
+    ageSeconds?: number;
+    originalEngine?: string;
+    originalModel?: string;
+    error?: string;
+  } = {
+    requestedMode: input.cacheMode,
+    enabled: options.cache !== undefined,
+    stored: false,
+    ...(options.cache === undefined && input.cacheMode !== "bypass" ? { degraded: true } : {}),
+  };
+  if (options.cache === undefined) {
+    parsed = await executeParse();
+  } else {
+    const nowMs = Date.now();
+    const cacheConfig = options.cacheConfig ?? { enabled: true, defaultTtlSeconds: DEFAULT_CACHE_TTL_SECONDS };
+    if (input.cacheTtlSeconds !== undefined &&
+        cacheConfig.operatorMaxTtlSeconds !== undefined &&
+        input.cacheTtlSeconds > cacheConfig.operatorMaxTtlSeconds) {
+      throw new GroundlaneError(
+        "INVALID_INPUT", "document_parse", "cacheTtlSeconds exceeds the deployment maximum", false,
+        undefined, hint("document.cache_ttl_out_of_range", "Use document_policy to read the deployment cache maximum."),
+      );
+    }
+    const identity: DocumentCacheIdentity = {
+      mode: input.cacheMode,
+      key: cacheKey(options.caller.ownerId, sourceIdentity.contentHash, mimeType, filename, input.maxPages),
+      sourceIdentity: documentCacheBindingIdentity(cacheBindingIdentity, options.caller.credentialBinding),
+      sourceVersion: sourceIdentity.contentHash,
+      ownershipScope: options.caller.ownerId,
+      nowMs,
+      ...(sourceExpiresAt === undefined ? {} : { sourceExpiresAt }),
+      ...(input.cacheTtlSeconds === undefined ? {} : { requestedTtlSeconds: input.cacheTtlSeconds }),
+      toolName: "document_parse",
+      networkPolicyChecked: true,
+    };
+    const lookup = await options.cache.lookup(cacheConfig, identity, {
+      signal: operationSignal,
+      deadlineAt,
+    });
+    const result = lookup.cached
+      ? lookup
+      : await options.cache.commit(cacheConfig, identity, {
+          data: await executeParse(),
+          provenance: { isOriginal: true, originalCost: 0, engine: "groundlane", model: "none" },
+        }, lookup, {
+          signal: operationSignal,
+          deadlineAt,
+        });
+    if (!isParsedDocumentContent(result.data)) {
+      parsed = await executeParse();
+      cacheMetadata = { ...cacheMetadata, error: "Cached document payload was malformed" };
+    } else {
+      parsed = result.data;
+      cached = result.cached;
+      cacheMetadata = result.cached
+        ? {
+            ...cacheMetadata,
+            createdAt: result.hit.createdAt,
+            expiresAt: result.hit.expiresAt,
+            ageSeconds: result.hit.ageSeconds,
+            originalEngine: result.hit.billingProvenance.engine,
+            originalModel: result.hit.billingProvenance.model,
+          }
+        : {
+            ...cacheMetadata,
+            stored: result.stored,
+            ...(result.createdAt === undefined ? {} : { createdAt: result.createdAt }),
+            ...(result.expiresAt === undefined ? {} : { expiresAt: result.expiresAt }),
+            ...(result.degraded === undefined ? {} : { degraded: result.degraded }),
+            ...(result.cacheError === undefined ? {} : { error: result.cacheError }),
+          };
+    }
+  }
+  const provisional = buildCanonicalEnvelopeFromAdapter({
+    documentId: "document-pending-binding",
+    sourceIdentity,
+    blocks: parsed.blocks,
+    readingOrder: parsed.blocks.map((block) => block.blockId),
+    status: parsed.blocks.length === 0 ? "partial" : "success",
+    capabilityStates: parsed.capabilities,
+    provenance: { engine: "groundlane", model: "none", version: DOCUMENT_ENGINE_VERSION, cost: 0, confidence: 1 },
+    warnings: parsed.warnings,
+    metadata: [
+      ...parsed.metadata,
+      ...(requestedUrl === undefined ? [] : [{ key: "requestedUrl", value: requestedUrl }]),
+    ],
+  });
+  const envelope = { ...provisional, documentId: documentId(options.caller.ownerId, sourceIdentity, provisional.canonicalContentId) };
+  const projection = projectCanonicalDocument(envelope, input.output);
+  const outputLimit = Math.min(input.maxOutputChars ?? options.maxOutputChars, options.maxOutputChars);
+  if (projection.content.length > outputLimit ||
+      (options.outputRuntime !== undefined && JSON.stringify({ envelope, projection }).length > outputLimit)) {
+    if (options.outputRuntime !== undefined) {
+      const artifact = await options.outputRuntime.save({
+        caller: { tenantId: "self-hosted", ...options.caller },
+        sourceBytes: bytes,
+        mimeType,
+        filename,
+        payload: { envelope, projection },
+        ...(sourceExpiresAt === undefined ? {} : { sourceExpiresAt }),
+        ...(input.source.kind === "artifact" ? { externalSourceRef: input.source.refId } : {}),
+      }, operationSignal);
+      return {
+        outputArtifact: {
+          refId: artifact.refId, artifactKind: "canonical", contentHash: artifact.contentHash,
+          byteSize: artifact.byteSize, expiresAt: artifact.expiresAt, encoding: "json",
+        },
+        mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata,
+      };
+    }
+    throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document projection exceeds the configured output limit", false, undefined, hint("document.output_limit", "Request a narrower projection or use artifact output after configuring durable storage."));
+  }
+  return { envelope, projection, mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata };
+}
+
+export async function runResolvedDocumentParse(
+  input: DocumentParseInput,
+  resolved: ResolvedDocumentSource,
+  options: DocumentParseModuleOptions,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
+  return withConcurrency(options.limiter, deadline, signal, () =>
+    withinDeadline(
+      (operationSignal) => parseResolvedDocument(
+        input,
+        resolved,
+        options,
+        operationSignal,
+        Date.now() + deadline.remainingMs("document_parse"),
+      ),
+      deadline,
+      signal,
+      "document_parse",
+    ));
+}
+
 export function createDocumentParseModule(options: DocumentParseModuleOptions): McpModule {
   return {
     name: "document_parse",
@@ -226,15 +396,15 @@ export function createDocumentParseModule(options: DocumentParseModuleOptions): 
       server.registerTool(
         "document_parse",
         {
-          description: "Parse a bounded inline, public-URL, or verified source artifact into Groundlane's versioned canonical document envelope and a deterministic projection. Stable deterministic profiles reject encrypted, malformed, over-limit, and known active or external package content.",
-          inputSchema,
+          description: "Parse a bounded inline, public-URL, verified source artifact, or caller-owned corpus source into Groundlane's versioned canonical document envelope and a deterministic projection. Corpus reads enforce current credential, ACL, and retention. Stable deterministic profiles reject encrypted, malformed, over-limit, and known active or external package content.",
+          inputSchema: documentParseInputSchema,
           outputSchema: resultEnvelopeSchema(documentDataSchema),
-          annotations: { readOnlyHint: true, openWorldHint: true },
+          annotations: { readOnlyHint: options.outputRuntime === undefined, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
-            const data = await withConcurrency(options.limiter, deadline, extra.signal, () =>
+            const data = await withConcurrency(options.limiter, deadline, ctx.mcpReq.signal, () =>
               withinDeadline(async (operationSignal) => {
                 const maxBytes = Math.min(input.maxBytes ?? options.maxResponseBytes, options.maxResponseBytes, MAX_DOCUMENT_BYTES);
                 let bytes: Uint8Array;
@@ -242,6 +412,7 @@ export function createDocumentParseModule(options: DocumentParseModuleOptions): 
                 let filename: string;
                 let sourceIdentity: SourceIdentity;
                 let cacheBindingIdentity: unknown;
+                let sourceExpiresAt: number | undefined;
                 let requestedUrl: string | undefined;
                 if (input.source.kind === "inline") {
                   bytes = decodeBase64(input.source.dataBase64);
@@ -271,6 +442,16 @@ export function createDocumentParseModule(options: DocumentParseModuleOptions): 
                     contentHash: sourceIdentity.contentHash,
                     filename,
                   };
+                } else if (input.source.kind === "corpus") {
+                  if (options.corpusReader === undefined) throw new GroundlaneError("PROVIDER_UNAVAILABLE", "document_parse", "Durable corpus storage is not configured");
+                  const source = await options.corpusReader.readSource(input.source.corpusId, input.source.sourceId);
+                  bytes = source.bytes;
+                  mimeType = source.mimeType;
+                  filename = source.filename;
+                  sourceIdentity = { contentHash: source.contentHash, filename };
+                  cacheBindingIdentity = source.cacheBindingIdentity;
+                  sourceExpiresAt = source.expiresAt;
+                  if (contentHash(bytes) !== source.contentHash || (sourceExpiresAt !== undefined && sourceExpiresAt <= Date.now())) throw new GroundlaneError("UPSTREAM_ERROR", "document_parse", "Corpus source integrity or expiry check failed");
                 } else {
                   if (options.artifactReader === undefined) {
                     throw new GroundlaneError("PROVIDER_UNAVAILABLE", "document_parse", "Artifact storage is not configured", false, undefined, hint("document.artifact_unavailable", "Use inline or public URL input, or configure the deployment artifact backend."));
@@ -284,121 +465,21 @@ export function createDocumentParseModule(options: DocumentParseModuleOptions): 
                   }
                   sourceIdentity = { contentHash: artifact.contentHash, artifactRef: input.source.refId, filename };
                   cacheBindingIdentity = { kind: "artifact", ...sourceIdentity };
-                }
-                if (bytes.byteLength > maxBytes) {
-                  throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document exceeds the configured byte limit", false, undefined, hint("document.output_limit", "Raise maxBytes within deployment policy or use a smaller document."));
-                }
-                classifyDocumentBytes(bytes, mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? mimeType, filename);
-                const executeParse = async (): Promise<ParsedDocumentContent> =>
-                  parseBoundedDocument({ bytes, declaredMime: mimeType, filename, signal: operationSignal, maxPages: input.maxPages });
-                let parsed: ParsedDocumentContent;
-                let cached = false;
-                let cacheMetadata: {
-                  requestedMode: CacheMode;
-                  enabled: boolean;
-                  stored: boolean;
-                  degraded?: boolean;
-                  createdAt?: number;
-                  expiresAt?: number;
-                  ageSeconds?: number;
-                  originalEngine?: string;
-                  originalModel?: string;
-                  error?: string;
-                } = {
-                  requestedMode: input.cacheMode,
-                  enabled: options.cache !== undefined,
-                  stored: false,
-                  ...(options.cache === undefined && input.cacheMode !== "bypass"
-                    ? { degraded: true }
-                    : {}),
-                };
-                if (options.cache === undefined) {
-                  parsed = await executeParse();
-                } else {
-                  const nowMs = Date.now();
-                  const cacheConfig = options.cacheConfig ?? {
-                    enabled: true,
-                    defaultTtlSeconds: DEFAULT_CACHE_TTL_SECONDS,
-                  };
-                  if (
-                    input.cacheTtlSeconds !== undefined &&
-                    cacheConfig.operatorMaxTtlSeconds !== undefined &&
-                    input.cacheTtlSeconds > cacheConfig.operatorMaxTtlSeconds
-                  ) {
-                    throw new GroundlaneError(
-                      "INVALID_INPUT",
-                      "document_parse",
-                      "cacheTtlSeconds exceeds the deployment maximum",
-                      false,
-                      undefined,
-                      hint("document.cache_ttl_out_of_range", "Use document_policy to read the deployment cache maximum."),
-                    );
-                  }
-                  const result = await options.cache.process(
-                    cacheConfig,
-                    {
-                      mode: input.cacheMode,
-                      key: cacheKey(options.caller.ownerId, sourceIdentity.contentHash, mimeType, input.maxPages),
-                      sourceIdentity: cacheSourceIdentity(cacheBindingIdentity),
-                      sourceVersion: sourceIdentity.contentHash,
-                      ownershipScope: options.caller.ownerId,
-                      nowMs,
-                      ...(input.cacheTtlSeconds === undefined ? {} : { requestedTtlSeconds: input.cacheTtlSeconds }),
-                      toolName: "document_parse",
-                      networkPolicyChecked: true,
-                      execute: async () => ({
-                        data: await executeParse(),
-                        provenance: { isOriginal: true, originalCost: 0, engine: "groundlane", model: "none" },
-                      }),
-                    },
-                  );
-                  if (!isParsedDocumentContent(result.data)) {
-                    parsed = await executeParse();
-                    cacheMetadata = { ...cacheMetadata, error: "Cached document payload was malformed" };
-                  } else {
-                    parsed = result.data;
-                    cached = result.cached;
-                    cacheMetadata = result.cached
-                      ? {
-                          ...cacheMetadata,
-                          createdAt: result.hit.createdAt,
-                          expiresAt: result.hit.expiresAt,
-                          ageSeconds: result.hit.ageSeconds,
-                          originalEngine: result.hit.billingProvenance.engine,
-                          originalModel: result.hit.billingProvenance.model,
-                        }
-                      : {
-                          ...cacheMetadata,
-                          stored: result.stored,
-                          ...(result.createdAt === undefined ? {} : { createdAt: result.createdAt }),
-                          ...(result.expiresAt === undefined ? {} : { expiresAt: result.expiresAt }),
-                          ...(result.degraded === undefined ? {} : { degraded: result.degraded }),
-                          ...(result.cacheError === undefined ? {} : { error: result.cacheError }),
-                        };
+                  sourceExpiresAt = Date.parse(artifact.expiresAt);
+                  if (!Number.isSafeInteger(sourceExpiresAt) || sourceExpiresAt <= Date.now()) {
+                    throw new GroundlaneError("UPSTREAM_ERROR", "document_parse", "Artifact source binding is expired or malformed");
                   }
                 }
-                const provisional = buildCanonicalEnvelopeFromAdapter({
-                  documentId: "document-pending-binding",
+                return parseResolvedDocument(input, {
+                  bytes,
+                  mimeType,
+                  filename,
                   sourceIdentity,
-                  blocks: parsed.blocks,
-                  readingOrder: parsed.blocks.map((block) => block.blockId),
-                  status: parsed.blocks.length === 0 ? "partial" : "success",
-                  capabilityStates: parsed.capabilities,
-                  provenance: { engine: "groundlane", model: "none", version: DOCUMENT_ENGINE_VERSION, cost: 0, confidence: 1 },
-                  warnings: parsed.warnings,
-                  metadata: [
-                    ...parsed.metadata,
-                    ...(requestedUrl === undefined ? [] : [{ key: "requestedUrl", value: requestedUrl }]),
-                  ],
-                });
-                const envelope = { ...provisional, documentId: documentId(options.caller.ownerId, sourceIdentity, provisional.canonicalContentId) };
-                const projection = projectCanonicalDocument(envelope, input.output);
-                const outputLimit = Math.min(input.maxOutputChars ?? options.maxOutputChars, options.maxOutputChars);
-                if (projection.content.length > outputLimit) {
-                  throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document projection exceeds the configured output limit", false, undefined, hint("document.output_limit", "Request a narrower projection or use artifact output after configuring durable storage."));
-                }
-                return { envelope, projection, mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata };
-              }, deadline, extra.signal, "document_parse"),
+                  cacheBindingIdentity,
+                  ...(sourceExpiresAt === undefined ? {} : { sourceExpiresAt }),
+                  ...(requestedUrl === undefined ? {} : { requestedUrl }),
+                }, options, operationSignal, Date.now() + deadline.remainingMs("document_parse"));
+              }, deadline, ctx.mcpReq.signal, "document_parse"),
             );
             return structuredToolResult({ ok: true, data });
           } catch (error) {

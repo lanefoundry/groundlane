@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { ContentResult } from "../core/contracts.js";
@@ -97,7 +97,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
           outputSchema: resultEnvelopeSchema(contentDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const binarySuffix = detectBinarySuffix(input.url);
@@ -117,7 +117,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
             const result = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   (signal) =>
@@ -133,7 +133,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
                       signal,
                     ),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "web_content",
                 ),
             );

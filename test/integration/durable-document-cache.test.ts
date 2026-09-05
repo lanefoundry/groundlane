@@ -13,6 +13,7 @@ import {
 import type {
   BillingProvenance,
   CacheConfig,
+  DocumentCacheIdentity,
   DocumentCacheExecution,
   ParsedPayloadCacheKey,
 } from "../../src/core/document-cache-contract.js";
@@ -26,6 +27,11 @@ import type {
   DurableRecordUpdate,
   NewDurableRecord,
 } from "../../src/core/durable-store.js";
+import type {
+  ImmutableBlobPort,
+  ImmutableBlobPutResult,
+  ImmutableBlobStat,
+} from "../../src/core/immutable-blob.js";
 
 const config: CacheConfig = {
   enabled: true,
@@ -63,6 +69,7 @@ function params<T>(overrides: Partial<{
   sourceIdentity: string;
   sourceVersion: string;
   nowMs: number;
+  sourceExpiresAt: number;
   requestedTtlSeconds: number;
   execute: () => Promise<DocumentCacheExecution<T>> | DocumentCacheExecution<T>;
 }> & { execute: () => Promise<DocumentCacheExecution<T>> | DocumentCacheExecution<T> }) {
@@ -73,6 +80,9 @@ function params<T>(overrides: Partial<{
     sourceVersion: overrides.sourceVersion ?? "v1",
     ownershipScope: "tenant-one",
     nowMs: overrides.nowMs ?? 1_700_000_000_000,
+    ...(overrides.sourceExpiresAt === undefined
+      ? {}
+      : { sourceExpiresAt: overrides.sourceExpiresAt }),
     ...(overrides.requestedTtlSeconds === undefined
       ? {}
       : { requestedTtlSeconds: overrides.requestedTtlSeconds }),
@@ -81,6 +91,171 @@ function params<T>(overrides: Partial<{
     execute: overrides.execute,
   };
 }
+
+function identity(
+  overrides: Partial<Omit<DocumentCacheIdentity, "key" | "ownershipScope">> = {},
+): DocumentCacheIdentity {
+  return {
+    mode: overrides.mode ?? "use",
+    key,
+    sourceIdentity: overrides.sourceIdentity ?? "artifact:source-a",
+    sourceVersion: overrides.sourceVersion ?? "v1",
+    ownershipScope: "tenant-one",
+    nowMs: overrides.nowMs ?? 1_700_000_000_000,
+    ...(overrides.sourceExpiresAt === undefined
+      ? {}
+      : { sourceExpiresAt: overrides.sourceExpiresAt }),
+    ...(overrides.requestedTtlSeconds === undefined
+      ? {}
+      : { requestedTtlSeconds: overrides.requestedTtlSeconds }),
+    toolName: overrides.toolName ?? "document_parse",
+    networkPolicyChecked: overrides.networkPolicyChecked ?? true,
+  };
+}
+
+void test("two-phase lookup and commit are callback-free, serializable, and persist a later hit", async (t) => {
+  const path = await databaseFixture(t);
+  const store = new SqliteDurableRecordStore(path, "document-cache");
+  t.after(() => store.close());
+  const repository = new DurableDocumentCacheRepository(store);
+  const request = identity();
+
+  const lookup = await repository.lookup<{ blocks: string[] }>(config, request);
+  assert.equal(lookup.cached, false);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify({ config, request, lookup })));
+  if (lookup.cached) assert.fail("empty cache unexpectedly hit");
+  assert.equal(lookup.disposition, "ordinary");
+
+  const committed = await repository.commit(
+    config,
+    request,
+    { data: { blocks: ["persisted"] }, provenance },
+    lookup,
+  );
+  assert.equal(committed.cached, false);
+  assert.equal(committed.stored, true);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(committed)));
+
+  const hit = await repository.lookup<{ blocks: string[] }>(config, {
+    ...request,
+    nowMs: request.nowMs + 1_000,
+  });
+  assert.equal(hit.cached, true);
+  if (!hit.cached) assert.fail("committed cache entry did not hit");
+  assert.deepEqual(hit.data, { blocks: ["persisted"] });
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(hit)));
+});
+
+void test("lookup reports refresh, bypass, and operator-disabled dispositions without cache I/O", async () => {
+  const store = new FailingStore();
+  const repository = new DurableDocumentCacheRepository(store);
+
+  const refresh = await repository.lookup(config, identity({ mode: "refresh" }));
+  assert.deepEqual(refresh, { cached: false, disposition: "refresh" });
+  const bypass = await repository.lookup(config, identity({ mode: "bypass" }));
+  assert.deepEqual(bypass, { cached: false, disposition: "bypass" });
+  const excluded = await repository.lookup(config, identity({ toolName: "web_fetch" }));
+  assert.deepEqual(excluded, { cached: false, disposition: "bypass" });
+  const disabled = await repository.lookup(
+    { ...config, enabled: false },
+    identity(),
+  );
+  assert.deepEqual(disabled, { cached: false, disposition: "disabled", degraded: true });
+  assert.equal(store.calls, 0);
+});
+
+void test("an artifact-derived cache binding cannot outlive its absolute source expiry", async (t) => {
+  const path = await databaseFixture(t);
+  const store = new SqliteDurableRecordStore(path, "document-cache");
+  t.after(() => store.close());
+  const repository = new DurableDocumentCacheRepository(store);
+  const request = identity({ sourceExpiresAt: 1_700_000_090_999 });
+  const miss = await repository.lookup(config, request);
+  assert.equal(miss.cached, false);
+  if (miss.cached) assert.fail("empty cache unexpectedly hit");
+  const committed = await repository.commit(
+    config,
+    request,
+    { data: "source-bounded", provenance },
+    miss,
+  );
+  assert.equal(committed.expiresAt, 1_700_000_090_000);
+
+  const expiredRequest = identity({ nowMs: 1_700_000_100_000, sourceExpiresAt: 1_700_000_090_999 });
+  const expiredMiss = await repository.lookup(config, expiredRequest);
+  assert.equal(expiredMiss.cached, false);
+  if (expiredMiss.cached) assert.fail("expired source unexpectedly hit");
+  const notStored = await repository.commit(
+    config,
+    expiredRequest,
+    { data: "fresh", provenance },
+    expiredMiss,
+  );
+  assert.equal(notStored.stored, false);
+});
+
+void test("two-phase read faults stay sanitized and commit performs no second cache operation", async () => {
+  const store = new FailingStore();
+  const repository = new DurableDocumentCacheRepository(store);
+  const request = identity();
+  const lookup = await repository.lookup(config, request);
+  assert.equal(lookup.cached, false);
+  if (lookup.cached) assert.fail("failing cache unexpectedly hit");
+  assert.equal(lookup.disposition, "ordinary");
+  assert.equal(lookup.cacheError, "Document cache unavailable");
+  const callsAfterLookup = store.calls;
+
+  const committed = await repository.commit(
+    config,
+    request,
+    { data: "fresh despite outage", provenance },
+    lookup,
+  );
+  assert.deepEqual(committed, {
+    cached: false,
+    data: "fresh despite outage",
+    provenance,
+    stored: false,
+    cacheError: "Document cache unavailable",
+  });
+  assert.equal(store.calls, callsAfterLookup);
+});
+
+void test("a stale ordinary commit cannot restore a binding revoked between lookup and commit", async (t) => {
+  const path = await databaseFixture(t);
+  const store = new SqliteDurableRecordStore(path, "document-cache");
+  t.after(() => store.close());
+  const repository = new DurableDocumentCacheRepository(store);
+  const request = identity();
+  const staleDecision = await repository.lookup(config, request);
+  assert.equal(staleDecision.cached, false);
+  if (staleDecision.cached) assert.fail("empty cache unexpectedly hit");
+
+  await repository.process(config, params({
+    execute: () => ({ data: "concurrent winner", provenance }),
+  }));
+  assert.equal(await repository.revokeSourceBinding({
+    key,
+    sourceIdentity: request.sourceIdentity,
+    ownershipScope: request.ownershipScope,
+    nowMs: request.nowMs + 1_000,
+  }), "revoked");
+
+  const committed = await repository.commit(
+    config,
+    { ...request, nowMs: request.nowMs + 2_000 },
+    { data: "stale execution", provenance },
+    staleDecision,
+  );
+  assert.equal(committed.stored, false);
+  const after = await repository.lookup(config, {
+    ...request,
+    nowMs: request.nowMs + 3_000,
+  });
+  assert.equal(after.cached, false);
+  if (after.cached) assert.fail("stale commit silently restored a revoked binding");
+  assert.equal(after.disposition, "revoked");
+});
 
 void test("use persists content core and source binding across SQLite reopen", async (t) => {
   const path = await databaseFixture(t);
@@ -221,6 +396,64 @@ void test("revoking one source binding preserves another binding to the same cor
   assert.deepEqual(otherSource.data, { canonicalContentId: "same-content" });
 });
 
+void test("revoking one source invalidates every parser-option binding but preserves another source", async (t) => {
+  const path = await databaseFixture(t);
+  const store = new SqliteDurableRecordStore(path, "document-cache");
+  t.after(() => store.close());
+  const repository = new DurableDocumentCacheRepository(store);
+  const alternateKey: ParsedPayloadCacheKey = {
+    ...key,
+    normalizedOptions: JSON.stringify({ projection: "markdown" }),
+  };
+  let executions = 0;
+  const execute = (label: string) => {
+    executions += 1;
+    return { data: { label }, provenance };
+  };
+
+  await repository.process(config, params({ execute: () => execute("default") }));
+  await repository.process(config, {
+    ...params({ execute: () => execute("alternate") }),
+    key: alternateKey,
+  });
+  const otherSource = await repository.process(config, params({
+    sourceIdentity: "url:source-b",
+    nowMs: 1_700_000_001_000,
+    execute: () => { throw new Error("same core should bind without executing"); },
+  }));
+  assert.equal(otherSource.cached, true);
+
+  assert.equal(await repository.revokeAllSourceBindings({
+    sourceIdentity: "artifact:source-a",
+    ownershipScope: "tenant-one",
+    nowMs: 1_700_000_002_000,
+  }), "revoked");
+
+  const revokedDefault = await repository.process(config, params({
+    nowMs: 1_700_000_003_000,
+    execute: () => execute("revoked-default"),
+  }));
+  const revokedAlternate = await repository.process(config, {
+    ...params({
+      nowMs: 1_700_000_003_000,
+      execute: () => execute("revoked-alternate"),
+    }),
+    key: alternateKey,
+  });
+  assert.equal(revokedDefault.cached, false);
+  assert.equal(revokedAlternate.cached, false);
+  assert.equal(revokedDefault.stored, false);
+  assert.equal(revokedAlternate.stored, false);
+
+  const unaffected = await repository.process(config, params({
+    sourceIdentity: "url:source-b",
+    nowMs: 1_700_000_004_000,
+    execute: () => { throw new Error("other source binding must remain live"); },
+  }));
+  assert.equal(unaffected.cached, true);
+  assert.equal(executions, 4);
+});
+
 void test("same content reuses its core while binding a new source", async (t) => {
   const path = await databaseFixture(t);
   const store = new SqliteDurableRecordStore(path, "document-cache");
@@ -290,8 +523,30 @@ void test("large payloads use immutable blob storage and expiry sweep removes by
   assert.equal(hit.cached, true);
   assert.deepEqual(hit.data, large);
 
-  assert.equal(await repository.sweepExpired(1_700_086_400_001), 2);
+  assert.equal(await repository.sweepExpired(1_700_086_400_001), 3);
   assert.equal(await payloads.stat(blobKey), null);
+});
+
+void test("expiry cleanup does not delete core metadata before immutable byte deletion succeeds", async (t) => {
+  const path = await databaseFixture(t);
+  const store = new SqliteDurableRecordStore(path, "document-cache");
+  const innerPayloads = new SqliteImmutableBlobStore(path, "document-cache-payloads");
+  const payloads = new DeleteFailingBlobStore(innerPayloads);
+  t.after(() => { store.close(); innerPayloads.close(); });
+  const repository = new DurableDocumentCacheRepository(store, { payloads });
+  const result = await repository.process(config, params({
+    execute: () => ({ data: { text: "x".repeat(80_000) }, provenance }),
+  }));
+  assert.equal(result.cached, false);
+  const keys = durableDocumentCacheRecordKeys(key, "tenant-one", "artifact:source-a");
+  const core = await store.get(keys.core);
+  const blobKey = /"blobKey":"([^"]+)"/u.exec(core?.value ?? "")?.[1];
+  if (blobKey === undefined) assert.fail("payload blob key is missing");
+
+  payloads.failDelete = true;
+  await assert.rejects(repository.sweepExpired(1_700_086_400_001), /simulated blob delete failure/u);
+  assert.notEqual(await store.get(keys.core), null);
+  assert.notEqual(await innerPayloads.stat(blobKey), null);
 });
 
 void test("cleanup marker removes a blob when metadata creation fails", async (t) => {
@@ -376,6 +631,29 @@ class FailingStore implements DurableRecordStorePort {
 
   scanExpired(): Promise<DurableExpiredPage> {
     return this.fail();
+  }
+}
+
+class DeleteFailingBlobStore implements ImmutableBlobPort {
+  failDelete = false;
+
+  constructor(private readonly inner: ImmutableBlobPort) {}
+
+  putIfAbsent(input: { blobKey: string; ownerId: string; digest: string; bytes: Uint8Array }): Promise<ImmutableBlobPutResult> {
+    return this.inner.putIfAbsent(input);
+  }
+
+  stat(blobKey: string): Promise<ImmutableBlobStat | null> {
+    return this.inner.stat(blobKey);
+  }
+
+  get(input: { blobKey: string; ownerId: string; digest: string; maxBytes: number }): Promise<Uint8Array | null> {
+    return this.inner.get(input);
+  }
+
+  deleteIfOwner(blobKey: string, ownerId: string): Promise<"deleted" | "missing" | "owner_mismatch"> {
+    if (this.failDelete) return Promise.reject(new Error("simulated blob delete failure"));
+    return this.inner.deleteIfOwner(blobKey, ownerId);
   }
 }
 

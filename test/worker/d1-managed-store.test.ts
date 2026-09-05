@@ -232,6 +232,20 @@ void test("D1 store insert/get round trip reads through a first-primary session"
   assert.equal(await store.getById("missing"), null);
 });
 
+void test("PRD 721: managed authorization reads fail closed without D1 Sessions", async () => {
+  const db = new FakeD1();
+  const unconstrained: D1DatabaseLike = {
+    prepare: (query) => db.prepare(query),
+    batch: (statements) => db.batch(statements),
+  };
+  const store = new D1ManagedTokenStore(unconstrained);
+  await assert.rejects(store.getById("a"), (error: unknown) => {
+    assert.ok(error instanceof ManagedTokenError);
+    assert.equal(error.code, "storage_unavailable");
+    return true;
+  });
+});
+
 void test("D1 store insert duplicate surfaces duplicate_id, outage fails closed", async () => {
   const db = new FakeD1();
   const store = new D1ManagedTokenStore(db);

@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import { timingSafeEqual } from "node:crypto";
+import { createServer, type Server } from "node:http";
 import test from "node:test";
+import { z } from "zod";
 
+import { createContainerApp } from "../../src/container/app.js";
+import { createMcpRegistry, type McpRequestContext } from "../../src/mcp/registry.js";
+import { MCP_MODERN_PROTOCOL_VERSION } from "../../src/mcp/server.js";
+import { structuredToolResult } from "../../src/mcp/results.js";
 import type { TimingSafeSubtleCrypto } from "../../src/worker/auth.js";
-import { handleWorkerRequest, type WorkerEnv } from "../../src/worker/handler.js";
+import {
+  CONTAINER_INSTANCE_NAME,
+  handleWorkerRequest,
+  type WorkerEnv,
+} from "../../src/worker/handler.js";
+import { INTERNAL_CONTEXT_HEADER } from "../../src/worker/internal-context.js";
 import {
   BoundedAuditLog,
   createManagedCredential,
@@ -94,7 +105,7 @@ async function fetchOAuthAccessToken(env: TestEnv): Promise<string> {
     new Request("https://groundlane.test/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: "none" }),
+      body: JSON.stringify({ redirect_uris: [redirectUri], application_type: "web", token_endpoint_auth_method: "none" }),
     }),
     env,
     ctx,
@@ -143,6 +154,19 @@ async function fetchOAuthAccessToken(env: TestEnv): Promise<string> {
   const tokenBody: unknown = await tokenRes.json();
   const { access_token: accessToken } = tokenBody as { access_token: string };
   return accessToken;
+}
+
+async function listen(server: Server): Promise<number> {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("missing port");
+  return address.port;
+}
+
+async function close(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error === undefined ? resolve() : reject(error));
+  });
 }
 
 // PRD 695/712: admin is rejected on data-plane routes.
@@ -211,7 +235,7 @@ void test("712 legacy bearer matrix", async () => {
     new Request("https://groundlane.test/register", {
       method: "POST",
       headers: { authorization: `Bearer ${LEGACY}`, "content-type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], token_endpoint_auth_method: "none" }),
+      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], application_type: "web", token_endpoint_auth_method: "none" }),
     }),
     env,
     subtle,
@@ -243,7 +267,7 @@ void test("712 managed bearer matrix", async () => {
     new Request("https://groundlane.test/register", {
       method: "POST",
       headers: { authorization: `Bearer ${managed.rawToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], token_endpoint_auth_method: "none" }),
+      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], application_type: "web", token_endpoint_auth_method: "none" }),
     }),
     env,
     subtle,
@@ -275,7 +299,7 @@ void test("712 oauth bearer matrix", async () => {
     new Request("https://groundlane.test/register", {
       method: "POST",
       headers: { authorization: `Bearer ${oauth}`, "content-type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], token_endpoint_auth_method: "none" }),
+      body: JSON.stringify({ redirect_uris: ["https://client.example/callback"], application_type: "web", token_endpoint_auth_method: "none" }),
     }),
     env,
     subtle,
@@ -404,8 +428,24 @@ void test("Worker and Container select signed-context mode from the same signing
   const response = await handleWorkerRequest(
     new Request("https://groundlane.test/mcp", {
       method: "POST",
-      headers: { authorization: `Bearer ${LEGACY}` },
-      body: "{}",
+      headers: {
+        authorization: `Bearer ${LEGACY}`,
+        "content-type": "application/json",
+        "mcp-protocol-version": "2026-07-28",
+        "mcp-method": "tools/list",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: {
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": { name: "signed-edge", version: "1" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+      }),
     }),
     env,
     subtle,
@@ -416,6 +456,149 @@ void test("Worker and Container select signed-context mode from the same signing
   const forwarded = containerCalls[0] as Request;
   assert.ok((forwarded.headers.get(INTERNAL_CONTEXT_HEADER) ?? "").length > 0);
   assert.equal(forwarded.headers.get("authorization"), null);
+  assert.equal(forwarded.headers.get("mcp-protocol-version"), "2026-07-28");
+  assert.equal(forwarded.headers.get("mcp-method"), "tools/list");
+  const forwardedBody: unknown = await forwarded.clone().json();
+  assert.equal(
+    typeof forwardedBody === "object" &&
+      forwardedBody !== null &&
+      "method" in forwardedBody
+      ? forwardedBody.method
+      : undefined,
+    "tools/list",
+  );
+});
+
+void test("modern static, managed, and OAuth requests cross the signed Worker-to-real-Container boundary", async () => {
+  const signingSecret = "internal-signing-secret-0123456789abcdef";
+  const contexts: McpRequestContext[] = [];
+  const receivedValues: string[] = [];
+  const forwarded: Headers[] = [];
+  const managed = await setupManaged();
+  const app = createContainerApp({
+    internalSigningSecret: signingSecret,
+    expectedAudience: CONTAINER_INSTANCE_NAME,
+    clock: managed.clock,
+    mcpProtocolMode: "dual",
+    registryFactory(context) {
+      if (context !== undefined) contexts.push(context);
+      return createMcpRegistry([{
+        name: "worker-container-boundary",
+        register(server): void {
+          server.registerTool(
+            "boundary_echo",
+            {
+              inputSchema: z.object({ value: z.string() }),
+              outputSchema: z.object({ value: z.string() }),
+            },
+            ({ value }) => {
+              receivedValues.push(value);
+              return structuredToolResult({ value });
+            },
+          );
+        },
+      }]);
+    },
+  });
+  const server = createServer(app);
+  const port = await listen(server);
+  const { env } = mockEnv({
+    GROUNDLANE_INTERNAL_SIGNING_SECRET: signingSecret,
+    __MANAGED_STORE__: managed.store,
+    __MANAGED_CLOCK__: managed.clock,
+    GROUNDLANE_CONTAINER: {
+      getByName() {
+        return {
+          start: () => Promise.resolve(),
+          fetch: async (request: Request) => {
+            forwarded.push(new Headers(request.headers));
+            const source = new URL(request.url);
+            const body = request.method === "GET" || request.method === "HEAD"
+              ? undefined
+              : await request.arrayBuffer();
+            return fetch(`http://127.0.0.1:${String(port)}${source.pathname}${source.search}`, {
+              method: request.method,
+              headers: request.headers,
+              ...(body === undefined ? {} : { body }),
+              signal: request.signal,
+            });
+          },
+        };
+      },
+    },
+  });
+
+  try {
+    const oauthToken = await fetchOAuthAccessToken(env);
+    const cases = [
+      { label: "static", token: LEGACY },
+      { label: "managed", token: managed.rawToken },
+      { label: "oauth", token: oauthToken },
+    ];
+    for (const [index, entry] of cases.entries()) {
+      const body = {
+        jsonrpc: "2.0",
+        id: index + 1,
+        method: "tools/call",
+        params: {
+          name: "boundary_echo",
+          arguments: { value: entry.label },
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": MCP_MODERN_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientInfo": { name: "boundary-test", version: "1" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+      };
+      const response = await handleWorkerRequest(
+        new Request("https://groundlane.test/mcp", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${entry.token}`,
+            "content-type": "application/json",
+            "mcp-protocol-version": MCP_MODERN_PROTOCOL_VERSION,
+            "mcp-method": "tools/call",
+            "mcp-name": "boundary_echo",
+            "x-groundlane-internal-context": "caller-forged-context",
+            "x-groundlane-principal": "attacker",
+            "x-request-id": "caller-forged-request-id",
+          },
+          body: JSON.stringify(body),
+        }),
+        env,
+        subtle,
+        ctx,
+      );
+      assert.equal(response.status, 200, entry.label);
+      const payload = z.object({
+        result: z.object({
+          structuredContent: z.object({ value: z.string() }),
+        }),
+      }).passthrough().parse(await response.json());
+      assert.equal(payload.result.structuredContent.value, entry.label);
+    }
+
+    assert.deepEqual(receivedValues, ["static", "managed", "oauth"]);
+    assert.deepEqual(contexts.map((value) => value.principal.authMethod), [
+      "static_bearer",
+      "managed_token",
+      "oauth",
+    ]);
+    assert.equal(contexts[0]?.credentialBinding, "static:legacy");
+    assert.equal(contexts[1]?.credentialBinding, `managed:${managed.id}`);
+    assert.match(contexts[2]?.credentialBinding ?? "", /^oauth:/u);
+    for (const headers of forwarded) {
+      assert.equal(headers.get("authorization"), null);
+      assert.equal(headers.get("x-groundlane-principal"), null);
+      assert.notEqual(headers.get("x-request-id"), "caller-forged-request-id");
+      assert.match(headers.get(INTERNAL_CONTEXT_HEADER) ?? "", /^v1\./u);
+      assert.equal(headers.get("mcp-protocol-version"), MCP_MODERN_PROTOCOL_VERSION);
+      assert.equal(headers.get("mcp-method"), "tools/call");
+      assert.equal(headers.get("mcp-name"), "boundary_echo");
+    }
+  } finally {
+    await close(server);
+  }
 });
 
 void test("signed-context proxy awaits container start before forwarding", async () => {

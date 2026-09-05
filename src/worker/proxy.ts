@@ -19,6 +19,11 @@ export type WorkerEnv = Pick<
   | "GROUNDLANE_INTERNAL_SIGNING_SECRET"
   | "MANAGED_TOKEN_D1"
   | "GROUNDLANE_ARTIFACTS"
+  | "R2_ACCOUNT_ID"
+  | "R2_BUCKET_NAME"
+  | "R2_ACCESS_KEY_ID"
+  | "R2_SECRET_ACCESS_KEY"
+  | "LINKUP_API_KEY"
 > & {
   GROUNDLANE_CONTAINER: ContainerNamespace;
 };
@@ -81,6 +86,7 @@ export async function proxyToContainer(
     });
     return new Response(response.body, { status: response.status, headers });
   } catch (error: unknown) {
+    if (request.signal.aborted) throw error;
     logWorkerEvent({
       level: "error",
       event: error instanceof Error ? "container_request_failed" : "unknown_failure",

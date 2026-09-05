@@ -1,0 +1,55 @@
+{
+  "name": "rich_json",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "$defs": {
+      "value": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "properties": {
+      "kind": {
+        "enum": ["text", "count"]
+      },
+      "value": {
+        "$ref": "#/$defs/value"
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "required": ["kind"],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "text"
+            }
+          }
+        },
+        "then": {
+          "required": ["value"]
+        },
+        "else": {
+          "required": ["count"]
+        }
+      }
+    ],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "prefixItems": [
+      {
+        "const": "accepted"
+      }
+    ],
+    "minItems": 1,
+    "maxItems": 1
+  }
+}

@@ -479,17 +479,119 @@ export interface DocumentCacheExecution<T> {
   readonly provenance: BillingProvenance;
 }
 
-export interface DocumentCacheProcessParams<T> {
+/**
+ * Callback-free identity for one cache decision. This is the request shape
+ * transported by the Container/Worker cache bridge; parsing stays with the
+ * caller and never crosses the cache boundary as a function.
+ */
+export interface DocumentCacheIdentity {
   readonly mode: CacheMode;
   readonly key: ParsedPayloadCacheKey;
   readonly sourceIdentity: string;
   readonly sourceVersion: string;
   readonly ownershipScope: string;
   readonly nowMs: number;
+  readonly sourceExpiresAt?: number;
   readonly requestedTtlSeconds?: number;
   readonly toolName?: string;
   readonly networkPolicyChecked?: boolean;
+}
+
+/** Stable credential-scoped identity for one source binding across runtimes. */
+export function documentCacheBindingIdentity(
+  source: unknown,
+  credentialBinding: string,
+): string {
+  const credentialHash = createHash("sha256").update(credentialBinding).digest("hex");
+  return `source-${createHash("sha256").update(JSON.stringify({ source, credentialHash })).digest("hex")}`;
+}
+
+/** Applies an absolute source expiry using the runtime's current request time. */
+export function cacheConfigForIdentity(
+  config: CacheConfig,
+  identity: Pick<DocumentCacheIdentity, "nowMs" | "sourceExpiresAt">,
+): CacheConfig {
+  if (identity.sourceExpiresAt === undefined) return config;
+  const remainingSeconds = Math.max(
+    0,
+    Math.floor((identity.sourceExpiresAt - identity.nowMs) / 1_000),
+  );
+  return {
+    ...config,
+    sourceExpirySeconds: config.sourceExpirySeconds === undefined
+      ? remainingSeconds
+      : Math.min(config.sourceExpirySeconds, remainingSeconds),
+  };
+}
+
+export interface DocumentCacheProcessParams<T> extends DocumentCacheIdentity {
   readonly execute: () => DocumentCacheExecution<T>;
+}
+
+export type DocumentCacheMissDisposition =
+  | "ordinary"
+  | "revoked"
+  | "disabled"
+  | "bypass"
+  | "refresh";
+
+/** Optimistic binding revision captured by lookup for a later ordinary commit. */
+export interface DocumentCacheCommitFence {
+  readonly bindingRevision: number | null;
+}
+
+/** Serializable decision returned before the caller performs fresh parsing. */
+export interface DocumentCacheLookupMiss {
+  readonly cached: false;
+  readonly disposition: DocumentCacheMissDisposition;
+  readonly commitFence?: DocumentCacheCommitFence;
+  readonly degraded?: boolean;
+  readonly cacheError?: string;
+}
+
+/** Serializable lookup response; no execution callback is part of the shape. */
+export type DocumentCacheLookupResult<T> =
+  | {
+      readonly cached: true;
+      readonly data: T;
+      readonly hit: CacheHitResult;
+    }
+  | DocumentCacheLookupMiss;
+
+export interface DocumentCacheCommitResult<T> {
+  readonly cached: false;
+  readonly data: T;
+  readonly provenance: BillingProvenance;
+  readonly stored: boolean;
+  readonly createdAt?: number;
+  readonly expiresAt?: number;
+  readonly degraded?: boolean;
+  readonly cacheError?: string;
+}
+
+/** Per-request controls stay outside the serializable cache identity. */
+export interface DocumentCacheOperationContext {
+  readonly signal?: AbortSignal;
+  readonly deadlineAt?: number;
+}
+
+/**
+ * Structural two-phase cache port. A remote implementation may transport
+ * lookup/commit independently while an in-process repository can wrap both.
+ */
+export interface DocumentCacheRuntimePort<T> {
+  lookup(
+    config: CacheConfig,
+    identity: DocumentCacheIdentity,
+    context?: DocumentCacheOperationContext,
+  ): Promise<DocumentCacheLookupResult<T>>;
+  commit(
+    config: CacheConfig,
+    identity: DocumentCacheIdentity,
+    execution: DocumentCacheExecution<T>,
+    decision: DocumentCacheLookupMiss,
+    context?: DocumentCacheOperationContext,
+  ): Promise<DocumentCacheCommitResult<T>>;
 }
 
 export type DocumentCacheProcessResult<T> =
@@ -499,16 +601,7 @@ export type DocumentCacheProcessResult<T> =
       readonly hit: CacheHitResult;
       readonly cacheError?: string;
     }
-  | {
-      readonly cached: false;
-      readonly data: T;
-      readonly provenance: BillingProvenance;
-      readonly stored: boolean;
-      readonly createdAt?: number;
-      readonly expiresAt?: number;
-      readonly degraded?: boolean;
-      readonly cacheError?: string;
-    };
+  | DocumentCacheCommitResult<T>;
 
 /** Durable-backend port: D1/KV snapshots plug in here. */
 export interface DocumentCacheStorePort {
@@ -697,13 +790,18 @@ export function processDocumentCache<T>(
   if (!Number.isInteger(params.nowMs) || params.nowMs <= 0) {
     throw cacheRuntimeError("nowMs must be a positive integer");
   }
+  if (params.sourceExpiresAt !== undefined &&
+      (!Number.isSafeInteger(params.sourceExpiresAt) || params.sourceExpiresAt <= 0)) {
+    throw cacheRuntimeError("sourceExpiresAt must be a positive integer");
+  }
   validateCacheKey(params.key);
   validateOwnershipScope(params.ownershipScope, params.key.ownershipScope);
   if (params.networkPolicyChecked === false) {
     validateNetworkPolicyRequired(DEFAULT_CACHE_SCOPE_POLICY, false);
   }
 
-  const resolved = resolveCacheMode(params.mode, config);
+  const effectiveConfig = cacheConfigForIdentity(config, params);
+  const resolved = resolveCacheMode(params.mode, effectiveConfig);
   let effectiveMode = resolved.effectiveMode;
   if (isExcludedTool(params.toolName)) {
     effectiveMode = "bypass";
@@ -726,7 +824,7 @@ export function processDocumentCache<T>(
   }
 
   const keyString = documentCacheKeyString(params.key);
-  const ttlSeconds = resolveEffectiveTtl(params.requestedTtlSeconds, config);
+  const ttlSeconds = resolveEffectiveTtl(params.requestedTtlSeconds, effectiveConfig);
   const expiresAt = params.nowMs + ttlSeconds * 1000;
 
   if (effectiveMode === "refresh") {

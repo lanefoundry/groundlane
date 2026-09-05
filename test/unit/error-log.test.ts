@@ -15,14 +15,24 @@ type RegisteredHandler = (
   },
   extra: { signal?: AbortSignal },
 ) => unknown;
+type SdkRegisteredHandler = (
+  input: {
+    tool?: string;
+    code?: string;
+    hintCode?: string;
+    since?: string;
+    limit?: number;
+  },
+  ctx: { mcpReq: { signal?: AbortSignal } },
+) => unknown;
 
 function fakeServer() {
   const handlers = new Map<string, RegisteredHandler>();
   return {
     handlers,
     server: {
-      registerTool(name: string, _definition: unknown, handler: RegisteredHandler): void {
-        handlers.set(name, handler);
+      registerTool(name: string, _definition: unknown, handler: SdkRegisteredHandler): void {
+        handlers.set(name, (input, extra) => handler(input, { mcpReq: extra }));
       },
     },
   };

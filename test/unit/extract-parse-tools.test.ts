@@ -11,15 +11,17 @@ import { createWebExtractModule } from "../../src/tools/web-extract.js";
 import { createParseModule } from "../../src/tools/parse.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RegisteredHandler = (input: Record<string, any>, extra: { signal?: AbortSignal }) => unknown;
+type RegisteredInput = Record<string, any>;
+type RegisteredHandler = (input: RegisteredInput, extra: { signal?: AbortSignal }) => unknown;
+type SdkRegisteredHandler = (input: RegisteredInput, ctx: { mcpReq: { signal?: AbortSignal } }) => unknown;
 
 function fakeServer() {
   const handlers = new Map<string, RegisteredHandler>();
   return {
     handlers,
     server: {
-      registerTool(name: string, _definition: unknown, handler: RegisteredHandler): void {
-        handlers.set(name, handler);
+      registerTool(name: string, _definition: unknown, handler: SdkRegisteredHandler): void {
+        handlers.set(name, (input, extra) => handler(input, { mcpReq: extra }));
       },
     },
   };

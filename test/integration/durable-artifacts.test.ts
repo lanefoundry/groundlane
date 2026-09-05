@@ -12,10 +12,36 @@ import {
   type PutDurableArtifactInput,
 } from "../../src/core/durable-artifacts.js";
 import type {
+  DurableRecordStorePort,
+} from "../../src/core/durable-store.js";
+import type {
   ImmutableBlobPort,
   ImmutableBlobPutResult,
   ImmutableBlobStat,
 } from "../../src/core/immutable-blob.js";
+
+const caller = { tenantId: "tenant-a", ownerId: "owner-a", credentialBinding: "credential-a" };
+
+void test("durable repository rejects bytes when owner revocation races the blob read", async (t) => {
+  const state = await fixture(t);
+  const records = new SqliteDurableRecordStore(state.path, "artifacts");
+  t.after(() => records.close());
+  const repository = new DurableArtifactRepository(records, state.blobs);
+  const created = await repository.put(artifactInput("read-race", { kind: "source", mediaType: "text/plain", filename: "source.txt" }));
+  const get = state.blobs.get.bind(state.blobs);
+  state.blobs.get = async (input) => {
+    const bytes = await get(input);
+    await repository.deleteExplicit("read-race", caller, created.record.revision, 200);
+    return bytes;
+  };
+  await assert.rejects(repository.readVerified("read-race", caller, 150, 1024), /revoked|unavailable/u);
+});
+
+function firstBlobKey(blobs: FakeImmutableBlobStore): string {
+  const key = blobs.objects.keys().next().value;
+  assert.ok(key);
+  return key;
+}
 
 class FakeImmutableBlobStore implements ImmutableBlobPort {
   readonly objects = new Map<string, { ownerId: string; digest: string; bytes: Uint8Array }>();
@@ -75,7 +101,9 @@ function artifactInput(
   const bytes = new TextEncoder().encode(`bytes:${refId}`);
   return {
     refId,
-    ownerId: "owner-a",
+    ...caller,
+    retentionPolicy: "bounded",
+    deletionPolicy: "on_expiry",
     contentHash: `sha256-${createHash("sha256").update(bytes).digest("hex")}`,
     expiresAt: 10_000,
     bytes,
@@ -101,7 +129,7 @@ void test("source, canonical, and projection metadata survive a SQLite restart",
   assert.equal((await reopened.get("source-1"))?.metadata.details.kind, "source");
   assert.equal((await reopened.get("canonical-1"))?.metadata.details.kind, "canonical");
   assert.equal((await reopened.get("projection-1"))?.metadata.details.kind, "projection");
-  assert.deepEqual(await reopened.readVerified("projection-1", "owner-a", 200, 1024), new TextEncoder().encode("bytes:projection-1"));
+  assert.deepEqual(await reopened.readVerified("projection-1", caller, 200, 1024), new TextEncoder().encode("bytes:projection-1"));
 });
 
 void test("pending bytes are unreadable until blob verification wins its CAS", async (t) => {
@@ -112,13 +140,13 @@ void test("pending bytes are unreadable until blob verification wins its CAS", a
   const left = new DurableArtifactRepository(leftStore, blobs);
   const right = new DurableArtifactRepository(rightStore, blobs);
   const created = await left.put(artifactInput("pending-1", { kind: "source", mediaType: "text/plain", filename: "pending.txt" }, { verification: "pending" }));
-  await assert.rejects(left.readVerified("pending-1", "owner-a", 200, 1024), /not verified/u);
+  await assert.rejects(left.readVerified("pending-1", caller, 200, 1024), /not verified/u);
 
-  const verified = await left.markVerified("pending-1", "owner-a", created.record.revision, 300);
+  const verified = await left.markVerified("pending-1", caller, created.record.revision, 300);
   assert.equal(verified.status, "updated");
-  const stale = await right.markVerified("pending-1", "owner-a", created.record.revision, 301);
+  const stale = await right.markVerified("pending-1", caller, created.record.revision, 301);
   assert.equal(stale.status, "conflict");
-  assert.deepEqual(await right.readVerified("pending-1", "owner-a", 400, 1024), new TextEncoder().encode("bytes:pending-1"));
+  assert.deepEqual(await right.readVerified("pending-1", caller, 400, 1024), new TextEncoder().encode("bytes:pending-1"));
 });
 
 void test("logical expiry is distinct from cleanup pending and physical deletion", async (t) => {
@@ -126,18 +154,18 @@ void test("logical expiry is distinct from cleanup pending and physical deletion
   const store = new SqliteDurableRecordStore(path, "artifacts");
   t.after(() => store.close());
   const repository = new DurableArtifactRepository(store, blobs);
-  const created = await repository.put(artifactInput("expiry-1", { kind: "source", mediaType: "text/plain", filename: "expiry.txt" }, { expiresAt: 500 }));
-  const blobKey = created.record.metadata.blobKey;
+  await repository.put(artifactInput("expiry-1", { kind: "source", mediaType: "text/plain", filename: "expiry.txt" }, { expiresAt: 500 }));
+  const blobKey = firstBlobKey(blobs);
 
   const page = await repository.expireDue(500, null, 10);
   assert.equal(page.expired[0]?.metadata.status, "logically_expired");
   assert.ok(blobs.objects.has(blobKey));
-  await assert.rejects(repository.readVerified("expiry-1", "owner-a", 500, 1024), /expired/u);
+  await assert.rejects(repository.readVerified("expiry-1", caller, 500, 1024), /expired/u);
 
-  const pending = await repository.markCleanupPending("expiry-1", "owner-a", page.expired[0]?.revision ?? 0, 600);
+  const pending = await repository.markCleanupPending("expiry-1", caller, page.expired[0]?.revision ?? 0, 600);
   assert.equal(pending.status, "updated");
   assert.ok(blobs.objects.has(blobKey));
-  assert.equal(await repository.cleanupPending("expiry-1", "owner-a", pending.status === "updated" ? pending.record.revision : 0), "deleted");
+  assert.equal(await repository.cleanupPending("expiry-1", caller, pending.status === "updated" ? pending.record.revision : 0), "deleted");
   assert.equal(blobs.objects.has(blobKey), false);
   assert.equal(await repository.get("expiry-1"), null);
 });
@@ -148,16 +176,17 @@ void test("explicit delete revokes immediately and owner-wide deletion skips for
   t.after(() => store.close());
   const repository = new DurableArtifactRepository(store, blobs);
   const owned = await repository.put(artifactInput("owned-1", { kind: "source", mediaType: "text/plain", filename: "owned.txt" }));
+  const blobKey = firstBlobKey(blobs);
   await repository.put(artifactInput("foreign-1", { kind: "source", mediaType: "text/plain", filename: "foreign.txt" }, { ownerId: "owner-b" }));
 
-  const deleted = await repository.deleteExplicit("owned-1", "owner-a", owned.record.revision, 200);
+  const deleted = await repository.deleteExplicit("owned-1", caller, owned.record.revision, 200);
   assert.equal(deleted.status, "updated");
-  await assert.rejects(repository.readVerified("owned-1", "owner-a", 201, 1024), /revoked/u);
-  assert.ok(blobs.objects.has(owned.record.metadata.blobKey));
+  await assert.rejects(repository.readVerified("owned-1", caller, 201, 1024), /revoked/u);
+  assert.ok(blobs.objects.has(blobKey));
 
-  const ownerDelete = await repository.deleteOwnerArtifacts("owner-a", ["foreign-1"], 300);
+  const ownerDelete = await repository.deleteOwnerArtifacts(caller, ["foreign-1"], 300);
   assert.deepEqual(ownerDelete, { revoked: [], skipped: ["foreign-1"] });
-  assert.deepEqual(await repository.readVerified("foreign-1", "owner-b", 301, 1024), new TextEncoder().encode("bytes:foreign-1"));
+  assert.deepEqual(await repository.readVerified("foreign-1", { ...caller, ownerId: "owner-b" }, 301, 1024), new TextEncoder().encode("bytes:foreign-1"));
 });
 
 void test("physical cleanup refuses a blob whose owner metadata no longer matches", async (t) => {
@@ -166,16 +195,17 @@ void test("physical cleanup refuses a blob whose owner metadata no longer matche
   t.after(() => store.close());
   const repository = new DurableArtifactRepository(store, blobs);
   const created = await repository.put(artifactInput("orphan-safe", { kind: "source", mediaType: "text/plain", filename: "safe.txt" }));
-  const deleted = await repository.deleteExplicit("orphan-safe", "owner-a", created.record.revision, 200);
+  const blobKey = firstBlobKey(blobs);
+  const deleted = await repository.deleteExplicit("orphan-safe", caller, created.record.revision, 200);
   assert.equal(deleted.status, "updated");
-  const pending = await repository.markCleanupPending("orphan-safe", "owner-a", deleted.status === "updated" ? deleted.record.revision : 0, 300);
+  const pending = await repository.markCleanupPending("orphan-safe", caller, deleted.status === "updated" ? deleted.record.revision : 0, 300);
   assert.equal(pending.status, "updated");
-  const object = blobs.objects.get(created.record.metadata.blobKey);
+  const object = blobs.objects.get(blobKey);
   assert.ok(object !== undefined);
-  blobs.objects.set(created.record.metadata.blobKey, { ...object, ownerId: "owner-b" });
+  blobs.objects.set(blobKey, { ...object, ownerId: "owner-b" });
 
-  assert.equal(await repository.cleanupPending("orphan-safe", "owner-a", pending.status === "updated" ? pending.record.revision : 0), "owner_mismatch");
-  assert.ok(blobs.objects.has(created.record.metadata.blobKey));
+  assert.equal(await repository.cleanupPending("orphan-safe", caller, pending.status === "updated" ? pending.record.revision : 0), "owner_mismatch");
+  assert.ok(blobs.objects.has(blobKey));
   assert.equal((await repository.get("orphan-safe"))?.metadata.status, "physical_cleanup_pending");
 });
 
@@ -184,7 +214,8 @@ void test("refId conflicts remove only the new orphan blob and preserve the orig
   const store = new SqliteDurableRecordStore(path, "artifacts");
   t.after(() => store.close());
   const repository = new DurableArtifactRepository(store, blobs);
-  const original = await repository.put(artifactInput("stable-ref", { kind: "source", mediaType: "text/plain", filename: "original.txt" }));
+  await repository.put(artifactInput("stable-ref", { kind: "source", mediaType: "text/plain", filename: "original.txt" }));
+  const blobKey = firstBlobKey(blobs);
   const replacementBytes = new TextEncoder().encode("replacement bytes");
   const replacementHash = `sha256-${createHash("sha256").update(replacementBytes).digest("hex")}`;
 
@@ -196,6 +227,171 @@ void test("refId conflicts remove only the new orphan blob and preserve the orig
     /different metadata/u,
   );
   assert.equal(blobs.objects.size, 1);
-  assert.ok(blobs.objects.has(original.record.metadata.blobKey));
-  assert.deepEqual(await repository.readVerified("stable-ref", "owner-a", 200, 1024), new TextEncoder().encode("bytes:stable-ref"));
+  assert.ok(blobs.objects.has(blobKey));
+  assert.deepEqual(await repository.readVerified("stable-ref", caller, 200, 1024), new TextEncoder().encode("bytes:stable-ref"));
+});
+
+for (const foreign of [
+  { ...caller, tenantId: "tenant-b" },
+  { ...caller, credentialBinding: "credential-b" },
+]) {
+  void test(`same-owner artifact access rejects foreign ${foreign.tenantId === caller.tenantId ? "credential" : "tenant"} after restart`, async (t) => {
+    const { path, blobs } = await fixture(t);
+    const firstStore = new SqliteDurableRecordStore(path, "artifacts");
+    const first = new DurableArtifactRepository(firstStore, blobs);
+    const created = await first.put(artifactInput("isolated", {
+      kind: "source", mediaType: "text/plain", filename: "isolated.txt",
+    }, { verification: "pending" }));
+    firstStore.close();
+    const store = new SqliteDurableRecordStore(path, "artifacts");
+    t.after(() => store.close());
+    const repository = new DurableArtifactRepository(store, blobs);
+    const unavailable = /^Error: durable artifact is unavailable$/u;
+    await assert.rejects(repository.readVerified("isolated", foreign, 200, 1024), unavailable);
+    await assert.rejects(repository.readVerified("isolated", foreign, 10_001, 1024), unavailable);
+    await assert.rejects(repository.markVerified("isolated", foreign, created.record.revision, 200), unavailable);
+    await assert.rejects(repository.deleteExplicit("isolated", foreign, created.record.revision, 200), unavailable);
+    assert.deepEqual(await repository.deleteOwnerArtifacts(foreign, ["isolated"], 200), {
+      revoked: [], skipped: ["isolated"],
+    });
+    assert.deepEqual(await repository.get("isolated"), created.record);
+    const verified = await repository.markVerified("isolated", caller, created.record.revision, 300);
+    assert.equal(verified.status, "updated");
+    assert.deepEqual(await repository.readVerified("isolated", caller, 301, 1024), new TextEncoder().encode("bytes:isolated"));
+    const deleted = await repository.deleteExplicit("isolated", caller, verified.status === "updated" ? verified.record.revision : 0, 400);
+    assert.equal(deleted.status, "updated");
+    const revision = deleted.status === "updated" ? deleted.record.revision : 0;
+    await assert.rejects(repository.markCleanupPending("isolated", foreign, revision, 500), unavailable);
+    const pending = await repository.markCleanupPending("isolated", caller, revision, 500);
+    assert.equal(pending.status, "updated");
+    await assert.rejects(repository.cleanupPending("isolated", foreign, pending.status === "updated" ? pending.record.revision : 0), unavailable);
+    assert.equal(blobs.objects.size, 1);
+    assert.equal((await repository.get("isolated"))?.metadata.status, "physical_cleanup_pending");
+  });
+}
+
+void test("public artifact put/get/CAS/expiry records omit blob coordinates and credential material", async (t) => {
+  const { path, blobs } = await fixture(t);
+  const store = new SqliteDurableRecordStore(path, "artifacts");
+  t.after(() => store.close());
+  const repository = new DurableArtifactRepository(store, blobs);
+  const input = artifactInput("public-shape", { kind: "source", mediaType: "text/plain", filename: "public.txt" }, {
+    verification: "pending", expiresAt: 1_000,
+  });
+  const created = await repository.put(input);
+  const duplicate = await repository.put(input);
+  const fetched = await repository.get(input.refId);
+  const updated = await repository.markVerified(input.refId, caller, created.record.revision, 200);
+  const stale = await repository.markVerified(input.refId, caller, created.record.revision, 201);
+  assert.equal(stale.status, "conflict");
+  const expired = await repository.expireDue(1_000, null, 10);
+  assert.equal(expired.expired.length, 1);
+  const credentialHash = createHash("sha256").update(caller.credentialBinding).digest("hex");
+  for (const result of [created, duplicate, fetched, updated, stale, expired]) {
+    const json = JSON.stringify(result);
+    assert.doesNotMatch(json, /blobKey|credentialBinding|presigned|blobs\//u);
+    assert.ok(!json.includes(caller.credentialBinding));
+    assert.ok(!json.includes(credentialHash));
+    assert.ok(!json.includes(firstBlobKey(blobs)));
+  }
+});
+
+for (const commitBeforeFailure of [false, true]) {
+  void test(`metadata write failure ${commitBeforeFailure ? "after commit preserves referenced blob" : "before commit rolls back only new blob"}`, async (t) => {
+    const { path, blobs } = await fixture(t);
+    const store = new SqliteDurableRecordStore(path, "artifacts");
+    const underlying = new DurableArtifactRepository(store, blobs);
+    await underlying.put(artifactInput("existing-safe", { kind: "source", mediaType: "text/plain", filename: "safe.txt" }));
+    const faulty: DurableRecordStorePort = {
+      get: (key) => store.get(key),
+      createIfAbsent: async (input) => {
+        if (commitBeforeFailure) await store.createIfAbsent(input);
+        throw new Error("metadata acknowledgement lost");
+      },
+      compareAndSwap: (key, revision, update) => store.compareAndSwap(key, revision, update),
+      deleteIfRevision: (key, revision) => store.deleteIfRevision(key, revision),
+      scanExpired: (nowMs, cursor, limit) => store.scanExpired(nowMs, cursor, limit),
+    };
+    const repository = new DurableArtifactRepository(faulty, blobs);
+    await assert.rejects(repository.put(artifactInput("existing-safe", {
+      kind: "source", mediaType: "text/plain", filename: "safe.txt",
+    })), /metadata acknowledgement lost/u);
+    await assert.rejects(repository.put(artifactInput("write-failure", {
+      kind: "source", mediaType: "text/plain", filename: "failed.txt",
+    })), /metadata acknowledgement lost/u);
+    store.close();
+    const reopenedStore = new SqliteDurableRecordStore(path, "artifacts");
+    t.after(() => reopenedStore.close());
+    const reopened = new DurableArtifactRepository(reopenedStore, blobs);
+    assert.deepEqual(await reopened.readVerified("existing-safe", caller, 200, 1024), new TextEncoder().encode("bytes:existing-safe"));
+    if (commitBeforeFailure) {
+      assert.deepEqual(await reopened.readVerified("write-failure", caller, 200, 1024), new TextEncoder().encode("bytes:write-failure"));
+    } else {
+      assert.equal(await reopened.get("write-failure"), null);
+      assert.equal(blobs.objects.size, 1);
+    }
+  });
+}
+
+void test("expiry sweep defaults to a bounded 100-record page and leaves future artifacts readable", async (t) => {
+  const { path, blobs } = await fixture(t);
+  const store = new SqliteDurableRecordStore(path, "artifacts");
+  t.after(() => store.close());
+  const repository = new DurableArtifactRepository(store, blobs);
+  for (let index = 0; index < 101; index++) {
+    await repository.put(artifactInput(`expired-${String(index).padStart(3, "0")}`, {
+      kind: "source", mediaType: "text/plain", filename: "expired.txt",
+    }, { expiresAt: 500 }));
+  }
+  const future = artifactInput("future", { kind: "source", mediaType: "text/plain", filename: "future.txt" });
+  await repository.put(future);
+  const first = await repository.sweepExpired(600);
+  assert.equal(first.deleted, 100);
+  assert.ok(first.nextCursor !== null);
+  assert.equal(blobs.objects.size, 2);
+  const second = await repository.sweepExpired(600, first.nextCursor);
+  assert.deepEqual(second, { deleted: 1, nextCursor: null });
+  assert.equal(blobs.objects.size, 1);
+  assert.deepEqual(await repository.readVerified("future", caller, 600, 1024), future.bytes);
+  assert.equal((await repository.get("future"))?.metadata.status, "active");
+});
+
+void test("expiry sweep retains due metadata after transient blob deletion failure and retries after restart", async (t) => {
+  const { path, blobs } = await fixture(t);
+  const firstStore = new SqliteDurableRecordStore(path, "artifacts");
+  let failDelete = true;
+  const flaky: ImmutableBlobPort = {
+    putIfAbsent: (input) => blobs.putIfAbsent(input),
+    stat: (key) => blobs.stat(key),
+    get: (input) => blobs.get(input),
+    deleteIfOwner: (key, owner) => {
+      if (failDelete) { failDelete = false; return Promise.reject(new Error("temporary blob outage")); }
+      return blobs.deleteIfOwner(key, owner);
+    },
+  };
+  const first = new DurableArtifactRepository(firstStore, flaky);
+  await first.put(artifactInput("cleanup-retry", { kind: "source", mediaType: "text/plain", filename: "retry.txt" }, { expiresAt: 500 }));
+  assert.deepEqual(await first.sweepExpired(600), { deleted: 0, nextCursor: null });
+  assert.equal((await first.get("cleanup-retry"))?.metadata.status, "physical_cleanup_pending");
+  assert.equal(blobs.objects.size, 1);
+  firstStore.close();
+  const reopenedStore = new SqliteDurableRecordStore(path, "artifacts");
+  t.after(() => reopenedStore.close());
+  const reopened = new DurableArtifactRepository(reopenedStore, flaky);
+  assert.deepEqual(await reopened.sweepExpired(700), { deleted: 1, nextCursor: null });
+  assert.equal(await reopened.get("cleanup-retry"), null);
+  assert.equal(blobs.objects.size, 0);
+});
+
+void test("read-triggered logical expiry remains discoverable by physical cleanup sweep", async (t) => {
+  const { path, blobs } = await fixture(t);
+  const store = new SqliteDurableRecordStore(path, "artifacts");
+  t.after(() => store.close());
+  const repository = new DurableArtifactRepository(store, blobs);
+  await repository.put(artifactInput("read-expired", { kind: "source", mediaType: "text/plain", filename: "expired.txt" }, { expiresAt: 500 }));
+  await assert.rejects(repository.readVerified("read-expired", caller, 600, 1024), /expired/u);
+  assert.equal((await repository.get("read-expired"))?.metadata.status, "logically_expired");
+  assert.deepEqual(await repository.sweepExpired(700), { deleted: 1, nextCursor: null });
+  assert.equal(await repository.get("read-expired"), null);
+  assert.equal(blobs.objects.size, 0);
 });

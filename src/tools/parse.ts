@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { parseDocument } from "../core/parse-document.js";
@@ -107,7 +107,7 @@ export function createParseModule(options: ParseModuleOptions): McpModule {
           outputSchema: resultEnvelopeSchema(parseDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const started = performance.now();
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
@@ -118,7 +118,7 @@ export function createParseModule(options: ParseModuleOptions): McpModule {
             const result = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               async () => {
                 if (input.url !== undefined) {
                   const page = await options.pipeline.fetch(
@@ -135,7 +135,7 @@ export function createParseModule(options: ParseModuleOptions): McpModule {
                       deadline,
                       ...(input.waitFor === undefined ? {} : { waitFor: input.waitFor }),
                     },
-                    extra.signal,
+                    ctx.mcpReq.signal,
                   );
                   const parsed = parseDocument(page.content, {
                     purpose: input.purpose,

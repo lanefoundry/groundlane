@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import process from "node:process";
-
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 const endpoint = process.env.GROUNDLANE_MCP_URL ?? "http://127.0.0.1:8080/mcp";
 const token = process.env.GROUNDLANE_AUTH_TOKEN;
@@ -55,8 +53,14 @@ try {
     "crawl_create",
     "crawl_result",
     "crawl_status",
+    "document_artifact_delete",
+    "document_job_cancel",
+    "document_job_create",
+    "document_job_status",
     "document_parse",
     "document_policy",
+    "document_upload_complete",
+    "document_upload_create",
     "error_log",
     "parse",
     "provider_balance",
@@ -73,6 +77,10 @@ try {
     "web_map",
     "web_news",
     "web_research",
+    "web_research_cancel",
+    "web_research_result",
+    "web_research_start",
+    "web_research_status",
     "web_search",
   ]);
 

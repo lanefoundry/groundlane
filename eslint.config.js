@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      ".wrangler/**",
       "worker-configuration.d.ts",
       "eslint.config.js",
       "test/support/*.mjs",

@@ -1,11 +1,14 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import {
   CorpusStore,
-  InMemoryCorpusBackend,
   type CallerPrincipal,
 } from "../core/corpus-runtime.js";
+import {
+  DurableCorpusRuntime,
+  type DurableCorpusCaller,
+} from "../core/durable-corpus-runtime.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
 import { structuredToolResult } from "../mcp/results.js";
@@ -23,16 +26,17 @@ const MCP_TENANT_ID = "default";
 
 const corpusIdSchema = z.string().trim().min(1).max(128);
 
-const corpusCreateInputSchema = z.object({
+export const corpusCreateInputSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   callerExpiresAt: z.string().datetime().nullable().optional(),
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
-const corpusEnrollInputSchema = z.object({
+export const corpusEnrollInputSchema = z.object({
   corpusId: corpusIdSchema,
-  sourceId: z.string().trim().min(1).max(160),
-  contentHash: z.string().trim().min(1).max(128),
+  sourceId: z.string().trim().min(1).max(160).optional(),
+  content: z.string().min(1).max(1_000_000).optional(),
+  contentHash: z.string().trim().min(1).max(128).optional(),
   acl: z.array(z.string().trim().min(1).max(64)).min(1).max(32),
   retentionPolicy: z.string().trim().min(1).max(200).default("operator-default"),
   deletionPolicy: z.string().trim().min(1).max(200).default("operator-default"),
@@ -44,28 +48,29 @@ const corpusEnrollInputSchema = z.object({
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
-const corpusUpdateInputSchema = z.object({
+export const corpusUpdateInputSchema = z.object({
   corpusId: corpusIdSchema,
   sourceId: z.string().trim().min(1).max(160),
   contentHash: z.string().trim().min(1).max(128).optional(),
+  content: z.string().min(1).max(1_000_000).optional(),
   acl: z.array(z.string().trim().min(1).max(64)).min(1).max(32).optional(),
   deletionPolicy: z.string().trim().min(1).max(200).optional(),
   citationProvenance: z.string().trim().min(1).max(200).optional(),
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
-const corpusRefInputSchema = z.object({
+export const corpusRefInputSchema = z.object({
   corpusId: corpusIdSchema,
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
-const corpusRemoveInputSchema = z.object({
+export const corpusRemoveInputSchema = z.object({
   corpusId: corpusIdSchema,
   sourceId: z.string().trim().min(1).max(160),
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
-const corpusSearchInputSchema = z.object({
+export const corpusSearchInputSchema = z.object({
   corpusId: corpusIdSchema,
   query: z.string().trim().min(1).max(500),
   maxResults: z.number().int().min(1).max(50).default(10),
@@ -81,12 +86,16 @@ const corpusViewSchema = z.object({
   expiresAt: z.string().nullable(),
 });
 
-export interface CorpusToolsModuleOptions {
-  store?: CorpusStore;
+interface CommonCorpusToolsModuleOptions {
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
   maxOutputChars: number;
 }
+
+export type CorpusToolsModuleOptions = CommonCorpusToolsModuleOptions & (
+  | { readonly runtime: DurableCorpusRuntime; readonly caller: DurableCorpusCaller; readonly store?: never }
+  | { readonly store: CorpusStore; readonly runtime?: never; readonly caller?: never }
+);
 
 function assertWithinOutputLimit(value: unknown, maxOutputChars: number, tool: string): void {
   if (Array.from(JSON.stringify(value)).length > maxOutputChars) {
@@ -104,11 +113,16 @@ function assertWithinOutputLimit(value: unknown, maxOutputChars: number, tool: s
  * public web search.
  */
 export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpModule {
-  const store = options.store ?? new CorpusStore(new InMemoryCorpusBackend());
+  const durable = "runtime" in options ? options.runtime : undefined;
+  const store = "store" in options ? options.store : undefined;
+  const durableCaller = "caller" in options ? options.caller : undefined;
+  if ((durable === undefined) === (store === undefined)) {
+    throw new Error("corpus tools require exactly one durable runtime or explicit legacy store");
+  }
   return {
     name: "corpus_tools",
     register(server: McpServer): void {
-      const run = <T>(tool: string, timeoutMs: number | undefined, signal: AbortSignal, fn: () => T): Promise<T> => {
+      const run = <T>(tool: string, timeoutMs: number | undefined, signal: AbortSignal, fn: () => T | Promise<T>): Promise<T> => {
         const deadline = new Deadline(timeoutMs ?? options.requestTimeoutMs);
         return withConcurrency(options.limiter, deadline, signal, () =>
           withinDeadline(() => Promise.resolve(fn()), deadline, signal, tool),
@@ -124,16 +138,23 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           outputSchema: resultEnvelopeSchema(z.object({ corpus: corpusViewSchema })),
           annotations: { readOnlyHint: false, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const corpus = await run("corpus_create", input.timeoutMs, extra.signal, () =>
-              store.createCorpus({
+            const corpus = await run("corpus_create", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.createCorpus({
+                  displayName: input.displayName,
+                  callerExpiresAt: input.callerExpiresAt ?? null,
+                }, durableCaller);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.createCorpus({
                 displayName: input.displayName,
                 ownerId: MCP_OWNER_ID,
                 tenantId: MCP_TENANT_ID,
                 callerExpiresAt: input.callerExpiresAt ?? null,
-              }),
-            );
+              });
+            });
             const data = { corpus };
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_create");
             return structuredToolResult({ ok: true, data });
@@ -152,10 +173,28 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           outputSchema: resultEnvelopeSchema(z.object({ enrollment: z.unknown() })),
           annotations: { readOnlyHint: false, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const enrollment = await run("corpus_enroll", input.timeoutMs, extra.signal, () =>
-              store.enrollSource(
+            const enrollment = await run("corpus_enroll", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                if (input.content === undefined) {
+                  throw new Error("durable corpus enrollment requires normalized source content");
+                }
+                return await durable.enrollSource(input.corpusId, {
+                  content: input.content,
+                  ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
+                  ...(input.contentHash === undefined ? {} : { contentHash: input.contentHash }),
+                  acl: [...input.acl],
+                  retentionPolicy: input.retentionPolicy,
+                  deletionPolicy: input.deletionPolicy,
+                  citationProvenance: input.citationProvenance,
+                  callerExpiresAt: input.callerExpiresAt ?? null,
+                }, durableCaller);
+              }
+              if (store === undefined || input.sourceId === undefined || input.contentHash === undefined) {
+                throw new Error("legacy corpus enrollment requires sourceId and contentHash");
+              }
+              return store.enrollSource(
                 input.corpusId,
                 {
                   sourceId: input.sourceId,
@@ -172,8 +211,8 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
                     : { cacheBindings: [...input.cacheBindings] }),
                 },
                 MCP_CALLER,
-              ),
-            );
+              );
+            });
             const data = { enrollment };
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_enroll");
             return structuredToolResult({ ok: true, data });
@@ -192,10 +231,20 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           outputSchema: resultEnvelopeSchema(z.object({ enrollment: z.unknown() })),
           annotations: { readOnlyHint: false, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const enrollment = await run("corpus_update", input.timeoutMs, extra.signal, () =>
-              store.updateSource(
+            const enrollment = await run("corpus_update", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.updateSource(input.corpusId, input.sourceId, {
+                  ...(input.content === undefined ? {} : { content: input.content }),
+                  ...(input.contentHash === undefined ? {} : { contentHash: input.contentHash }),
+                  ...(input.acl === undefined ? {} : { acl: [...input.acl] }),
+                  ...(input.deletionPolicy === undefined ? {} : { deletionPolicy: input.deletionPolicy }),
+                  ...(input.citationProvenance === undefined ? {} : { citationProvenance: input.citationProvenance }),
+                }, durableCaller);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.updateSource(
                 input.corpusId,
                 input.sourceId,
                 {
@@ -209,8 +258,8 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
                     : { citationProvenance: input.citationProvenance }),
                 },
                 MCP_CALLER,
-              ),
-            );
+              );
+            });
             const data = { enrollment };
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_update");
             return structuredToolResult({ ok: true, data });
@@ -232,11 +281,15 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           })),
           annotations: { readOnlyHint: false, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const data = await run("corpus_remove", input.timeoutMs, extra.signal, () =>
-              store.removeSource(input.corpusId, input.sourceId, MCP_CALLER),
-            );
+            const data = await run("corpus_remove", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.removeSource(input.corpusId, input.sourceId, durableCaller);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.removeSource(input.corpusId, input.sourceId, MCP_CALLER);
+            });
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_remove");
             return structuredToolResult({ ok: true, data });
           } catch (error) {
@@ -256,11 +309,15 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           })),
           annotations: { readOnlyHint: true, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const corpus = await run("corpus_status", input.timeoutMs, extra.signal, () =>
-              store.corpusStatus(input.corpusId, MCP_CALLER),
-            );
+            const corpus = await run("corpus_status", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.corpusStatus(input.corpusId, durableCaller);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.corpusStatus(input.corpusId, MCP_CALLER);
+            });
             const data = { corpus };
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_status");
             return structuredToolResult({ ok: true, data });
@@ -291,11 +348,15 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           })),
           annotations: { readOnlyHint: true, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const response = await run("corpus_search", input.timeoutMs, extra.signal, () =>
-              store.searchCorpus(input.corpusId, input.query, MCP_CALLER, input.maxResults),
-            );
+            const response = await run("corpus_search", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.searchCorpus(input.corpusId, input.query, durableCaller, input.maxResults);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.searchCorpus(input.corpusId, input.query, MCP_CALLER, input.maxResults);
+            });
             const data = {
               toolFamily: "corpus_search" as const,
               corpusId: response.corpusId,
@@ -326,11 +387,15 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
           outputSchema: resultEnvelopeSchema(z.object({ deletion: z.unknown() })),
           annotations: { readOnlyHint: false, openWorldHint: false },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           try {
-            const deletion = await run("corpus_delete", input.timeoutMs, extra.signal, () =>
-              store.deleteCorpus(input.corpusId, MCP_CALLER),
-            );
+            const deletion = await run("corpus_delete", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.deleteCorpus(input.corpusId, durableCaller);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.deleteCorpus(input.corpusId, MCP_CALLER);
+            });
             const data = { deletion };
             assertWithinOutputLimit(data, options.maxOutputChars, "corpus_delete");
             return structuredToolResult({ ok: true, data });

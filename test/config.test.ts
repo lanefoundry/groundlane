@@ -4,6 +4,17 @@ import { parseConfig, parseSearchMonthlyRequestBudgets } from "../src/config.js"
 
 const token = "x".repeat(32);
 
+void test("durable document output storage is opt-in and validates its path", () => {
+  assert.equal(parseConfig({ GROUNDLANE_AUTH_TOKEN: token }).documentArtifactStatePath, undefined);
+  assert.equal(parseConfig({ GROUNDLANE_AUTH_TOKEN: token, DOCUMENT_ARTIFACT_STATE_PATH: "/tmp/output.sqlite" }).documentArtifactStatePath, "/tmp/output.sqlite");
+});
+
+void test("edge document output is opt-in and requires internal signing", () => {
+  assert.equal(parseConfig({ GROUNDLANE_AUTH_TOKEN: token }).documentOutputEdgeEnabled, false);
+  assert.throws(() => parseConfig({ GROUNDLANE_AUTH_TOKEN: token, DOCUMENT_OUTPUT_EDGE_ENABLED: "true" }), /SIGNING_SECRET/u);
+  assert.equal(parseConfig({ GROUNDLANE_AUTH_TOKEN: token, DOCUMENT_OUTPUT_EDGE_ENABLED: "true", GROUNDLANE_INTERNAL_SIGNING_SECRET: "dedicated-output-signing-secret-32" }).documentOutputEdgeEnabled, true);
+});
+
 void test("parseConfig applies bounded defaults and deduplicates provider order", () => {
   const config = parseConfig({
     GROUNDLANE_AUTH_TOKEN: token,
@@ -48,8 +59,61 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.equal(config.browserBackend, "disabled");
   assert.equal(config.browserlessRegion, "sfo");
   assert.equal(config.documentCacheStatePath, undefined);
+  assert.equal(config.asyncTaskStatePath, undefined);
+  assert.equal(config.asyncTaskEdgeEnabled, false);
+  assert.equal(config.artifactEdgeEnabled, false);
+  assert.equal(config.documentCacheEdgeEnabled, false);
   assert.equal(config.documentCacheDefaultTtlSeconds, 86_400);
   assert.equal(config.documentCacheMaxTtlSeconds, 2_592_000);
+  assert.equal(config.documentUploadMaxTtlSeconds, 3_600);
+  assert.equal(config.documentArtifactMaxTtlSeconds, 2_592_000);
+});
+
+void test("parseConfig accepts bounded operator upload and artifact TTL caps", () => {
+  const config = parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_UPLOAD_MAX_TTL_SECONDS: "1200",
+    DOCUMENT_ARTIFACT_MAX_TTL_SECONDS: "172800",
+  });
+  assert.equal(config.documentUploadMaxTtlSeconds, 1_200);
+  assert.equal(config.documentArtifactMaxTtlSeconds, 172_800);
+
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_UPLOAD_MAX_TTL_SECONDS: "899",
+  }), /DOCUMENT_UPLOAD_MAX_TTL_SECONDS/u);
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_ARTIFACT_MAX_TTL_SECONDS: "2592001",
+  }), /DOCUMENT_ARTIFACT_MAX_TTL_SECONDS|less than or equal/u);
+});
+
+void test("parseConfig enables only explicit edge storage modes", () => {
+  const config = parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    ASYNC_TASK_STATE_PATH: "/var/lib/groundlane/tasks.sqlite",
+    ASYNC_TASK_EDGE_ENABLED: "true",
+    ARTIFACT_EDGE_ENABLED: "true",
+    DOCUMENT_CACHE_EDGE_ENABLED: "true",
+    GROUNDLANE_INTERNAL_SIGNING_SECRET: "internal-signing-secret-0123456789",
+  });
+  assert.equal(config.asyncTaskStatePath, "/var/lib/groundlane/tasks.sqlite");
+  assert.equal(config.asyncTaskEdgeEnabled, true);
+  assert.equal(config.artifactEdgeEnabled, true);
+  assert.equal(config.documentCacheEdgeEnabled, true);
+  assert.equal(config.internalSigningSecret, "internal-signing-secret-0123456789");
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    ASYNC_TASK_EDGE_ENABLED: "yes",
+  }), /boolean|expected/i);
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    ARTIFACT_EDGE_ENABLED: "yes",
+  }), /boolean|expected/i);
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_CACHE_EDGE_ENABLED: "true",
+  }), /GROUNDLANE_INTERNAL_SIGNING_SECRET/u);
 });
 
 void test("parseSearchMonthlyRequestBudgets validates provider names and duplicates", () => {

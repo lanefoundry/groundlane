@@ -9,12 +9,16 @@ type RegisteredHandler = (
   input: { url?: string; maxContentChars?: number; providers?: string[]; strategy?: string; live?: boolean; timeoutMs?: number },
   extra: { signal?: AbortSignal },
 ) => unknown;
+type SdkRegisteredHandler = (
+  input: { url?: string; maxContentChars?: number; providers?: string[]; strategy?: string; live?: boolean; timeoutMs?: number },
+  ctx: { mcpReq: { signal?: AbortSignal } },
+) => unknown;
 
-function fakeServer(): { handlers: Map<string, RegisteredHandler>; server: { registerTool(name: string, _config: unknown, handler: RegisteredHandler): void } } {
+function fakeServer(): { handlers: Map<string, RegisteredHandler>; server: { registerTool(name: string, _config: unknown, handler: SdkRegisteredHandler): void } } {
   const handlers = new Map<string, RegisteredHandler>();
   const server = {
-    registerTool(name: string, _config: unknown, handler: RegisteredHandler): void {
-      handlers.set(name, handler);
+    registerTool(name: string, _config: unknown, handler: SdkRegisteredHandler): void {
+      handlers.set(name, (input, extra) => handler(input, { mcpReq: extra }));
     },
   };
   return { handlers, server };

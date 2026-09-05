@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1",
+  "evidenceBoundary": "Client event capture and zero exit status do not establish compatibility. Review native server wire transcripts alongside client events. A shell HTTP request or substitute MCP client cannot establish support in Claude, Codex or Cursor.",
+  "scenarios": [
+    { "name": "Tasks lifecycle", "requiredEvidence": ["native task creation", "native get", "native update", "native cancel", "provider acknowledgment distinguished from polling cancellation"] },
+    { "name": "reconnect", "requiredEvidence": ["connection interrupted after task creation", "same real client reconnects", "same owned task retrieved", "upstream operation not duplicated"] },
+    { "name": "upload handoff", "requiredEvidence": ["upload request", "client-supported upload handoff or explicit unsupported behavior", "completion", "ArtifactRef used for processing"] },
+    { "name": "legacy parse", "requiredEvidence": ["unchanged flat parse arguments", "successful structured result", "canonical envelope on new document tools"] }
+  ],
+  "reviewStatuses": {
+    "not_run": "No reviewed scenario evidence, including a successful transcript capture awaiting review",
+    "unsupported": "Verified client or harness limitation; report the exact missing interface",
+    "fail": "Attempted execution failed or reviewed assertions failed",
+    "pass": "All scenario assertions verified by a reviewer against client and native wire evidence; never inferred by this capture script"
+  }
+}

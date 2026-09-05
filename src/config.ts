@@ -7,6 +7,12 @@ import {
   SEARCH_PROVIDER_IDS,
   type KnownSearchProviderId,
 } from "./core/search-provider-catalog.js";
+import {
+  ARTIFACT_DEFAULT_TTL_SECONDS,
+  ARTIFACT_HARD_MAX_TTL_SECONDS,
+  UPLOAD_DEFAULT_TTL_SECONDS,
+  UPLOAD_HARD_MAX_TTL_SECONDS,
+} from "./core/artifact-retention-policy.js";
 
 const positiveInt = (minimum: number, maximum: number) =>
   z.coerce.number().int().min(minimum).max(maximum);
@@ -19,6 +25,11 @@ const optionalSecret = z.preprocess(
 const optionalPath = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().trim().min(1).max(4_096).optional(),
+);
+
+const booleanFlag = z.preprocess(
+  (value) => value === "true" ? true : value === "false" || value === undefined ? false : value,
+  z.boolean(),
 );
 
 const environmentSchema = z.object({
@@ -56,6 +67,24 @@ const environmentSchema = z.object({
   MAX_CONCURRENCY: positiveInt(1, 100).default(4),
   MAX_QUEUE: positiveInt(0, 1_000).default(16),
   DOCUMENT_CACHE_STATE_PATH: optionalPath,
+  DOCUMENT_ARTIFACT_STATE_PATH: optionalPath,
+  CORPUS_STATE_PATH: optionalPath,
+  CORPUS_TENANT_ID: z.string().trim().min(1).max(160).default("default"),
+  CORPUS_MAX_SOURCE_BYTES: positiveInt(1_024, 32 * 1024 * 1024).default(1_000_000),
+  ASYNC_TASK_STATE_PATH: optionalPath,
+  ASYNC_TASK_EDGE_ENABLED: booleanFlag,
+  ARTIFACT_EDGE_ENABLED: booleanFlag,
+  DOCUMENT_CACHE_EDGE_ENABLED: booleanFlag,
+  DOCUMENT_OUTPUT_EDGE_ENABLED: booleanFlag,
+  GROUNDLANE_INTERNAL_SIGNING_SECRET: optionalSecret,
+  DOCUMENT_UPLOAD_MAX_TTL_SECONDS: positiveInt(
+    UPLOAD_DEFAULT_TTL_SECONDS,
+    UPLOAD_HARD_MAX_TTL_SECONDS,
+  ).default(UPLOAD_HARD_MAX_TTL_SECONDS),
+  DOCUMENT_ARTIFACT_MAX_TTL_SECONDS: positiveInt(
+    ARTIFACT_DEFAULT_TTL_SECONDS,
+    ARTIFACT_HARD_MAX_TTL_SECONDS,
+  ).default(ARTIFACT_HARD_MAX_TTL_SECONDS),
   DOCUMENT_CACHE_DEFAULT_TTL_SECONDS: positiveInt(60, 2_592_000).default(86_400),
   DOCUMENT_CACHE_MAX_TTL_SECONDS: positiveInt(60, 2_592_000).default(2_592_000),
 });
@@ -81,6 +110,18 @@ export interface GroundlaneConfig {
   maxConcurrency: number;
   maxQueue: number;
   documentCacheStatePath?: string;
+  documentArtifactStatePath?: string;
+  documentOutputEdgeEnabled: boolean;
+  corpusStatePath?: string;
+  corpusTenantId: string;
+  corpusMaxSourceBytes: number;
+  asyncTaskStatePath?: string;
+  asyncTaskEdgeEnabled: boolean;
+  artifactEdgeEnabled: boolean;
+  documentCacheEdgeEnabled: boolean;
+  internalSigningSecret?: string;
+  documentUploadMaxTtlSeconds: number;
+  documentArtifactMaxTtlSeconds: number;
   documentCacheDefaultTtlSeconds: number;
   documentCacheMaxTtlSeconds: number;
 }
@@ -165,6 +206,12 @@ export function parseConfig(
   if (parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS > parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS) {
     throw new Error("DOCUMENT_CACHE_DEFAULT_TTL_SECONDS must not exceed DOCUMENT_CACHE_MAX_TTL_SECONDS");
   }
+  if (parsed.DOCUMENT_CACHE_EDGE_ENABLED && parsed.GROUNDLANE_INTERNAL_SIGNING_SECRET === undefined) {
+    throw new Error("GROUNDLANE_INTERNAL_SIGNING_SECRET is required when DOCUMENT_CACHE_EDGE_ENABLED=true");
+  }
+  if (parsed.DOCUMENT_OUTPUT_EDGE_ENABLED && parsed.GROUNDLANE_INTERNAL_SIGNING_SECRET === undefined) {
+    throw new Error("GROUNDLANE_INTERNAL_SIGNING_SECRET is required when DOCUMENT_OUTPUT_EDGE_ENABLED=true");
+  }
 
   return {
     port: parsed.PORT,
@@ -193,6 +240,26 @@ export function parseConfig(
     ...(parsed.DOCUMENT_CACHE_STATE_PATH === undefined
       ? {}
       : { documentCacheStatePath: parsed.DOCUMENT_CACHE_STATE_PATH }),
+    ...(parsed.DOCUMENT_ARTIFACT_STATE_PATH === undefined
+      ? {}
+      : { documentArtifactStatePath: parsed.DOCUMENT_ARTIFACT_STATE_PATH }),
+    documentOutputEdgeEnabled: parsed.DOCUMENT_OUTPUT_EDGE_ENABLED,
+    ...(parsed.CORPUS_STATE_PATH === undefined
+      ? {}
+      : { corpusStatePath: parsed.CORPUS_STATE_PATH }),
+    corpusTenantId: parsed.CORPUS_TENANT_ID,
+    corpusMaxSourceBytes: parsed.CORPUS_MAX_SOURCE_BYTES,
+    ...(parsed.ASYNC_TASK_STATE_PATH === undefined
+      ? {}
+      : { asyncTaskStatePath: parsed.ASYNC_TASK_STATE_PATH }),
+    asyncTaskEdgeEnabled: parsed.ASYNC_TASK_EDGE_ENABLED,
+    artifactEdgeEnabled: parsed.ARTIFACT_EDGE_ENABLED,
+    documentCacheEdgeEnabled: parsed.DOCUMENT_CACHE_EDGE_ENABLED,
+    ...(parsed.GROUNDLANE_INTERNAL_SIGNING_SECRET === undefined
+      ? {}
+      : { internalSigningSecret: parsed.GROUNDLANE_INTERNAL_SIGNING_SECRET }),
+    documentUploadMaxTtlSeconds: parsed.DOCUMENT_UPLOAD_MAX_TTL_SECONDS,
+    documentArtifactMaxTtlSeconds: parsed.DOCUMENT_ARTIFACT_MAX_TTL_SECONDS,
     documentCacheDefaultTtlSeconds: parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS,
     documentCacheMaxTtlSeconds: parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS,
   };

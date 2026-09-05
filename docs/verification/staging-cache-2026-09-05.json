@@ -1,0 +1,141 @@
+{
+  "checkedAt": "2026-09-05T11:49:36.818Z",
+  "fixture": "cache-smoke-d34c25f5-c70a-4884-b1a3-1c7f640f0cfa",
+  "stage": "complete",
+  "ok": true,
+  "cacheCalls": [
+    {
+      "label": "inline_miss",
+      "cached": false,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": true,
+        "createdAt": 1788608979216,
+        "expiresAt": 1788609039216
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_hit",
+      "cached": true,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": false,
+        "createdAt": 1788608979216,
+        "expiresAt": 1788609039216,
+        "ageSeconds": 2,
+        "originalEngine": "groundlane",
+        "originalModel": "none"
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_rebind",
+      "cached": true,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": false,
+        "createdAt": 1788608979216,
+        "expiresAt": 1788609039216,
+        "ageSeconds": 2,
+        "originalEngine": "groundlane",
+        "originalModel": "none"
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_refresh",
+      "cached": false,
+      "cache": {
+        "requestedMode": "refresh",
+        "enabled": true,
+        "stored": true,
+        "createdAt": 1788608982548,
+        "expiresAt": 1788609042548
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_existing_bypass",
+      "cached": false,
+      "cache": {
+        "requestedMode": "bypass",
+        "enabled": true,
+        "stored": false
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_after_bypass",
+      "cached": true,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": false,
+        "createdAt": 1788608982548,
+        "expiresAt": 1788609042548,
+        "ageSeconds": 1,
+        "originalEngine": "groundlane",
+        "originalModel": "none"
+      },
+      "contentHash": "sha256-11caecf5f93fa10ffe8a1ded03bd6d9fc88ec7ba892bba4a81980b001e38357b",
+      "canonicalContentId": "057cd83f543734dfc3131ef5c9ac5c1ac2b4629a6a16fbf3f59694b694c36f00"
+    },
+    {
+      "label": "inline_fresh_bypass",
+      "cached": false,
+      "cache": {
+        "requestedMode": "bypass",
+        "enabled": true,
+        "stored": false
+      },
+      "contentHash": "sha256-0121a8ad2ff26b076f3bdc8392d27601478a6bd03f473751f7cb070d558bd5e8",
+      "canonicalContentId": "8ddb7f3296ef4a346df159481010d446048d09cf83c5079c00d5605bca2500fc"
+    },
+    {
+      "label": "inline_after_fresh_bypass_miss",
+      "cached": false,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": true,
+        "createdAt": 1788608984976,
+        "expiresAt": 1788609044976
+      },
+      "contentHash": "sha256-0121a8ad2ff26b076f3bdc8392d27601478a6bd03f473751f7cb070d558bd5e8",
+      "canonicalContentId": "8ddb7f3296ef4a346df159481010d446048d09cf83c5079c00d5605bca2500fc"
+    },
+    {
+      "label": "inline_after_fresh_bypass_hit",
+      "cached": true,
+      "cache": {
+        "requestedMode": "use",
+        "enabled": true,
+        "stored": false,
+        "createdAt": 1788608984976,
+        "expiresAt": 1788609044976,
+        "ageSeconds": 1,
+        "originalEngine": "groundlane",
+        "originalModel": "none"
+      },
+      "contentHash": "sha256-0121a8ad2ff26b076f3bdc8392d27601478a6bd03f473751f7cb070d558bd5e8",
+      "canonicalContentId": "8ddb7f3296ef4a346df159481010d446048d09cf83c5079c00d5605bca2500fc"
+    }
+  ],
+  "uploadIntents": [],
+  "artifacts": [],
+  "deletedRefs": [],
+  "artifactAcceptance": "skipped_upload_or_artifact_runtime_unavailable",
+  "physicalCleanup": "pending_external_scheduled_D1_R2_evidence",
+  "fullAcceptance": false,
+  "endpoint": "https://groundlane-prd-staging.vincent-xu-work.workers.dev/mcp",
+  "deploymentVersion": "1d4dea4f-d587-4e5e-87e6-6fe617c2debd"
+}

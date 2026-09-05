@@ -12,14 +12,15 @@ import { createProviderQuotaModule, providerQuotaInputSchema } from "../../src/t
 import { createSearchBudgetStatusModule, searchBudgetStatusInputSchema } from "../../src/tools/search-budget-status.js";
 
 type RegisteredHandler = (input: { provider?: string; timeoutMs?: number }, extra: { signal?: AbortSignal }) => unknown;
+type SdkRegisteredHandler = (input: { provider?: string; timeoutMs?: number }, ctx: { mcpReq: { signal?: AbortSignal } }) => unknown;
 
 function fakeServer() {
   const handlers = new Map<string, RegisteredHandler>();
   return {
     handlers,
     server: {
-      registerTool(name: string, _definition: unknown, handler: RegisteredHandler): void {
-        handlers.set(name, handler);
+      registerTool(name: string, _definition: unknown, handler: SdkRegisteredHandler): void {
+        handlers.set(name, (input, extra) => handler(input, { mcpReq: extra }));
       },
     },
   };

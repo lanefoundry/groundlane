@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { ImagesResult } from "../core/contracts.js";
@@ -86,13 +86,13 @@ export function createWebImagesModule(options: WebImagesModuleOptions): McpModul
           outputSchema: resultEnvelopeSchema(imagesDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const result = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   (signal) =>
@@ -110,7 +110,7 @@ export function createWebImagesModule(options: WebImagesModuleOptions): McpModul
                       signal,
                     ),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "web_images",
                 ),
             );

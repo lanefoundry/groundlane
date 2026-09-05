@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1",
+  "deterministic": {
+    "testFiles": [
+      "test/contract/mcp-legacy-2025-11-25.test.ts",
+      "test/contract/mcp-modern-2026-07-28.test.ts",
+      "test/contract/mcp-tasks-2026-07-28.test.ts",
+      "test/contract/document-upload-protocol-parity.test.ts",
+      "test/container/internal-auth.test.ts",
+      "test/container/internal-artifact-parse.test.ts",
+      "test/unit/mcp-routing.test.ts",
+      "test/unit/mcp-tasks-schema.test.ts",
+      "test/unit/mcp-client-evidence.test.ts",
+      "test/worker/auth-matrix.test.ts",
+      "test/worker/tasks-runtime.test.ts",
+      "test/worker/artifact-runtime.test.ts"
+    ]
+  },
+  "officialConformance": {
+    "package": "@modelcontextprotocol/conformance",
+    "testedPackageVersion": "0.1.16",
+    "lastVerifiedDate": "2026-09-05",
+    "verificationCommands": [
+      "npm view @modelcontextprotocol/conformance version",
+      "npm exec --yes --package=@modelcontextprotocol/conformance@0.1.16 -- conformance list --server --spec-version 2026-07-28",
+      "npm exec --yes --package=@modelcontextprotocol/conformance@0.1.16 -- conformance list --server --spec-version draft"
+    ],
+    "requiredSpecVersion": "2026-07-28",
+    "status": "blocked",
+    "reason": "The latest released CLI does not recognize 2026-07-28; valid filters stop at 2025-11-25 plus draft and extension. The draft active suite contains zero scenarios. A 2025-11-25 full-capability run is not a substitute for Groundlane's requirement-scoped modern acceptance."
+  },
+  "controlledCloudflare": {
+    "status": "partial",
+    "verifiedEvidence": [
+      {
+        "requirement": "D1 revoke followed by fresh authenticated request rejection",
+        "artifact": "docs/verification/managed-revoke-2026-09-05.json",
+        "scope": "Direct D1 revoke; three initializations before commit, ten 401 responses after commit, healthy control and fixture cleanup. Not admin revoke API, multi-region, or modern protocol proof."
+      },
+      {
+        "requirement": "Isolated Cloudflare inline document cache use hit rebind refresh bypass",
+        "artifact": "docs/verification/staging-cache-2026-09-05.json",
+        "fullAcceptance": false,
+        "scope": "Nine public MCP inline cache checks passed in isolated legacy-only staging after outbound-handler registration repair. Upload/delete was skipped because artifact runtime was unavailable; scheduled physical cleanup remains pending. Not production, modern protocol, full cache lifecycle, or target-client proof."
+      }
+    ],
+    "required": [
+      "legacy and modern protocol transcripts",
+      "D1 revoke followed by fresh authenticated request rejection",
+      "Tasks create get update cancel reconnect",
+      "real R2 presigned PUT complete parse expiry delete cleanup"
+    ]
+  },
+  "clientEvidenceHarness": {
+    "command": "node scripts/mcp-client-run.mjs --client Claude|Codex|Cursor",
+    "defaultBehavior": "Version/help probes only; no model execution",
+    "scenarioAssertions": "test/fixtures/mcp/client-scenarios.json",
+    "liveCapture": "Explicit --run, loopback endpoint, synthetic prompt file, model and API credential required. Captured events require review alongside native server wire evidence; the capture script does not mark acceptance passed."
+  },
+  "targetClients": [
+    { "client": "Claude", "status": "not_run", "required": ["Tasks lifecycle", "reconnect", "upload handoff"] },
+    { "client": "Codex", "status": "not_run", "required": ["Tasks lifecycle", "reconnect", "upload handoff"] },
+    { "client": "Cursor", "status": "not_run", "required": ["Tasks lifecycle", "reconnect", "upload handoff"] }
+  ]
+}

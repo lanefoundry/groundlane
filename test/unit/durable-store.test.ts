@@ -111,3 +111,45 @@ void test("side-effect journal exposes crash uncertainty and rejects stale compl
   assert.equal(uncertain.effect.status, "uncertain");
   await assert.rejects(journal.transition(identity, claim.revision, "succeeded", 120, "late"), /revision conflict/u);
 });
+
+void test("retryable provider cancellation is reacquired once across concurrent reopen", async (t) => {
+  const path = await databaseFixture(t);
+  const initialStore = new SqliteDurableRecordStore(path, "effects");
+  const initial = new DurableEffectJournal(initialStore);
+  const identity = {
+    jobId: "job-cancel",
+    effectKind: "provider_task_cancel" as const,
+    operationKey: "cancel",
+  };
+  const claim = await initial.claim(
+    identity.jobId,
+    identity.effectKind,
+    identity.operationKey,
+    100,
+  );
+  assert.equal(claim.status, "claimed");
+  const inflight = await initial.transition(identity, claim.revision, "inflight", 110);
+  const retryable = await initial.transition(identity, inflight.revision, "uncertain", 120);
+  initialStore.close();
+
+  const leftStore = new SqliteDurableRecordStore(path, "effects");
+  const rightStore = new SqliteDurableRecordStore(path, "effects");
+  t.after(() => {
+    leftStore.close();
+    rightStore.close();
+  });
+  const [left, right] = await Promise.all([
+    new DurableEffectJournal(leftStore).retry(identity, retryable.revision, 130),
+    new DurableEffectJournal(rightStore).retry(identity, retryable.revision, 130),
+  ]);
+  assert.deepEqual([left.status, right.status].sort(), ["blocked", "claimed"]);
+  const winner = left.status === "claimed" ? left : right;
+  const succeeded = await new DurableEffectJournal(leftStore).transition(
+    identity,
+    winner.revision,
+    "succeeded",
+    140,
+    "provider-cancel-acknowledged",
+  );
+  assert.equal(succeeded.effect.receipt, "provider-cancel-acknowledged");
+});

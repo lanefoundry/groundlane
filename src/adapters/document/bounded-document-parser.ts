@@ -13,7 +13,7 @@ import type {
   TableCell,
 } from "../../core/canonical-document.js";
 
-export const DOCUMENT_ENGINE_VERSION = "groundlane-bounded-document-v1";
+export const DOCUMENT_ENGINE_VERSION = "groundlane-bounded-document-v3";
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_ARCHIVE_ENTRIES = 1_000;
 export const MAX_ARCHIVE_UNCOMPRESSED_BYTES = 32 * 1024 * 1024;
@@ -28,6 +28,49 @@ export interface ParsedDocumentContent {
   readonly warnings: readonly string[];
   readonly capabilities: Readonly<Record<string, "available" | "unsupported" | "not_run" | "failed">>;
   readonly mediaType: string;
+}
+
+export type DocumentParserProfile =
+  | "pdf"
+  | "docx"
+  | "xlsx"
+  | "pptx"
+  | "odf"
+  | "epub"
+  | "csv"
+  | "rtf"
+  | "eml"
+  | "html"
+  | "json"
+  | "xml"
+  | "text"
+  | "unsupported";
+
+/** Canonical parser dispatch identity; cache keys must use this same decision. */
+export function resolveDocumentParserProfile(
+  declaredMime: string,
+  filename: string,
+): DocumentParserProfile {
+  const mime = declaredMime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const extension = filename.toLowerCase().split(".").pop() ?? "";
+  if (mime === "application/pdf" || extension === "pdf") return "pdf";
+  if (["docx", "xlsx", "pptx", "odt", "ods", "odp", "epub"].includes(extension) ||
+      mime.includes("officedocument") || mime.includes("opendocument") ||
+      mime === "application/epub+zip") {
+    if (extension === "docx" || mime.includes("wordprocessingml")) return "docx";
+    if (extension === "xlsx" || mime.includes("spreadsheetml")) return "xlsx";
+    if (extension === "pptx" || mime.includes("presentationml")) return "pptx";
+    if (extension === "epub" || mime === "application/epub+zip") return "epub";
+    return "odf";
+  }
+  if (extension === "csv" || mime === "text/csv") return "csv";
+  if (extension === "rtf" || mime === "application/rtf" || mime === "text/rtf") return "rtf";
+  if (extension === "eml" || mime === "message/rfc822") return "eml";
+  if (extension === "html" || extension === "htm" || mime === "text/html") return "html";
+  if (extension === "json" || mime === "application/json") return "json";
+  if (extension === "xml" || mime.endsWith("+xml") || mime === "application/xml" || mime === "text/xml") return "xml";
+  if (["txt", "md", "markdown"].includes(extension) || mime.startsWith("text/")) return "text";
+  return "unsupported";
 }
 
 function documentError(message: string, code = "document.invalid_input"): GroundlaneError {
@@ -66,6 +109,13 @@ function normalizeText(value: string): string {
 
 function decode(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+function decodePdfNameEscapes(source: string): string {
+  return source.replace(/\/[^\s<>{}[\]()%/]+/gu, (name) =>
+    name.replace(/#([0-9A-F]{2})/giu, (_escape, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16))),
+  );
 }
 
 function assertWellFormedXml(xml: string): void {
@@ -140,7 +190,11 @@ function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
     throw documentError("Active or embedded external content is not supported", "document.active_content");
   }
   for (const name of names.filter((entry) => entry.endsWith(".rels"))) {
-    if (/TargetMode\s*=\s*["']External["']/iu.test(decode(files[name] as Uint8Array))) {
+    const xml = decode(files[name] as Uint8Array);
+    assertWellFormedXml(xml);
+    const relationships = load(xml, { xml: true });
+    if (/TargetMode\s*=\s*["']External["']/iu.test(xml) || relationships("[TargetMode]").toArray()
+      .some((entry) => relationships(entry).attr("TargetMode")?.toLowerCase() === "external")) {
       throw documentError("External package relationships are not supported", "document.active_content");
     }
   }
@@ -382,9 +436,10 @@ function splitHeaders(source: string): { headers: Map<string, string>; body: str
 }
 
 function decodeQuotedPrintable(source: string): string {
-  return source
+  const octets = source
     .replace(/=\r?\n/gu, "")
     .replace(/=([0-9A-F]{2})/giu, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  return Buffer.from(octets, "latin1").toString("utf8");
 }
 
 function decodeMimeBody(body: string, encoding: string): string {
@@ -408,9 +463,10 @@ function parseMimeText(source: string, depth: number, state: { parts: number }):
   state.parts += 1;
   if (state.parts > MAX_MIME_PARTS) throw documentError("MIME message contains too many parts", "document.mime_limit");
   const { headers, body } = splitHeaders(source);
-  const contentType = (headers.get("content-type") ?? "text/plain").toLowerCase();
+  const rawContentType = headers.get("content-type") ?? "text/plain";
+  const contentType = rawContentType.toLowerCase();
   if (contentType.startsWith("multipart/")) {
-    const boundary = mimeBoundary(contentType);
+    const boundary = mimeBoundary(rawContentType);
     if (!boundary) throw documentError("Multipart MIME message is missing its boundary", "document.malformed");
     const delimiter = `--${boundary}`;
     const chunks = body.split(delimiter).slice(1);
@@ -463,17 +519,19 @@ export async function parseBoundedDocument(input: {
   const contentHash = hash(input.bytes);
   const mime = input.declaredMime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   const extension = input.filename.toLowerCase().split(".").pop() ?? "";
+  const profile = resolveDocumentParserProfile(input.declaredMime, input.filename);
   let blocks: DocumentBlock[] = [];
   let metadata: MetadataRecord[] = [];
   let mediaType = mime;
   const maxPages = Math.min(input.maxPages ?? 500, 500);
 
-  if (mime === "application/pdf" || extension === "pdf") {
+  if (profile === "pdf") {
     const pdfSource = Buffer.from(input.bytes).toString("latin1");
-    if (/\/Encrypt\b/u.test(pdfSource)) {
+    const normalizedPdfNames = decodePdfNameEscapes(pdfSource);
+    if (/\/Encrypt\b/u.test(normalizedPdfNames)) {
       throw documentError("Encrypted PDF is not supported", "document.encrypted");
     }
-    if (!pdfSource.startsWith("%PDF-") || /\/(?:JavaScript|JS|Launch|EmbeddedFiles|OpenAction|AA)\b/u.test(pdfSource)) {
+    if (!pdfSource.startsWith("%PDF-") || /\/(?:JavaScript|JS|Launch|EmbeddedFiles|OpenAction|AA)\b/u.test(normalizedPdfNames)) {
       throw documentError(
         pdfSource.startsWith("%PDF-") ? "Active PDF content is not supported" : "Malformed or unreadable PDF",
         pdfSource.startsWith("%PDF-") ? "document.active_content" : "document.malformed",
@@ -498,31 +556,31 @@ export async function parseBoundedDocument(input: {
       const message = error instanceof Error ? error.message.toLowerCase() : "";
       throw documentError(message.includes("password") ? "Encrypted PDF is not supported" : "Malformed or unreadable PDF", message.includes("password") ? "document.encrypted" : "document.malformed");
     }
-  } else if (["docx", "xlsx", "pptx", "odt", "ods", "odp", "epub"].includes(extension) || mime.includes("officedocument") || mime.includes("opendocument") || mime === "application/epub+zip") {
+  } else if (["docx", "xlsx", "pptx", "odf", "epub"].includes(profile)) {
     const files = unzipBounded(input.bytes);
-    if (extension === "docx" || mime.includes("wordprocessingml")) blocks = parseDocx(files, contentHash);
-    else if (extension === "xlsx" || mime.includes("spreadsheetml")) blocks = parseXlsx(files, contentHash, maxPages);
-    else if (extension === "pptx" || mime.includes("presentationml")) blocks = parsePptx(files, contentHash, maxPages);
-    else if (extension === "epub" || mime === "application/epub+zip") ({ blocks, metadata } = parseEpub(files, contentHash, maxPages));
+    if (profile === "docx") blocks = parseDocx(files, contentHash);
+    else if (profile === "xlsx") blocks = parseXlsx(files, contentHash, maxPages);
+    else if (profile === "pptx") blocks = parsePptx(files, contentHash, maxPages);
+    else if (profile === "epub") ({ blocks, metadata } = parseEpub(files, contentHash, maxPages));
     else blocks = parseOdf(files, contentHash);
   } else {
     const source = decode(input.bytes);
-    if (extension === "csv" || mime === "text/csv") blocks = parseCsv(source, contentHash);
-    else if (extension === "rtf" || mime === "application/rtf" || mime === "text/rtf") blocks = parseRtf(source, contentHash);
-    else if (extension === "eml" || mime === "message/rfc822") ({ blocks, metadata } = parseEml(source, contentHash));
-    else if (extension === "html" || extension === "htm" || mime === "text/html") {
+    if (profile === "csv") blocks = parseCsv(source, contentHash);
+    else if (profile === "rtf") blocks = parseRtf(source, contentHash);
+    else if (profile === "eml") ({ blocks, metadata } = parseEml(source, contentHash));
+    else if (profile === "html") {
       assertNoActiveMarkup(source);
       const $ = load(source); $("style,noscript,template").remove();
       const content = normalizeText($("body").text() || $.root().text());
       if (content) blocks = [textBlock(content, "document-1", contentHash)];
       const title = normalizeText($("title").text()); if (title) metadata.push({ key: "title", value: title });
-    } else if (extension === "json" || mime === "application/json") {
+    } else if (profile === "json") {
       let parsed: unknown; try { parsed = JSON.parse(source) as unknown; } catch { throw documentError("Malformed JSON document", "document.malformed"); }
       blocks = [textBlock(JSON.stringify(parsed, null, 2), "document-1", contentHash)];
-    } else if (extension === "xml" || mime.endsWith("+xml") || mime === "application/xml" || mime === "text/xml") {
+    } else if (profile === "xml") {
       assertWellFormedXml(source);
       const $ = load(source, { xmlMode: true }); const content = normalizeText($.root().text()); if (content) blocks = [textBlock(content, "document-1", contentHash)];
-    } else if (["txt", "md", "markdown"].includes(extension) || mime.startsWith("text/")) {
+    } else if (profile === "text") {
       if (input.bytes.includes(0)) throw documentError("Binary content cannot be parsed as text", "document.mime_mismatch");
       const content = normalizeText(source); if (content) blocks = [textBlock(content, "document-1", contentHash)];
     } else throw documentError(`Unsupported document format: ${mime || extension || "unknown"}`, "document.unsupported");

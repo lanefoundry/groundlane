@@ -193,6 +193,7 @@ void test("an invalid authorization request with a known redirect URI bounces ba
           description: "requested scope is not supported",
           redirectUri: "https://client.example/callback",
           state: "xyz",
+          issuer: "https://groundlane.test",
         }),
       ),
   });
@@ -206,6 +207,7 @@ void test("an invalid authorization request with a known redirect URI bounces ba
   const location = new URL(response.headers.get("location") ?? "");
   assert.equal(location.searchParams.get("error"), "invalid_scope");
   assert.equal(location.searchParams.get("state"), "xyz");
+  assert.equal(location.searchParams.get("iss"), "https://groundlane.test");
 });
 
 void test("an invalid authorization request with no redirect URI is rendered locally, not redirected", async () => {

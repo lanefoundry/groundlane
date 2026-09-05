@@ -52,18 +52,20 @@ export class R2ImmutableBlobStore implements ImmutableBlobPort {
     validateInternalBlobKey(input.blobKey);
     validateBlobIdentity(input.ownerId, input.digest);
     if (input.bytes.byteLength < 1 || input.bytes.byteLength > MAX_IMMUTABLE_BLOB_BYTES) throw new Error("immutable blob size is outside the supported bounds");
-    if (await digestBytes(input.bytes) !== input.digest) throw new Error("immutable blob digest mismatch");
-    const created = await this.bucket.put(input.blobKey, input.bytes, {
+    const { blobKey, ownerId, digest } = input;
+    const bytes = Uint8Array.from(input.bytes);
+    if (await digestBytes(bytes) !== digest) throw new Error("immutable blob digest mismatch");
+    const created = await this.bucket.put(blobKey, bytes, {
       onlyIf: { etagDoesNotMatch: "*" },
-      customMetadata: { schemaVersion: "1", ownerId: input.ownerId, digest: input.digest },
+      customMetadata: { schemaVersion: "1", ownerId, digest },
     });
     if (created !== null) {
-      const stat = decodeStat(input.blobKey, created);
+      const stat = decodeStat(blobKey, created);
       if (stat === null) throw new Error("R2 immutable blob put returned no metadata");
       return { status: "created", stat };
     }
-    const existing = await this.stat(input.blobKey);
-    return existing !== null && existing.ownerId === input.ownerId && existing.digest === input.digest && existing.byteSize === input.bytes.byteLength
+    const existing = await this.stat(blobKey);
+    return existing !== null && existing.ownerId === ownerId && existing.digest === digest && existing.byteSize === bytes.byteLength
       ? { status: "exists", stat: existing }
       : { status: "conflict", stat: existing };
   }

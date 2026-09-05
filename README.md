@@ -14,7 +14,23 @@
 
 </div>
 
-Groundlane is an open-source remote MCP server and trusted content access layer for AI agents. Today it provides one controlled interface for Web search, retrieval, deterministic extraction, URL/raw-HTML parsing, and a first bounded synchronous `document_parse` slice. The document tool accepts inline bytes or policy-checked public URLs and returns one canonical envelope with Markdown, structured, text, or all projection. Self-hosted Node deployments can opt into a durable SQLite processing cache; R2 artifacts, Cloudflare-backed cache, async document execution, OCR, and model-assisted parsing remain roadmap work. The operator-owned corpus control plane keeps portable corpus identity, source enrollment, access, freshness, deletion, and citation contracts separate from replaceable indexing and ranking backends.
+Canonical document provenance uses `null` for unknown cost or confidence. Provider credits remain separate metadata; they are not converted into currency or reported as zero cost.
+
+The parser engine version is `groundlane-bounded-document-v3`. Its cache keys exclude earlier engine versions from reuse; upgrading requires no cache migration or manual deletion.
+
+Async document development includes a restartable dispatcher, native D1/R2 composition, durable output write reservations and retryable cancellation/expiry cleanup. Sync and async stored results share `{envelope, projection}`. This is not a public async API: atomic job-owned source snapshots, source-to-job revocation, scheduler/tool configuration and live acceptance are still required before enablement.
+
+The opt-in edge output profile also links uploaded sources to derived results. Reads revalidate the original source; source deletion or expiry revokes derived access and retains a durable cleanup cursor for retries. These paths have deterministic tests; controlled deployment and client acceptance remain open.
+
+`document_parse` also accepts an enrolled `{ "kind": "corpus", "corpusId": "…", "sourceId": "…" }` source when `CORPUS_STATE_PATH` is configured. This parses retained normalized text, enforces current ACL/identity/expiry, and shares cache bindings with corpus update/remove/delete. It does not reprocess the original Office/PDF binary.
+
+The optional `DOCUMENT_OUTPUT_EDGE_ENABLED=true` profile stores oversized inline/URL/corpus results through a signed private D1/R2 bridge. It requires D1, R2 and the internal signing secret. The bridge enforces a 16 MiB encoded request limit, Worker-owned TTL, bounded chunks and cleanup. The reference flag remains off pending controlled deployment and client acceptance.
+
+Self-hosted document results: set `DOCUMENT_ARTIFACT_STATE_PATH` to retain oversized inline/URL `document_parse` output as JSON for 24 hours. Read its `outputArtifact.refId` with `document_result_read` in bounded base64 chunks; use `document_result_delete` to revoke the result and clean up its retained source. Ownership includes tenant and credential binding. Cleanup runs in pages of 100 once per minute; restart resumes cleanup. The MCP inventory also exposes explicit fallback `document_job_create`, `document_job_status`, and `document_job_cancel` tools. Cloudflare execution is fail-closed and remains disabled unless async and output edge flags, the internal signing secret, Reducto credential, primary D1, and R2 are all configured. Controlled Cloudflare output/async acceptance remains pending.
+
+Client evidence: `pnpm mcp:clients --client Claude` (or `Codex` / `Cursor`) probes local executable versions and isolation flags without running a model. See `--help` for explicit live capture. A captured transcript requires per-scenario review; successful process exit does not mark Tasks, reconnect, or upload compatibility as passed.
+
+Groundlane is an open-source remote MCP server and trusted content access layer for AI agents. Today it provides one controlled interface for Web search, retrieval, deterministic extraction, URL/raw-HTML parsing, and a first bounded synchronous `document_parse` slice. The document tool accepts inline bytes or policy-checked public URLs and returns one canonical envelope with Markdown, structured, text, or all projection. A fully configured Cloudflare Worker can also create direct-to-R2 upload handoffs, finalize verified source `ArtifactRef`s, process them through a signed Worker-to-Container bridge, and keep the processing cache in D1/R2 through a separate private two-phase bridge. These paths have deterministic tests but no controlled production or target-client proof yet. Self-hosted Node deployments can opt into a durable SQLite processing cache and durable corpus runtime. Async document execution, OCR, model-assisted parsing, and a Cloudflare corpus backend remain roadmap work. The operator-owned corpus control plane keeps portable corpus identity, source enrollment, access, freshness, deletion, and citation contracts separate from its rebuildable SQLite index.
 
 > [!IMPORTANT]
 > Groundlane is an early preview (`0.1.0`). Tool contracts and deployment behavior may change. The target OSS V1 Stable Release is an operator-hosted open-source product; Managed Groundlane Cloud is a later roadmap item, not an available service. Groundlane is not a CAPTCHA solver or a universal anti-bot bypass.
@@ -23,9 +39,9 @@ OSS V1 Stable is planned as a Web + document release rather than a Web-only rele
 
 The document roadmap uses configurable, bounded retention rather than silent permanent storage. Working defaults are a 15-minute upload intent, a one-hour staging cleanup window, a 24-hour transient artifact, and a 24-hour ownership-scoped processing cache. Callers may adjust upload, artifact, and cache expiry within operator-advertised bounds; out-of-range requests are rejected instead of silently clamped. The staging cleanup window is operator-controlled. Operators may change defaults/maxima or disable caching through an observable document policy. Explicit corpus enrollment uses its own retention policy and defaults to retention until removal; expiry extension is always explicit.
 
-`document_parse` returns the versioned, provider-neutral canonical document envelope and a deterministic projection. Markdown is the default projection; text, structured, and all-output modes are explicit options and declare lossiness, omissions, and canonical references. The current runtime rejects oversized output because durable result artifacts are not wired yet. Its artifact source schema is reserved, but returns `PROVIDER_UNAVAILABLE` until an operator configures a verified artifact reader. The existing URL/raw-HTML `parse` schema remains compatible.
+`document_parse` returns the versioned, provider-neutral canonical document envelope and a deterministic projection. Markdown is the default projection; text, structured, and all-output modes are explicit options and declare lossiness, omissions, and canonical references. Self-hosted inline and URL parsing can return a durable result reference when DOCUMENT_ARTIFACT_STATE_PATH is configured; otherwise oversized output is rejected. Artifact source input is active only on the Cloudflare edge profile when D1, R2, R2 S3 presigning credentials, and the internal signing secret are all configured; otherwise it fails closed. The existing URL/raw-HTML `parse` schema remains compatible.
 
-Document execution keeps an explicit dual-track contract. The current deterministic slice is synchronous and bounded by one end-to-end deadline; it never silently becomes an async job. Set `DOCUMENT_CACHE_STATE_PATH` on the self-hosted Node service to enable the ownership-scoped SQLite processing cache; `document_parse` then supports `use`, `refresh`, and `bypass`, including restart-safe hits and source-specific rebinding. The repository also includes bounded D1 metadata, durable job/artifact/corpus repositories, a side-effect receipt journal, and an immutable R2 binding adapter with deterministic tests. The Cloudflare cache, upload/artifact, durable corpus, and async-job paths are not mounted in production.
+Document execution keeps an explicit dual-track contract. The current deterministic slice is synchronous and bounded by one end-to-end deadline; it never silently becomes an async job. Set `DOCUMENT_CACHE_STATE_PATH` on the self-hosted Node service to enable the ownership-scoped SQLite processing cache; `document_parse` then supports `use`, `refresh`, and `bypass`, including restart-safe hits and source-specific rebinding. The reference Cloudflare profile explicitly enables the same cache contract over D1 metadata and R2 immutable payloads. Container parsing uses a versioned, body-bound private lookup/commit bridge; Worker-owned TTL policy cannot be overridden by the Container. Credential-scoped source bindings and artifact-expiry caps prevent cross-credential reuse or cache retention beyond the source. Set `CORPUS_STATE_PATH` to mount the self-hosted durable corpus runtime: its manifest is lifecycle and authorization truth, normalized source bytes are immutable artifacts, and its SQLite search index is rebuildable derived state. Corpus/source expiry, ACL, credential and tenant binding, restart, exact rebuild, removal, and retryable deletion are enforced without changing public-Web `web_search`. A Cloudflare corpus backend, controlled result-storage acceptance, and document async jobs remain open. The checked-in hourly Worker cron performs bounded artifact, staging, and cache cleanup; controlled deployment evidence remains pending. Linkup async research is a separate, conditionally configured MCP Tasks path described below.
 
 ## Tools at a glance
 
@@ -35,6 +51,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across thirteen providers |
 | `web_answer` | Retrieves grounded answers from answer-capable providers | Parallel fan-out or fallback across You.com Answer and Linkup sourced answers, with provider attribution and citations |
 | `web_research` | Retrieves provider-attributed research reports | Parallel fan-out or fallback across Linkup Research, You.com Research, and Parallel Responses, with citations |
+| `web_research_start` / `status` / `result` / `cancel` | Starts and reconnects to durable Linkup research | Explicit compatibility tools over the same durable runtime as MCP Tasks; no global list and no provider task ID exposure |
 | `web_content` | Fetches URL content through provider content APIs | Parallel fan-out or fallback across Linkup Fetch, You.com Contents, Exa Contents, Tavily Extract, Firecrawl Scrape, TinyFish Fetch, and Keenable Fetch |
 | `web_map` | Discovers URLs from a public site | Parallel fan-out or fallback across Firecrawl Map and Tavily Map, with provider attribution |
 | `web_crawl` | Crawls bounded pages from a public site | Parallel fan-out or fallback across Firecrawl Crawl and Tavily Crawl, with capped pages and content |
@@ -42,7 +59,9 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `web_images` | Searches image-specific provider indexes | Parallel fan-out or fallback across Brave Images, Serper Images, and SerpApi Google Images |
 | `web_extract` | Extracts named fields into structured JSON | Deterministic selector and bounded pattern engines with per-call output caps; no implicit LLM step |
 | `parse` | Parses a URL or raw HTML into reusable structures | Local document, metadata, link, media, and table parsers; URL inputs use the bounded fetch pipeline |
-| `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; artifact input is reserved but unavailable until a verified artifact backend is wired |
+| `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; verified source ArtifactRef on the fully configured Cloudflare edge profile |
+| `document_upload_create` / `document_upload_complete` | Creates a credential-bound single-PUT handoff, then verifies and finalizes a source ArtifactRef | Cloudflare Worker edge only when D1, R2, R2 S3 presigning credentials, and internal signing are configured; otherwise fail-closed |
+| `document_artifact_delete` | Immediately revokes a caller-owned source ArtifactRef, deletes its immutable bytes, and revokes all parser-option cache bindings for that source | Cloudflare Worker edge; deletion and expiry cleanup are credential/owner scoped and retryable |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 | `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane provider-dispatch guardrails, exposed tools, keyless availability, and next checks |
@@ -60,6 +79,8 @@ Use `provider_quota` as the first diagnostic view when a provider-backed tool ex
 `web_research` deliberately keeps one synchronous MCP contract even when an upstream provider is asynchronous. You.com Research and Parallel Responses return synchronously. Linkup Research creates an upstream task with `POST /v1/research`, then Groundlane polls `GET /v1/research/{id}` inside the same request deadline and returns the completed report when available.
 
 Long Linkup research jobs can outlive the MCP request. In that case Groundlane returns a bounded timeout/cancellation error instead of blocking indefinitely; the upstream provider task may still continue outside Groundlane. Use `effort=lite`, `strategy=fallback`, and `provider=linkup` when you want the cheapest bounded Linkup path.
+
+For durable research, self-hosted Node operators configure both `ASYNC_TASK_STATE_PATH` and `LINKUP_API_KEY`. Modern `2026-07-28` callers that declare the per-request `io.modelcontextprotocol/tasks` extension may receive a server-directed task from `web_research_start` and then use exactly `tasks/get`, `tasks/update`, and `tasks/cancel`. Other callers use the four explicit tools above. Task IDs are Groundlane-owned and owner/credential-bound; provider IDs stay private. State uses revision-fenced SQLite locally and D1 at the Cloudflare Worker edge, with a five-second minimum polling interval, bounded TTL, monotonic terminal states, and a durable provider-create effect journal. Linkup documents no Research cancel endpoint, so cancellation stops Groundlane polling but does not claim upstream cancellation. These paths have deterministic local/D1 tests; the current checkout has not yet supplied controlled deployment or Claude/Codex/Cursor transcripts.
 
 ## Quick start
 
@@ -163,6 +184,37 @@ running.
 
 ## Connect an MCP client
 
+Groundlane uses the split TypeScript SDK v2 packages and has explicit legacy
+`2025-11-25` and modern `2026-07-28` handlers. The conservative default is
+`GROUNDLANE_MCP_PROTOCOL_MODE=legacy-only`; use `dual` only for controlled
+migration testing, or `modern-only` to disable legacy compatibility. The modern
+path supports self-contained requests, `server/discover`, and per-request
+client metadata without `initialize` or `Mcp-Session-Id`. Modern catalog and
+resource cache hints are explicitly private with a zero TTL, so dynamic
+availability and caller capabilities are rebuilt per request. This local runtime
+also checks the standard routing headers against the JSON-RPC body at both the
+Worker and Container, caps authenticated JSON edge inspection at 1 MiB, does
+not reflect caller-controlled names in mismatch errors, and propagates request
+cancellation instead of rewriting it as a Container outage. This local runtime
+support is not evidence of deployed conformance or target-client support. The
+fixtures, coexistence gates, and rollback sequence are documented in
+[MCP protocol migration and rollback](docs/mcp-migration.md).
+
+In `dual` or `modern-only` mode, `document_policy` can request an interactive
+TTL with `interactiveTtlFor`. This bounded, read-only multi-round trip requires
+the separate `GROUNDLANE_MCP_REQUEST_STATE_SECRET` (at least 32 bytes). Its
+five-minute request state is signed, caller/credential/method-bound, safe to
+resume on another instance sharing the secret, and readable rather than
+encrypted; it must never contain secrets. Exact retries are supported, while
+disconnecting one HTTP leg only cancels that leg and does not cancel a task.
+
+MCP Tasks is separately opt-in on every request. It is advertised only when a
+durable runtime is configured locally or when the Worker has both D1 and a
+Linkup key. The installed SDK does not yet dispatch the stable extension
+methods, so Groundlane uses a bounded raw adapter for the official three-method
+surface and leaves every other method on the SDK handler. This is an
+implementation compatibility seam, not target-client proof.
+
 Export the same token in the shell that starts your client:
 
 ```bash
@@ -198,6 +250,8 @@ groundlane as a custom connector using your deployed Worker's `/mcp` URL
 (`https://your-worker.example/mcp`). Modern clients can register through CIMD
 without a separate pre-registration step; the DCR compatibility endpoint
 (`/register`) is bearer-protected to avoid unauthenticated OAuth state growth.
+DCR clients must explicitly send `application_type`: `web` requires HTTPS
+redirects, while `native` is limited to HTTP loopback redirects.
 See [Cloudflare deployment](docs/deployment/cloudflare.md) for the exact flow.
 The connector opens a consent screen after registration. Enter the
 `OAUTH_OWNER_PASSPHRASE` you configured during deployment to approve — this is
@@ -337,11 +391,18 @@ Groundlane does **not** guarantee CAPTCHA solving, invisible automation, or acce
 
 ## Project status
 
+An isolated PRD staging profile is available in `wrangler.staging.jsonc`, with independent Cloudflare storage and no production provider keys. See the [staging deployment and cache smoke runbook](docs/deployment/cloudflare.md#isolated-prd-staging). Provisioning or deploying it does not satisfy the remaining live acceptance gates.
+
+Staging's [nine public MCP inline cache checks](docs/verification/staging-cache-2026-09-05.json) passed on 2026-09-05 after fixing private outbound-handler registration. Source-upload/delete and scheduled physical-cleanup evidence remain separate gates.
+
+`pnpm smoke` checks the default profile's exact tool inventory and basic calls; inventory drift is regression-tested against the local MCP composition. It does not replace upload/cache lifecycle or Claude/Codex/Cursor acceptance.
+
 - Current source version: `0.1.0` early preview; no stable tool-contract guarantee yet.
-- Implemented: the Web/search/extraction/parser/provider/corpus tools listed above; synchronous deterministic `document_parse` with canonical output and an optional restart-safe self-hosted SQLite processing cache; Cloudflare Worker + Container deployment; D1 managed-token authentication; and signed Worker-to-Container principal context. Durable D1/R2 lifecycle repositories are covered by deterministic tests, but Cloudflare cache composition, R2 upload/artifact processing, durable async/corpus MCP lifecycles, and live document client/production verification remain pending.
-- Next: wire the new multi-credential principal contract, managed-token registry runtime (fake-D1 port with deterministic tests; live D1 binding and controlled smoke pending), and admin-only credential API into deployment (operator CLI available via `tsx scripts/groundlane-credentials.mts`; add a package.json script entry, no `bin`). The new admin secret is isolated from the existing `GROUNDLANE_AUTH_TOKEN`, which remains a legacy/local data-plane credential and never gains credential-management privileges. Other next steps are hardening tool contracts and compatibility fixtures; preserving machine-readable Reader/parser/extractor benchmark artifacts; evaluating the async research API surface; adding stateless login/challenge diagnostics; and running live Claude/Codex/Cursor verification of the new async-task lifecycle runtime before choosing an async research API. Short research remains synchronous and provider results remain separated. The approved document-source contract is bounded inline bytes, policy-checked public URLs, or Groundlane-issued opaque `ArtifactRef`; the Cloudflare reference upload path uses an MCP-created provisional upload intent, an upload-capable client/CLI/dashboard, direct presigned PUT to an R2 staging object, and verification/immutable finalization before minting the artifact reference. Self-hosted deployments may replace the artifact backend. Operator-owned corpus lifecycle and `corpus_search` are now mounted with an in-memory backend port; remaining work is managed/external backend adapters. Scoped results carry explicit corpus, freshness, access-control, retention, deletion, and backend provenance rather than changing public-Web `web_search`. Generic LLM extraction, monitoring/scheduling, persistent authenticated browser sessions, and Groundlane-owned durable orchestration remain demand-gated roadmap items rather than committed runtime features. Any future authenticated-browser slice will use a separate opt-in tool family, human login/MFA, provider-owned opaque profile references, explicit owner/TTL/delete controls, and read-only bounded navigation before Groundlane considers credential custody or general account actions.
+- Implemented locally: the listed Web/search/extraction/parser/provider/corpus tools; synchronous deterministic `document_parse`; optional restart-safe SQLite document cache and corpus runtime; Cloudflare Worker + Container; D1 managed-token authentication; MCP Tasks; the credential-bound D1/R2 source upload/finalize/parse path; and private Container-to-Worker D1/R2 cache composition. These paths have deterministic bridge, fake-D1/R2, deadline/cancellation, restart/rebuild, isolation, and bounded-cleanup tests. Cloudflare corpus composition, controlled result-storage deployment, and live client verification remain pending.
+- Controlled D1 revoke acceptance passed on 2026-09-05: three initializations before revoke, ten 401 responses after commit, healthy control and fixture cleanup. [Evidence and scope](docs/verification/managed-revoke-2026-09-05.json); [repeatable operator smoke](docs/deployment/cloudflare.md). Admin revoke API and multi-region behavior were not exercised.
+- Next: complete controlled dual-protocol, Tasks, R2 upload, scheduled-cleanup, and explicit async-document smokes, then retain Claude/Codex/Cursor transcripts before enabling the modern protocol in production. The managed-token registry and admin-only credential API are already wired to D1; the operator CLI is `tsx scripts/groundlane-credentials.mts`. Remaining document work includes controlled result-storage/async acceptance and a Cloudflare corpus backend. Short research stays synchronous unless the caller explicitly chooses the Tasks/fallback path, and provider results remain separate. Generic LLM extraction, persistent authenticated browser sessions, and broader Groundlane-owned long-running orchestration remain demand-gated roadmap items.
 - Open-source references are split into primary references and watchlist/discovery sources in the product requirements so low-maintenance candidates do not become runtime priorities by default.
-- Self-hosted document processing can enable an ownership-scoped, content-addressed SQLite result cache with a 24-hour working default, bounded caller TTL/cache controls, engine/version provenance, and source rebinding. Its repository enforces source-specific revocation, but no public artifact/corpus deletion path invokes that lifecycle yet. This does not cache `web_fetch`, `web_extract`, or `parse`; Cloudflare D1 cache composition remains pending.
+- Self-hosted document processing can enable an ownership-scoped, content-addressed SQLite result cache with a 24-hour working default, bounded caller TTL/cache controls, engine/version provenance, and source rebinding. The Cloudflare profile composes the same contract over D1/R2 when `DOCUMENT_CACHE_EDGE_ENABLED=true`; nine inline cache checks passed in isolated staging; verified-source delete and physical-cleanup acceptance remain open. `document_artifact_delete` and artifact expiry cleanup revoke every parser-option binding for that source without invalidating another source with identical bytes. Corpus update/remove/delete invalidates the corresponding normalized-source cache bindings; the Cloudflare corpus backend and its controlled lifecycle acceptance remain open. This does not cache `web_fetch`, `web_extract`, or `parse`.
 - Planned file/document output uses a canonical structured envelope with stable block/source references and typed tables, assets, formulas, citations, capability states, spans, warnings, errors, and engine/model provenance. Markdown remains the default lossy projection; provider raw JSON is never the public contract, and the current HTML `parse` schema remains unchanged.
 - Commercial roadmap: OSS V1 Stable remains an operator-hosted open-source product. Self-hosting never requires a Groundlane Cloud account, license server, activation check, or mandatory phone-home. Managed Groundlane Cloud is an approved later roadmap phase released progressively as Internal Alpha, Invite-only Beta, then Managed Cloud Public Launch. A public no-card trial waits for verified tenant/secret isolation, allowance hard stops, abuse controls, Claude/Codex/Cursor compatibility, provider cost attribution, token revocation, project deletion, and basic incident handling. Cloud uses a hosted Remote MCP endpoint plus Web dashboard, preset-first routing with full provenance, and no silent funding switch. Importing OSS configuration into Cloud remains optional.
 

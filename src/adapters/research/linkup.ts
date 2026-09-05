@@ -26,6 +26,11 @@ interface LinkupResearchOptions {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
+export type LinkupResearchTaskPoll =
+  | { readonly status: "working" }
+  | { readonly status: "completed"; readonly result: ResearchProviderResult }
+  | { readonly status: "failed"; readonly error: string };
+
 const reasoningDepthByEffort: Readonly<Record<ResearchEffort, string>> = {
   lite: "S",
   standard: "M",
@@ -130,8 +135,7 @@ export class LinkupResearchProvider implements ResearchProvider {
       !(request.domains?.length && request.excludeDomains?.length);
   }
 
-  async research(request: ResearchRequest, signal: AbortSignal): Promise<ResearchProviderResult> {
-    const started = performance.now();
+  async createTask(request: ResearchRequest, signal: AbortSignal): Promise<string> {
     const createRaw = await researchProviderJson(
       this.fetcher,
       LINKUP_RESEARCH_URL,
@@ -145,63 +149,91 @@ export class LinkupResearchProvider implements ResearchProvider {
       },
       signal,
     );
-    const id = taskId(createRaw);
+    return taskId(createRaw);
+  }
+
+  async pollTask(
+    id: string,
+    signal: AbortSignal,
+    started = performance.now(),
+  ): Promise<LinkupResearchTaskPoll> {
+    const raw = await researchProviderJson(
+      this.fetcher,
+      `${LINKUP_RESEARCH_URL}/${encodeURIComponent(id)}`,
+      {
+        method: "GET",
+        headers: { authorization: `Bearer ${this.options.apiKey}` },
+      },
+      signal,
+    );
+    if (!raw || typeof raw !== "object") {
+      throw new GroundlaneError(
+        "UPSTREAM_ERROR",
+        "web_research",
+        "Linkup returned a malformed research result",
+        true,
+      );
+    }
+    const value = raw as Record<string, unknown>;
+    const currentStatus = status(value);
+    if (currentStatus === "failed") {
+      return { status: "failed", error: "Linkup research task failed" };
+    }
+    if (currentStatus !== "completed") return { status: "working" };
+    const output = value.output;
+    if (!output || typeof output !== "object") {
+      throw new GroundlaneError(
+        "UPSTREAM_ERROR",
+        "web_research",
+        "Linkup returned a malformed research output",
+        true,
+      );
+    }
+    const outputValue = output as Record<string, unknown>;
+    const report = stringValue(outputValue.answer);
+    if (report === undefined) {
+      throw new GroundlaneError(
+        "UPSTREAM_ERROR",
+        "web_research",
+        "Linkup returned a malformed research report",
+        true,
+      );
+    }
+    return {
+      status: "completed",
+      result: {
+        provider: this.id,
+        report,
+        citations: await validateResearchCitations(
+          citationsFromOutput(outputValue),
+          this.validateUrl,
+          signal,
+        ),
+        durationMs: Math.round(performance.now() - started),
+        warnings: [
+          "linkup research is asynchronous upstream; Groundlane resumed it through a durable task handle",
+        ],
+      },
+    };
+  }
+
+  async research(request: ResearchRequest, signal: AbortSignal): Promise<ResearchProviderResult> {
+    const started = performance.now();
+    const id = await this.createTask(request, signal);
 
     while (true) {
-      const raw = await researchProviderJson(
-        this.fetcher,
-        `${LINKUP_RESEARCH_URL}/${encodeURIComponent(id)}`,
-        {
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${this.options.apiKey}`,
-          },
-        },
-        signal,
-      );
-      if (!raw || typeof raw !== "object") {
+      const polled = await this.pollTask(id, signal, started);
+      if (polled.status === "failed") {
         throw new GroundlaneError(
           "UPSTREAM_ERROR",
           "web_research",
-          "Linkup returned a malformed research result",
+          polled.error,
           true,
         );
       }
-      const value = raw as Record<string, unknown>;
-      const currentStatus = status(value);
-      if (currentStatus === "failed") {
-        throw new GroundlaneError(
-          "UPSTREAM_ERROR",
-          "web_research",
-          "Linkup research task failed",
-          true,
-        );
-      }
-      if (currentStatus === "completed") {
-        const output = value.output;
-        if (!output || typeof output !== "object") {
-          throw new GroundlaneError(
-            "UPSTREAM_ERROR",
-            "web_research",
-            "Linkup returned a malformed research output",
-            true,
-          );
-        }
-        const outputValue = output as Record<string, unknown>;
-        const report = stringValue(outputValue.answer);
-        if (report === undefined) {
-          throw new GroundlaneError(
-            "UPSTREAM_ERROR",
-            "web_research",
-            "Linkup returned a malformed research report",
-            true,
-          );
-        }
+      if (polled.status === "completed") {
         return {
-          provider: this.id,
-          report,
-          citations: await validateResearchCitations(citationsFromOutput(outputValue), this.validateUrl, signal),
-          durationMs: Math.round(performance.now() - started),
+          ...polled.result,
           warnings: [
             "linkup research is asynchronous upstream; Groundlane polled within the request deadline",
           ],

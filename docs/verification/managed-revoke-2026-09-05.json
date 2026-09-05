@@ -1,0 +1,86 @@
+{
+  "checkedAt": "2026-09-05T11:20:42.577Z",
+  "endpoint": "https://groundlane.vincent-xu-work.workers.dev/mcp",
+  "credentialId": "smoke721_9fcfcbaa7a4341a89993e5e3ec866627",
+  "fixtureTtlSeconds": 600,
+  "revokeMethod": "direct D1 conditional UPDATE; admin API not tested",
+  "before": [
+    {
+      "status": 200,
+      "initialized": true,
+      "protocolVersion": "2025-11-25"
+    },
+    {
+      "status": 200,
+      "initialized": true,
+      "protocolVersion": "2025-11-25"
+    },
+    {
+      "status": 200,
+      "initialized": true,
+      "protocolVersion": "2025-11-25"
+    }
+  ],
+  "after": [
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    },
+    {
+      "status": 401,
+      "initialized": false,
+      "protocolVersion": null
+    }
+  ],
+  "control": {
+    "status": 200,
+    "initialized": true,
+    "protocolVersion": "2025-11-25"
+  },
+  "revokeCommitted": true,
+  "cleaned": true,
+  "ok": true,
+  "observedDeploymentVersion": "00ae2b9a-c46b-4012-aaae-0be4f8125046",
+  "scope": "Existing deployed public MCP authorization after direct D1 revoke; not admin API, modern MCP protocol, multi-region proof or provider execution."
+}

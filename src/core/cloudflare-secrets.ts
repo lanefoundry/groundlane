@@ -1,4 +1,4 @@
-export type CloudflareSecretGroup = "authentication" | "search" | "browser";
+export type CloudflareSecretGroup = "authentication" | "search" | "browser" | "storage";
 
 export interface CloudflareSecretDefinition {
   name: string;
@@ -37,6 +37,13 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
     required: false,
     minimumLength: 32,
   },
+  {
+    name: "GROUNDLANE_MCP_REQUEST_STATE_SECRET",
+    label: "MCP multi-round-trip request-state signing secret",
+    group: "authentication",
+    required: false,
+    minimumLength: 32,
+  },
   { name: "TAVILY_API_KEY", label: "Tavily", group: "search", required: false },
   { name: "EXA_API_KEY", label: "Exa", group: "search", required: false },
   { name: "BRAVE_API_KEY", label: "Brave Search", group: "search", required: false },
@@ -60,6 +67,20 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
     label: "Browserless",
     group: "browser",
     required: false,
+  },
+  {
+    name: "R2_ACCESS_KEY_ID",
+    label: "R2 S3 presigned-upload access key ID",
+    group: "storage",
+    required: false,
+    minimumLength: 8,
+  },
+  {
+    name: "R2_SECRET_ACCESS_KEY",
+    label: "R2 S3 presigned-upload secret access key",
+    group: "storage",
+    required: false,
+    minimumLength: 16,
   },
 ] as const satisfies readonly CloudflareSecretDefinition[];
 

@@ -193,6 +193,14 @@ void test("PRD 678: provenance confidence must be 0..1", () => {
   );
 });
 
+void test("provenance preserves unknown measurements and rejects non-finite numbers", () => {
+  assert.doesNotThrow(() => validateEnvelope(makeEnvelope({ provenance: makeProvenance({ cost: null, confidence: null }) })));
+  for (const value of [NaN, Infinity, -Infinity]) {
+    assert.throws(() => validateEnvelope(makeEnvelope({ provenance: makeProvenance({ cost: value }) })));
+    assert.throws(() => validateEnvelope(makeEnvelope({ provenance: makeProvenance({ confidence: value }) })));
+  }
+});
+
 void test("PRD 678: blocks must have stable unique IDs", () => {
   const blocks = [
     makeTextBlock("b1", "first"),
@@ -722,7 +730,7 @@ void test("PRD 683: billing not double-counted when returning canonical + projec
   assert.equal("billingProvenance" in txtProj, false);
 
   // Provenance lives only on the envelope
-  assert.ok(envelope.provenance.cost >= 0);
+  assert.ok(envelope.provenance.cost !== null && envelope.provenance.cost >= 0);
 });
 
 // ---------------------------------------------------------------------------

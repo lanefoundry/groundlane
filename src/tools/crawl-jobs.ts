@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { CrawlJobManager } from "../core/crawl-jobs.js";
@@ -117,13 +117,13 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
           })),
           annotations: { readOnlyHint: false, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const data = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   () =>
@@ -142,7 +142,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
                         : { idempotencyKey: input.idempotencyKey }),
                     })),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "crawl_create",
                 ),
             );
@@ -163,18 +163,18 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
           outputSchema: resultEnvelopeSchema(z.object({ job: crawlJobDataSchema })),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const job = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   () => Promise.resolve(options.manager.status(input.groundlaneJobId, caller)),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "crawl_status",
                 ),
             );
@@ -203,13 +203,13 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
           })),
           annotations: { readOnlyHint: true, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const data = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   () =>
@@ -218,7 +218,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
                       ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
                     })),
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "crawl_result",
                 ),
             );
@@ -246,13 +246,13 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
           })),
           annotations: { readOnlyHint: false, openWorldHint: true },
         },
-        async (input, extra) => {
+        async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
             const data = await withConcurrency(
               options.limiter,
               deadline,
-              extra.signal,
+              ctx.mcpReq.signal,
               () =>
                 withinDeadline(
                   () => {
@@ -296,7 +296,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
                     });
                   },
                   deadline,
-                  extra.signal,
+                  ctx.mcpReq.signal,
                   "crawl_cancel",
                 ),
             );

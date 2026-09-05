@@ -12,11 +12,25 @@ import { setErrorLogSink } from "../tools/common.js";
 import { resolveWorkerAuthProfile } from "../worker/auth.js";
 import { verifyContainerAuth } from "../worker/internal-context.js";
 import { systemUtcClock, type ManagedClock } from "../worker/managed-tokens.js";
-import { createMcpHttpHandler } from "../mcp/server.js";
+import {
+  createMcpHttpHandler,
+  parseMcpProtocolMode,
+  type McpProtocolMode,
+} from "../mcp/server.js";
 import {
   createMcpRegistry,
+  type McpRequestContext,
   type McpRegistryFactory,
 } from "../mcp/registry.js";
+import {
+  decodeArtifactParseBridgeMetadata,
+  INTERNAL_ARTIFACT_METADATA_HEADER,
+  INTERNAL_ARTIFACT_PARSE_PATH,
+  INTERNAL_ARTIFACT_PURPOSE,
+} from "../mcp/artifact-bridge.js";
+import { structuredToolError, structuredToolResult } from "../mcp/results.js";
+import { GroundlaneError, toGroundlaneError } from "../core/errors.js";
+import type { DocumentParseInput, ResolvedDocumentSource } from "../tools/document-parse.js";
 
 const BODY_LIMIT = "1mb";
 
@@ -50,6 +64,14 @@ export interface ContainerAppOptions {
   expectedAudience?: string | undefined;
   clock?: ManagedClock | undefined;
   registryFactory?: McpRegistryFactory | undefined;
+  mcpProtocolMode?: McpProtocolMode | undefined;
+  mcpRequestStateSecret?: string | undefined;
+  parseResolvedDocument?: (
+    input: DocumentParseInput,
+    resolved: ResolvedDocumentSource,
+    context: McpRequestContext,
+    signal: AbortSignal,
+  ) => Promise<unknown>;
   /**
    * Analytics Engine dataset the container writes error events to. When
    * omitted, the container runs with the noop sink and nothing is recorded
@@ -120,7 +142,14 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
   const clock = options.clock ?? systemUtcClock();
   const registryFactory =
     options.registryFactory ?? (() => createMcpRegistry());
-  const handleMcp = createMcpHttpHandler(registryFactory);
+  const mcpProtocolMode = options.mcpProtocolMode ?? parseMcpProtocolMode(
+    process.env.GROUNDLANE_MCP_PROTOCOL_MODE,
+  );
+  const handleMcp = createMcpHttpHandler(registryFactory, {
+    protocolMode: mcpProtocolMode,
+    requestStateSecret:
+      options.mcpRequestStateSecret ?? process.env.GROUNDLANE_MCP_REQUEST_STATE_SECRET,
+  });
 
   app.disable("x-powered-by");
   app.use(requestIdMiddleware);
@@ -149,6 +178,112 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
     }
     response.json({ status: "ready", requestId: requestId(response) });
   });
+
+  app.post(
+    INTERNAL_ARTIFACT_PARSE_PATH,
+    express.raw({ type: "application/octet-stream", limit: "10mb" }),
+    asyncHandler(async (request, response) => {
+      if (authProfile !== "worker_internal_context" || options.parseResolvedDocument === undefined ||
+          !(request.body instanceof Buffer)) {
+        errorBody(response, 404, "not_found", "Route not found");
+        return;
+      }
+      const bytes = new Uint8Array(request.body.buffer, request.body.byteOffset, request.body.byteLength).slice();
+      const hashBytes = await crypto.subtle.digest("SHA-256", bytes);
+      const bodySha256 = `sha256-${[...new Uint8Array(hashBytes)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      const url = new URL(request.originalUrl, "http://groundlane-container.internal");
+      const authRequest = new globalThis.Request(url, {
+        method: request.method,
+        headers: request.headers as HeadersInit,
+      });
+      const decision = await verifyContainerAuth(authRequest, authProfile, {
+        signingSecret: internalSigningSecret,
+        expectedAudience,
+        expectedMethod: request.method,
+        expectedPath: url.pathname,
+        expectedPurpose: INTERNAL_ARTIFACT_PURPOSE,
+        expectedBodySha256: bodySha256,
+      }, nodeTimingSafeSubtle, clock);
+      if (!decision.ok || decision.principal === undefined || decision.credentialBinding === undefined) {
+        errorBody(response, 401, "unauthorized", "A valid internal context is required");
+        return;
+      }
+      let responseId: string | number | null = null;
+      try {
+        const metadata = decodeArtifactParseBridgeMetadata(
+          request.header(INTERNAL_ARTIFACT_METADATA_HEADER) ?? null,
+        );
+        responseId = metadata.id;
+        if (metadata.source.contentHash !== bodySha256 || clock.now() >= metadata.source.expiresAt) {
+          throw new Error("artifact parse bridge source binding is invalid");
+        }
+        const remainingMs = metadata.deadlineAt - clock.now();
+        if (remainingMs < 1_000) {
+          throw new GroundlaneError("DEADLINE_EXCEEDED", "document_parse", "Document parse deadline exceeded");
+        }
+        const input: DocumentParseInput = {
+          ...metadata.input,
+          timeoutMs: Math.min(metadata.input.timeoutMs ?? remainingMs, remainingMs),
+          source: { kind: "artifact", refId: metadata.source.refId, artifactKind: "source" },
+        };
+        const operation = new AbortController();
+        const abort = (): void => operation.abort(new Error("Artifact parse request disconnected"));
+        request.once("aborted", abort);
+        let data: unknown;
+        try {
+          data = await options.parseResolvedDocument(input, {
+            bytes,
+            mimeType: metadata.source.mimeType,
+            filename: metadata.source.filename,
+            sourceIdentity: {
+              contentHash: metadata.source.contentHash,
+              artifactRef: metadata.source.refId,
+              filename: metadata.source.filename,
+            },
+            cacheBindingIdentity: {
+              kind: "artifact",
+              contentHash: metadata.source.contentHash,
+              artifactRef: metadata.source.refId,
+              filename: metadata.source.filename,
+            },
+            sourceExpiresAt: metadata.source.expiresAt,
+          }, {
+            principal: decision.principal,
+            credentialBinding: decision.credentialBinding,
+          }, operation.signal);
+        } finally {
+          request.off("aborted", abort);
+        }
+        response.json({
+          jsonrpc: "2.0",
+          id: metadata.id,
+          result: {
+            ...structuredToolResult({ ok: true, data }),
+            _meta: { "io.modelcontextprotocol/serverInfo": { name: "groundlane", version: "0.1.0" } },
+          },
+        });
+      } catch (error) {
+        const safe = toGroundlaneError(error, "document_parse");
+        response.json({
+          jsonrpc: "2.0",
+          id: responseId,
+          result: {
+            ...structuredToolError({
+              ok: false,
+              error: {
+                code: safe.code,
+                stage: safe.stage,
+                message: safe.message,
+                retryable: safe.retryable,
+                ...(safe.hint === undefined ? {} : { hint: safe.hint }),
+              },
+            }),
+            _meta: { "io.modelcontextprotocol/serverInfo": { name: "groundlane", version: "0.1.0" } },
+          },
+        });
+      }
+    }),
+  );
 
   app.use(
     "/mcp",

@@ -5,9 +5,7 @@ import type {
   SearchResultItem,
 } from "../../core/contracts.js";
 import { GroundlaneError } from "../../core/errors.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import {
   assertSearchRequest,
   cleanDomains,
@@ -50,10 +48,9 @@ async function defaultFreeMcpSearch(
   const transport = new StreamableHTTPClientTransport(new URL(YOU_FREE_MCP_URL));
   try {
     // SDK transport works at runtime; the assertion narrows an exact optional type mismatch.
-    await client.connect(transport as Transport, { signal });
+    await client.connect(transport, { signal });
     const result = await client.callTool(
       { name: "you-search", arguments: youRequestBody(request) },
-      undefined,
       { signal },
     );
     if (result.isError) {
