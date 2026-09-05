@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "pnpm run build:container && pnpm run typecheck",
-    "build:container": "tsup src/container/server.ts --format esm --platform node --target node22 --out-dir dist/container --clean",
+    "build:container": "tsup --config tsup.config.ts && node scripts/check-container-bundle.mjs",
     "benchmark:parser": "tsx scripts/benchmark-parser.mts",
     "benchmark:reader": "tsx scripts/benchmark-reader.mts",
     "dev": "tsx watch src/container/server.ts",
