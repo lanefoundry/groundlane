@@ -30,6 +30,9 @@ export function startContainerServer(
   const services = createGroundlaneServices(config);
   const app = createContainerApp({
     authToken: config.authToken,
+    authMode: process.env.GROUNDLANE_AUTH_MODE,
+    internalSigningSecret: process.env.GROUNDLANE_INTERNAL_SIGNING_SECRET,
+    expectedAudience: process.env.GROUNDLANE_INTERNAL_AUDIENCE,
     registryFactory: services.registryFactory,
     ...(options.errorLogWriter === undefined ? {} : { errorLogWriter: options.errorLogWriter }),
   });

@@ -14,18 +14,18 @@
 
 </div>
 
-Groundlane 是開源的遠端 MCP server，也是 AI agent 的可信內容存取層。目前透過同一套受控介面提供 Web 搜尋、內容取得、確定性結構化抽取，以及 URL/raw HTML parsing。完整 document-processing roadmap 以結構化 conversion、deterministic extraction 與明確啟用的 model-assisted parsing 三層，涵蓋 Office/ODF/RTF、spreadsheets 與 structured text、EPUB/email、text/scanned/complex PDF、images、audio、tables、formulas、figures、metadata 與 citations。Document source 使用 bounded inline bytes、經 policy 檢查的公開 URL 或不透明且 storage-neutral 的 artifact reference；Cloudflare reference flow 由支援 upload handoff 的 client、Groundlane CLI 或 dashboard 使用短效 presigned URL，把大型／私人檔案直傳 R2 staging object，驗證並 immutable finalization 後才產生 opaque artifact reference。短效 R2 coordinate 不是公開 artifact identity，也不會被重用為 tool argument。Document processing 不會隱含建立 durable artifact、corpus membership 或 index；未來 file/document tool family 可使用下方公開說明的 bounded transient cache。Roadmap 也納入明確啟用的 operator-owned corpus control plane：Groundlane 負責可攜的 corpus identity、source enrollment、access、freshness、deletion 與 citation contracts，indexing 和 ranking backend 則保持可替換。Groundlane 不綁模型，將可替換 provider 收斂成穩定契約，並讓 operator 掌握 authentication 與資源限制；每種 roadmap format 與 corpus capability 都要個別通過安全、fixture、provenance、isolation 與品質 gate，才能稱為已支援。
+Groundlane 是開源的遠端 MCP server，也是 AI agent 的可信內容存取層。目前透過同一套受控介面提供 Web 搜尋、內容取得、確定性結構化抽取、URL/raw HTML parsing，以及第一個有界、同步的 `document_parse`。Document tool 接受 inline bytes 或經 policy 檢查的公開 URL，輸出 canonical envelope 與 Markdown、structured、text 或 all projection。Self-hosted Node 部署可選擇啟用 durable SQLite processing cache；R2 artifact、Cloudflare cache、async document execution、OCR 與 model-assisted parsing 仍是後續工作。Groundlane 也提供 operator-owned corpus control plane，並讓 operator 掌握 authentication 與資源限制。
 
 > [!IMPORTANT]
 > Groundlane 目前是早期預覽版（`0.1.0`），工具契約與部署行為仍可能調整。目標中的 OSS V1 Stable Release 是 operator-hosted open-source product；Managed Groundlane Cloud 已列入後續 roadmap，但目前還不是可用服務。Groundlane 不是 CAPTCHA solver，也不保證繞過所有反爬機制。
 
-OSS V1 Stable 規劃為 Web + document release，不是純 Web release。Stable document profiles 目標包含 text-based PDF；DOCX、XLSX、PPTX；CSV、TXT、Markdown、JSON、XML、HTML；以及有明確 omissions、會拒絕 active、encrypted、nested 或 unsupported content 的 bounded ODF、RTF、EPUB、EML profiles。Scanned-PDF/image OCR、legacy Office conversion、complex layout/table/formula/figure recovery、scholarly extraction 與 bounded audio transcription 只有在各自品質、隔離、成本與 provenance gate 通過後，才可作 opt-in experimental engines 隨 V1 提供。Video processing 與 universal document fidelity 不屬於 V1 承諾。目前的 `parse` tool 尚未實作上述任何 file/document capability。
+OSS V1 Stable 規劃為 Web + document release。目前 `document_parse` 已有 text-based PDF、DOCX/XLSX/PPTX、CSV/TXT/Markdown/JSON/XML/HTML，以及 bounded ODF/RTF/EPUB/EML 的本機 deterministic profiles；仍需補齊安全 corpus 與 live client/release gates，才能稱為 V1 stable。OCR、legacy Office、複雜版面／公式／圖表還原、scholarly extraction 與 audio transcription 仍是 experimental roadmap candidates。既有 `parse` 維持 URL/raw HTML 相容介面。
 
 Document roadmap 採可配置且有界的 retention，不會默默永久保存。Working defaults 是 upload intent 15 分鐘、staging cleanup window 一小時、transient artifact 24 小時，以及 ownership-scoped processing cache 24 小時。Caller 可在 operator 公告範圍內調整 upload、artifact 與 cache expiry；超界 request 直接拒絕，不會靜默 clamp。Staging cleanup window 只由 operator 控制。Operator 可透過可觀測的 document policy 調整 defaults/maxima 或關閉 cache。明確 corpus enrollment 使用自己的 retention policy，預設保存到移除；延長 expiry 必須 explicit。
 
-未來 document output 的 authoritative contract 是 versioned、provider-neutral canonical document envelope，第一版以 JSON serialization 傳輸。可重用 content core 與 per-source identity/provenance 分開 cache，避免相同 bytes 來自不同 URL 或 artifact 時沿用錯誤來源。Markdown 是預設的 agent-facing projection，不是 source of truth；text、structured 與 all-output mode 由 caller 明確選擇。Projection 需揭露 version、lossiness、omissions 與 canonical source references；任何超限 document output 都回 typed opaque result `ArtifactRef`，它與 cache entry 分開，也不能未經 explicit conversion 重新當 source。現有 URL/raw-HTML `parse` schema 保持相容，目前尚未實作此 roadmap contract。
+`document_parse` 已輸出 versioned、provider-neutral canonical document envelope 與 deterministic projection。Markdown 是預設 projection；text、structured、all 由 caller 明確選擇，並揭露 lossiness、omissions 與 canonical references。Durable result artifact 尚未接線，所以目前超限會明確回錯；artifact source schema 已保留，未配置 verified backend 時回 `PROVIDER_UNAVAILABLE`。
 
-未來 document execution 採明確雙軌。有界的 deterministic conversion/extraction 可在單一 end-to-end deadline 內同步完成；long-running work 使用 caller 明確建立的 async job。兩條路徑共用 canonical envelope、artifact、cache、provenance、policy 與 error contracts。同步 request 不會因 timeout、output size、queue pressure、fallback 或 engine choice 被 silent 轉成 durable job。第一個 async slice 會在 MCP Tasks 相容性驗證後代理 provider-owned document jobs；client support 不足時，再提供 explicit start/status/result/cancel tools。Groundlane 自行執行 long-running OCR、layout/VLM、audio 或其他文件工作，仍需另過 durable orchestration、volume、cost 與 isolation gate。目前 `parse` 尚未實作這套 lifecycle。
+Document execution 維持明確雙軌。現在的 deterministic slice 在單一 deadline 內同步完成，不會偷偷轉成 async job。Self-hosted Node service 設定 `DOCUMENT_CACHE_STATE_PATH` 後，`document_parse` 會啟用 ownership-scoped SQLite processing cache，支援 `use`、`refresh`、`bypass`、程序重啟後命中與 source-specific rebinding。Repository 另有 bounded D1 metadata、durable job/artifact/corpus repositories、side-effect receipt journal 與 immutable R2 binding adapter的 deterministic tests；Cloudflare cache、upload/artifact、durable corpus 與 async-job path 仍未掛上 production。
 
 ## 工具一覽
 
@@ -42,6 +42,7 @@ Document roadmap 採可配置且有界的 retention，不會默默永久保存�
 | `web_images` | 搜尋 image-specific provider index | 並行 fan-out 或 fallback 到 Brave Images、Serper Images、SerpApi Google Images |
 | `web_extract` | 抽取具名欄位為結構化 JSON | Deterministic selector 與 bounded pattern engines，可設定單次 output cap；不暗中呼叫 LLM |
 | `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
+| `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64 或經 policy 檢查的公開 URL；可選 self-hosted SQLite cache；artifact input 要等 verified backend 接線後才可用 |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
@@ -62,7 +63,7 @@ Fetch/extract/parse 在抓 URL 時會回報 `engine`、`backend`、`finalUrl`、
 
 ## 快速開始
 
-需求：Node.js 22+、pnpm 10 與 Git。只有啟用 local browser backend 時才需要 Chromium。
+需求：Node.js 22.13+、pnpm 10 與 Git。只有啟用 local browser backend 時才需要 Chromium。
 
 ```bash
 git clone https://github.com/vincentxuu/groundlane.git
@@ -103,13 +104,15 @@ pnpm run deploy
 未指定 `--env` 時，Wrangler 會操作 `wrangler.jsonc` 的 top-level target；
 若選用 named environment，status、setup 與 deploy 必須使用相同的 `--env`。
 
-有兩組 authentication secret 是必要的，而且**值必須不同**：
+基本 static-token deployment 需要兩組 caller-facing secret，而且**值必須不同**。Reference deployment 另用獨立的 internal signing secret；managed credential administration 再使用第四組隔離 secret：
 
 - `GROUNDLANE_AUTH_TOKEN`——headless/CLI client（Codex、Claude Code、排程/雲端
   自動化）呼叫 `/mcp` 時用的 bearer token。
 - `OAUTH_OWNER_PASSPHRASE`——把關互動式雲端連接器（claude.ai、ChatGPT）看到的
   `/authorize` 同意畫面。跟 bearer token 共用同一個值的話，同意頁一旦被釣魚就會
   連帶洩漏所有 headless client 在用的那組 token，所以要分開產生。
+- `GROUNDLANE_INTERNAL_SIGNING_SECRET`——簽署 Worker 傳給 Container 的短效 principal context；此模式下 Container 不接受 caller 的 raw bearer。
+- `GROUNDLANE_ADMIN_TOKEN`——只供 managed credential administration 使用，不能呼叫 `/mcp`。
 
 各自產生至少 32 個隨機字元，例如：
 
@@ -328,10 +331,10 @@ Groundlane **不保證**解開 CAPTCHA、隱藏自動化特徵，或取得 opera
 ## 專案狀態
 
 - 目前 source version：`0.1.0` early preview，尚無穩定 tool-contract 保證。
-- 已完成：十個 Web access MCP tools、四個 durable-crawl job tools（`crawl_create/status/result/cancel`）、一個 provider-backed schema extraction tool（`web_extract_schema`，benchmark-gated）、一個 document policy tool（`document_policy`）、七個 corpus lifecycle／search tools、一個 parser MCP tool、四個 provider 診斷 MCP tools、一個 operator 診斷 MCP tool、十三個 search adapters、provider-backed answer/research/content/map/crawl/news/images paths、自架 Reader、選用 Jina／Browserless backends、Cloudflare Worker + Container deployment，以及新增的 in-process runtimes（含 deterministic tests）：single-tenant multi-credential auth（統一 principal contract、managed-token rotation/revoke/audit、admin-only credential API、signed Worker→Container context）、corpus lifecycle／manifest truth source、async-task／durable-crawl lifecycle（含 idempotency guards）、single-URL schema extraction、document input／upload／artifact lifecycle、document cache／canonical-envelope／sync-async execution runtimes（含 deterministic tests）、stateful-resource／authenticated-session gates，以及 `groundlane credentials` operator CLI（`tsx scripts/groundlane-credentials.mts`）。新增 runtimes 使用 in-memory／fake ports（含 deterministic tests）；live D1／R2 綁定與 live client／smoke 驗證仍待後續。
+- 已完成：上列 Web/search/extraction/parser/provider/corpus tools、同步 deterministic `document_parse`、canonical output、可選且可跨重啟的 self-hosted SQLite processing cache、Cloudflare Worker + Container deployment、D1 managed-token authentication，以及 signed Worker-to-Container principal context。Durable D1/R2 lifecycle repositories 已有 deterministic tests；Cloudflare cache composition、R2 upload/artifact processing、durable async/corpus MCP lifecycle，以及 live document client/production verification仍待完成。
 - 下一步：把新的 multi-credential principal contract、managed-token registry runtime（fake-D1 port，已有 deterministic tests；live D1 綁定與 controlled smoke 待後續）與 admin-only credential API 接上 deployment（operator CLI 已可用：`tsx scripts/groundlane-credentials.mts`，建議加 package.json script，不加 `bin`）。新的 admin secret 會和既有 `GROUNDLANE_AUTH_TOKEN` 隔離；後者只保留為 legacy/local data-plane credential，永遠不取得 credential-management 權限。其他下一步包括補強工具契約與相容性 fixtures，保存 machine-readable Reader/parser/extractor benchmark artifacts，評估 async research API surface，加入 stateless login/challenge diagnostics，並先對新的 async-task lifecycle runtime 執行 live Claude／Codex／Cursor 驗證，再決定 async research API。短研究維持同步，provider 結果維持分開。已核准的 document-source contract 是 bounded inline bytes、經 policy 檢查的公開 URL 或 Groundlane-issued opaque `ArtifactRef`；Cloudflare reference upload path 由 MCP 建立 provisional upload intent，再由支援 upload handoff 的 client、CLI 或 dashboard 以 presigned PUT 直傳 R2 staging object，驗證與 immutable finalization 後才產生 artifact reference，self-host 則可替換 artifact backend。Operator-owned corpus lifecycle 與 `corpus_search` 已掛載（in-memory backend port），後續工作是 managed／external backend adapters。Scoped 結果帶有明確 corpus、freshness、access control、retention、deletion 與 backend provenance，不改變 public-Web `web_search`。泛用 LLM extraction、monitoring/scheduling、persistent authenticated browser sessions 與 Groundlane-owned durable orchestration仍是需逐項 demand gate 的 roadmap 候選，不是已承諾的 runtime 功能。未來若加入 authenticated browser，會使用獨立 opt-in tool family、人工 login/MFA、provider-owned opaque profile reference、明確 owner/TTL/delete 控制，並先限制在 read-only bounded navigation，再評估 Groundlane 是否代管 credential 或執行一般帳號操作。
 - 開源參考來源已在產品需求文件分成 primary references 與 watchlist/discovery sources，避免低維護度候選專案預設變成 runtime 優先項。
-- 規劃中的 document processing 包含 ownership-scoped、content-addressed result cache，working default 為 24 小時，並提供 bounded caller TTL/cache controls、完整 engine/version/source provenance，以及 deletion/invalidation 規則；這不代表啟用 Phase 0 Web response cache。
+- Self-hosted document processing 可啟用 ownership-scoped、content-addressed SQLite result cache，working default 為 24 小時，具 bounded caller TTL/cache controls、engine/version provenance 與 source rebinding。Repository 會執行 source-specific revocation，但目前還沒有 public artifact/corpus deletion path 觸發這段 lifecycle。這不會快取 `web_fetch`、`web_extract` 或 `parse`；Cloudflare D1 cache composition 仍待完成。
 - 規劃中的 file/document output 使用 canonical structured envelope，包含 stable block/source references、typed tables、assets、formulas、citations、capability states、spans、warnings、errors 與 engine/model provenance。Markdown 維持預設 lossy projection；provider raw JSON 不會成為 public contract，現有 HTML `parse` schema 也不改變。
 - 商業化 roadmap：OSS V1 Stable 維持 operator-hosted open-source product。Self-host 不需要 Groundlane Cloud 帳號、license server、activation check 或 mandatory phone-home。Managed Groundlane Cloud 是已核准的後續 phase，依 Internal Alpha、Invite-only Beta、Managed Cloud Public Launch 漸進發布。Tenant/secret isolation、allowance hard stop、abuse controls、Claude/Codex/Cursor compatibility、provider cost attribution、token revoke、project deletion 與基本 incident handling 通過前，不開放 public no-card trial。Cloud 使用 hosted Remote MCP endpoint 加 Web dashboard、具完整 provenance 的 preset-first routing，也不偷偷切換資金來源；OSS config 匯入 Cloud 仍是可選路徑。
 

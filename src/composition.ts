@@ -28,6 +28,8 @@ import { ParallelResearchProvider } from "./adapters/research/parallel.js";
 import { YouResearchProvider } from "./adapters/research/you.js";
 import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwright.js";
 import { SafeHttpFetcher } from "./adapters/http/undici-fetcher.js";
+import { SqliteDurableRecordStore } from "./adapters/state/sqlite-durable-store.js";
+import { SqliteImmutableBlobStore } from "./adapters/state/sqlite-immutable-blob.js";
 import { JinaReaderBackend } from "./adapters/reader/jina.js";
 import { BraveSearchProvider } from "./adapters/search/brave.js";
 import { BrowserbaseSearchProvider } from "./adapters/search/browserbase.js";
@@ -65,6 +67,7 @@ import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
 import { createCrawlJobsModule } from "./tools/crawl-jobs.js";
 import { createCorpusToolsModule } from "./tools/corpus-tools.js";
 import { createDocumentPolicyModule } from "./tools/document-policy.js";
+import { createDocumentParseModule } from "./tools/document-parse.js";
 import { createWebExtractSchemaModule } from "./tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "./tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "./tools/provider-capabilities.js";
@@ -84,6 +87,7 @@ import { createWebSearchModule } from "./tools/web-search.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import { getErrorLogSink } from "./tools/common.js";
 import { NoopErrorSink } from "./core/error-log.js";
+import { DurableDocumentCacheRepository } from "./core/durable-document-cache.js";
 export interface GroundlaneServices {
   registryFactory: McpRegistryFactory;
   close(): Promise<void>;
@@ -233,6 +237,24 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     backendBudget,
     new SourceAwareDocsResolver(httpFetcher),
   );
+  const documentCacheStore = config.documentCacheStatePath === undefined
+    ? undefined
+    : new SqliteDurableRecordStore(config.documentCacheStatePath, "document-cache");
+  const documentCachePayloads = config.documentCacheStatePath === undefined
+    ? undefined
+    : new SqliteImmutableBlobStore(config.documentCacheStatePath, "document-cache-payloads");
+  const documentCache = documentCacheStore === undefined || documentCachePayloads === undefined
+    ? undefined
+    : new DurableDocumentCacheRepository(documentCacheStore, { payloads: documentCachePayloads });
+  let documentCacheSweepInFlight = documentCache?.sweepExpired(Date.now()).catch(() => 0) ?? Promise.resolve(0);
+  const documentCacheSweep = documentCache === undefined
+    ? undefined
+    : setInterval(() => {
+        documentCacheSweepInFlight = documentCacheSweepInFlight
+          .then(() => documentCache.sweepExpired(Date.now()))
+          .catch(() => 0);
+      }, 3_600_000);
+  documentCacheSweep?.unref();
   const providers = createSearchProviders(config);
   const healthTracker = new DynamicPenaltyHealthTracker();
   const answerProviders = createAnswerProviders(config);
@@ -278,6 +300,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     ],
   });
   const limiter = new ConcurrencyLimiter(config.maxConcurrency, config.maxQueue);
+  const crawlJobManager = new CrawlJobManager();
   const modules = [
     createProviderCapabilitiesModule(),
     createProviderBalanceModule({
@@ -363,12 +386,6 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxResponseBytes: config.maxResponseBytes,
       maxOutputChars: config.maxOutputChars,
     }),
-    createCrawlJobsModule({
-      manager: new CrawlJobManager(),
-      limiter,
-      requestTimeoutMs: config.requestTimeoutMs,
-      maxOutputChars: config.maxOutputChars,
-    }),
     createWebExtractSchemaModule({
       // No extraction provider adapter is registered by default and no
       // benchmark report exists, so the tool stays closed behind the
@@ -382,6 +399,14 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     createDocumentPolicyModule({
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
+      runtime: { cacheEnabled: documentCache !== undefined },
+      bounds: {
+        cache: {
+          defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
+          minTtlSeconds: 60,
+          maxTtlSeconds: config.documentCacheMaxTtlSeconds,
+        },
+      },
     }),
     createCorpusToolsModule({
       store: new CorpusStore(new InMemoryCorpusBackend()),
@@ -396,8 +421,51 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   ];
 
   return {
-    registryFactory: () => createMcpRegistry(modules),
+    registryFactory: async (context) => {
+      if (context === undefined) {
+        throw new Error("Authenticated MCP request context is required");
+      }
+      await documentCacheSweepInFlight;
+      return createMcpRegistry([
+        ...modules,
+        createDocumentParseModule({
+          pipeline: fetchPipeline,
+          caller: {
+            ownerId: context.principal.principalId,
+            credentialBinding: context.credentialBinding,
+          },
+          limiter,
+          requestTimeoutMs: config.requestTimeoutMs,
+          maxResponseBytes: config.maxResponseBytes,
+          maxOutputChars: config.maxOutputChars,
+          ...(documentCache === undefined
+            ? {}
+            : {
+                cache: documentCache,
+                cacheConfig: {
+                  enabled: true,
+                  defaultTtlSeconds: config.documentCacheDefaultTtlSeconds,
+                  operatorMaxTtlSeconds: config.documentCacheMaxTtlSeconds,
+                },
+              }),
+        }),
+        createCrawlJobsModule({
+          manager: crawlJobManager,
+          caller: {
+            ownerId: context.principal.principalId,
+            credentialBinding: context.credentialBinding,
+          },
+          limiter,
+          requestTimeoutMs: config.requestTimeoutMs,
+          maxOutputChars: config.maxOutputChars,
+        }),
+      ]);
+    },
     async close(): Promise<void> {
+      if (documentCacheSweep !== undefined) clearInterval(documentCacheSweep);
+      await documentCacheSweepInFlight;
+      documentCacheStore?.close();
+      documentCachePayloads?.close();
       await browser.close?.();
     },
   };

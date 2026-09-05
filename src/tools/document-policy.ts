@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   getDocumentPolicyView,
   type DocumentPolicyOverrides,
+  type DocumentPolicyBoundsOverrides,
   type PolicyExpiryRequest,
 } from "../core/document-policy.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
@@ -36,6 +37,16 @@ const documentPolicyDataSchema = z.object({
   upload: policySectionSchema,
   artifact: policySectionSchema,
   corpus: policySectionSchema,
+  runtime: z.object({
+    cacheEnabled: z.boolean(),
+    cacheDefaultMode: z.literal("use"),
+    uploadAvailable: z.boolean(),
+    artifactSourceAvailable: z.boolean(),
+    durableAsyncJobsAvailable: z.boolean(),
+    durableCorporaAvailable: z.boolean(),
+    stagingCleanupWindowSeconds: z.number().int().positive(),
+    ownershipScope: z.literal("principal"),
+  }).strict(),
 });
 
 type ExpiryInput = {
@@ -59,6 +70,14 @@ export interface DocumentPolicyModuleOptions {
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
   overrides?: DocumentPolicyOverrides;
+  bounds?: DocumentPolicyBoundsOverrides;
+  runtime?: {
+    readonly cacheEnabled?: boolean;
+    readonly uploadAvailable?: boolean;
+    readonly artifactSourceAvailable?: boolean;
+    readonly durableAsyncJobsAvailable?: boolean;
+    readonly durableCorporaAvailable?: boolean;
+  };
 }
 
 /**
@@ -92,7 +111,10 @@ export function createDocumentPolicyModule(options: DocumentPolicyModuleOptions)
                   () => {
                     const nowMs = Date.now();
                     if (Object.keys(input).length === 0) {
-                      return Promise.resolve(getDocumentPolicyView(nowMs, options.overrides));
+                      return Promise.resolve({
+                        ...getDocumentPolicyView(nowMs, options.overrides, options.bounds),
+                        runtime: runtimeView(options),
+                      });
                     }
                     const overrides: {
                       cache?: PolicyExpiryRequest;
@@ -108,7 +130,10 @@ export function createDocumentPolicyModule(options: DocumentPolicyModuleOptions)
                     if (artifact !== undefined) overrides.artifact = artifact;
                     const corpus = toExpiryRequest(input.corpus);
                     if (corpus !== undefined) overrides.corpus = corpus;
-                    return Promise.resolve(getDocumentPolicyView(nowMs, overrides));
+                    return Promise.resolve({
+                      ...getDocumentPolicyView(nowMs, overrides, options.bounds),
+                      runtime: runtimeView(options),
+                    });
                   },
                   deadline,
                   extra.signal,
@@ -122,5 +147,18 @@ export function createDocumentPolicyModule(options: DocumentPolicyModuleOptions)
         },
       );
     },
+  };
+}
+
+function runtimeView(options: DocumentPolicyModuleOptions) {
+  return {
+    cacheEnabled: options.runtime?.cacheEnabled ?? false,
+    cacheDefaultMode: "use" as const,
+    uploadAvailable: options.runtime?.uploadAvailable ?? false,
+    artifactSourceAvailable: options.runtime?.artifactSourceAvailable ?? false,
+    durableAsyncJobsAvailable: options.runtime?.durableAsyncJobsAvailable ?? false,
+    durableCorporaAvailable: options.runtime?.durableCorporaAvailable ?? false,
+    stagingCleanupWindowSeconds: 3_600,
+    ownershipScope: "principal" as const,
   };
 }

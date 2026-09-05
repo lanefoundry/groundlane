@@ -749,7 +749,7 @@ void test("706 revoke is visible to the next primary lookup", async () => {
 void test("707 internal context mints bounded short-lived verifiable context", async () => {
   const clock = new FakeClock(START);
   const token = await mintInternalContext(
-    { signingSecret: "signing-secret-0123456789abcdef", audience: "groundlane-mcp", method: "POST", path: "/mcp", requestId: "req-1" },
+    { signingSecret: "signing-secret-0123456789abcdef", audience: "groundlane-mcp", method: "POST", path: "/mcp", requestId: "req-1", principal: { principalId: "owner", authMethod: "static_bearer", scopes: ["mcp"] }, credentialBinding: "static:legacy" },
     subtle,
     clock,
   );
@@ -786,7 +786,7 @@ void test("707 worker strips caller internal headers and raw never crosses bound
   assert.equal(stripped.headers.get(INTERNAL_CONTEXT_HEADER), null);
   assert.equal(stripped.headers.get("x-principal-id"), null);
   const token = await mintInternalContext(
-    { signingSecret: "s", audience: "groundlane-mcp", method: "POST", path: "/mcp", requestId: "r" },
+    { signingSecret: "s", audience: "groundlane-mcp", method: "POST", path: "/mcp", requestId: "r", principal: { principalId: "owner", authMethod: "static_bearer", scopes: ["mcp"] }, credentialBinding: "static:legacy" },
     subtle,
     clock,
   );

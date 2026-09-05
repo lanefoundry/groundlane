@@ -26,6 +26,10 @@ function clientDisplayName(client: ClientInfo): string {
     : client.clientId;
 }
 
+export function authorizedScopes(requested: readonly string[]): string[] {
+  return requested.length > 0 ? [...requested] : ["mcp"];
+}
+
 function renderForm(options: {
   clientName: string;
   scope: readonly string[];
@@ -261,9 +265,10 @@ export function createAuthorizeHandler(subtle: TimingSafeSubtleCrypto): Authoriz
         return new Response("Unknown OAuth client", { status: 400 });
       }
       const clientName = clientDisplayName(client);
+      const scopes = authorizedScopes(oauthRequest.scope);
 
       if (request.method !== "POST") {
-        return renderForm({ clientName, scope: oauthRequest.scope });
+        return renderForm({ clientName, scope: scopes });
       }
 
       const form = await request.formData();
@@ -276,7 +281,7 @@ export function createAuthorizeHandler(subtle: TimingSafeSubtleCrypto): Authoriz
       if (!isValid) {
         return renderForm({
           clientName,
-          scope: oauthRequest.scope,
+          scope: scopes,
           errorMessage: "Incorrect passphrase.",
         });
       }
@@ -285,8 +290,11 @@ export function createAuthorizeHandler(subtle: TimingSafeSubtleCrypto): Authoriz
         request: oauthRequest,
         userId: "owner",
         metadata: { clientName },
-        scope: oauthRequest.scope,
-        props: {},
+        scope: scopes,
+        props: {
+          clientId: oauthRequest.clientId,
+          scopes,
+        },
       });
 
       return Response.redirect(redirectTo, 302);

@@ -12,6 +12,13 @@ export class GroundlaneContainer extends Container<Cloudflare.Env> {
   override pingEndpoint = "/healthz";
   override envVars = {
     GROUNDLANE_AUTH_TOKEN: this.env.GROUNDLANE_AUTH_TOKEN,
+    GROUNDLANE_AUTH_MODE:
+      (this.env.GROUNDLANE_INTERNAL_SIGNING_SECRET ?? "").length > 0
+        ? "worker_internal_context"
+        : "local_static",
+    GROUNDLANE_INTERNAL_SIGNING_SECRET:
+      this.env.GROUNDLANE_INTERNAL_SIGNING_SECRET ?? "",
+    GROUNDLANE_INTERNAL_AUDIENCE: "groundlane-mcp-v2",
     PORT: String(this.defaultPort),
     READER_BACKEND: this.env.READER_BACKEND ?? "disabled",
     BROWSER_BACKEND: this.env.BROWSER_BACKEND ?? "local",

@@ -342,6 +342,16 @@ export const SUPPORTED_DOCUMENT_MIMES: readonly string[] = [
   "text/markdown",
   "text/csv",
   "text/html",
+  "application/json",
+  "application/xml",
+  "text/xml",
+  "application/rtf",
+  "text/rtf",
+  "message/rfc822",
+  "application/epub+zip",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
   "audio/mpeg",
   "audio/ogg",
   "audio/wav",
@@ -360,7 +370,17 @@ const LEGACY_OFFICE_MIMES: readonly string[] = [
 ];
 
 const ARCHIVE_FILENAME_RE = /\.(?:zip|rar|7z|tar|gz|bz2|xz|cbz|cbr)(?:[?#.]|$)/iu;
-const OFFICE_FILENAME_RE = /\.(?:docx|xlsx|pptx)$/iu;
+const OFFICE_FILENAME_RE = /\.(?:docx|xlsx|pptx|odt|ods|odp|epub)$/iu;
+
+const ZIP_MIME_EXTENSION: Readonly<Record<string, string>> = {
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.oasis.opendocument.text": ".odt",
+  "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+  "application/vnd.oasis.opendocument.presentation": ".odp",
+  "application/epub+zip": ".epub",
+};
 
 export type OfficeFlavor =
   | "ooxml-word"
@@ -530,7 +550,12 @@ function inputKindForMime(mime: string): DocumentInputKind {
   if (mime === "application/pdf") return "pdf";
   if (mime.startsWith("image/")) return "image";
   if (mime === "text/html") return "html";
-  if (mime === "text/plain" || mime === "text/markdown" || mime === "text/csv") return "text";
+  if (
+    mime === "text/plain" || mime === "text/markdown" || mime === "text/csv" ||
+    mime === "application/json" || mime === "application/xml" || mime === "text/xml" ||
+    mime === "application/rtf" || mime === "text/rtf" || mime === "message/rfc822" ||
+    mime === "application/epub+zip"
+  ) return "text";
   if (mime.startsWith("audio/")) return "audio";
   return "office";
 }
@@ -576,7 +601,8 @@ export function classifyDocumentBytes(
 
   if (sniffed === "application/zip") {
     const flavor = OOXML_MIME_TO_FLAVOR[mime];
-    if (flavor === undefined || !OFFICE_FILENAME_RE.test(filename)) {
+    const expectedExtension = ZIP_MIME_EXTENSION[mime];
+    if (expectedExtension === undefined || !filename.toLowerCase().endsWith(expectedExtension)) {
       throw documentInputError(
         `Archive inputs are rejected for file "${preview}"`,
         "document.archive_rejected",
@@ -590,7 +616,7 @@ export function classifyDocumentBytes(
         "Remove VBA macros and re-upload a macro-free Office document.",
       );
     }
-    return { inputKind: "office", sniffedMime: mime, needsOcr: false, officeFlavor: flavor };
+    return { inputKind: inputKindForMime(mime), sniffedMime: mime, needsOcr: false, officeFlavor: flavor ?? null };
   }
 
   if (sniffed === "application/x-ole-storage") {
@@ -605,12 +631,6 @@ export function classifyDocumentBytes(
   }
 
   if (sniffed !== null) {
-    // For OOXML declared but non-zip leading bytes (truncated fixture), allow
-    // the declared OOXML type when the filename matches; macro scan still ran.
-    const declaredFlavor = OOXML_MIME_TO_FLAVOR[mime];
-    if (declaredFlavor !== undefined && OFFICE_FILENAME_RE.test(filename)) {
-      return { inputKind: "office", sniffedMime: mime, needsOcr: false, officeFlavor: declaredFlavor };
-    }
     if (sniffed !== mime) {
       // Allow image/jpeg alias image/jpg.
       const normalizedDeclared = mime === "image/jpg" ? "image/jpeg" : mime;

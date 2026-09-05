@@ -47,6 +47,9 @@ void test("parseConfig applies bounded defaults and deduplicates provider order"
   assert.equal(config.readerBackend, "disabled");
   assert.equal(config.browserBackend, "disabled");
   assert.equal(config.browserlessRegion, "sfo");
+  assert.equal(config.documentCacheStatePath, undefined);
+  assert.equal(config.documentCacheDefaultTtlSeconds, 86_400);
+  assert.equal(config.documentCacheMaxTtlSeconds, 2_592_000);
 });
 
 void test("parseSearchMonthlyRequestBudgets validates provider names and duplicates", () => {
@@ -108,6 +111,33 @@ void test("parseConfig treats blank optional provider keys as unset", () => {
   });
 
   assert.deepEqual(config.providerKeys, {});
+});
+
+void test("parseConfig treats blank document cache state path as unset", () => {
+  assert.equal(parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_CACHE_STATE_PATH: "   ",
+  }).documentCacheStatePath, undefined);
+});
+
+void test("parseConfig retains an explicit document cache state path", () => {
+  const config = parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_CACHE_STATE_PATH: "/var/lib/groundlane/document-cache.sqlite",
+    DOCUMENT_CACHE_DEFAULT_TTL_SECONDS: "600",
+    DOCUMENT_CACHE_MAX_TTL_SECONDS: "3600",
+  });
+  assert.equal(config.documentCacheStatePath, "/var/lib/groundlane/document-cache.sqlite");
+  assert.equal(config.documentCacheDefaultTtlSeconds, 600);
+  assert.equal(config.documentCacheMaxTtlSeconds, 3_600);
+});
+
+void test("parseConfig rejects cache defaults above the operator maximum", () => {
+  assert.throws(() => parseConfig({
+    GROUNDLANE_AUTH_TOKEN: token,
+    DOCUMENT_CACHE_DEFAULT_TTL_SECONDS: "3600",
+    DOCUMENT_CACHE_MAX_TTL_SECONDS: "600",
+  }), /must not exceed/u);
 });
 
 void test("parseConfig requires a Browserless token for the remote browser backend", () => {

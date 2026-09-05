@@ -238,7 +238,9 @@ An external egress firewall remains recommended because application policy is no
 
 The MVP tools are stateless. Protocol session identifiers, if required by an MCP transport, are not browser sessions and do not convey browsing identity. Each request is independently bounded and cancellable.
 
-The MVP does not cache responses; `web_fetch.cached` is reserved for a future adapter and is currently always `false`. A distributed cache or provider-health store can be added behind new ports without changing tool contracts.
+Durable document work has an explicit storage boundary. `DurableRecordStorePort` stores at most 64 KiB of revision-fenced metadata and has SQLite and D1 adapters; `ImmutableBlobPort` stores content-addressed bytes and has SQLite and R2 adapters. The self-hosted Node composition can mount `DurableDocumentCacheRepository` through `DOCUMENT_CACHE_STATE_PATH`; content metadata/source bindings and immutable parsed-payload blobs survive restart, remain ownership-scoped, and preserve source-specific response provenance. Startup and hourly sweeps physically remove expired metadata and referenced payload blobs. Durable job, artifact, and corpus repositories plus the side-effect journal have restart/race tests, but their MCP lifecycles and the D1/R2 Cloudflare cache/artifact composition remain pending. D1 reads use a `first-primary` session when available.
+
+The optional document cache applies only to `document_parse`; `web_fetch.cached` remains `false`, and `web_fetch`, `web_extract`, and `parse` do not read or write this store. A distributed cache or provider-health store can be added behind new ports without changing those tool contracts.
 
 Stateful browser sessions are deferred because they require explicit ownership, expiry, cleanup, isolation, and billing semantics.
 

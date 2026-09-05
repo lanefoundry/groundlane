@@ -16,6 +16,11 @@ const optionalSecret = z.preprocess(
   z.string().min(1).optional(),
 );
 
+const optionalPath = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(1).max(4_096).optional(),
+);
+
 const environmentSchema = z.object({
   PORT: positiveInt(1, 65_535).default(8080),
   GROUNDLANE_AUTH_TOKEN: z.string().min(32),
@@ -50,6 +55,9 @@ const environmentSchema = z.object({
   MAX_OUTPUT_CHARS: positiveInt(1_000, 500_000).default(100_000),
   MAX_CONCURRENCY: positiveInt(1, 100).default(4),
   MAX_QUEUE: positiveInt(0, 1_000).default(16),
+  DOCUMENT_CACHE_STATE_PATH: optionalPath,
+  DOCUMENT_CACHE_DEFAULT_TTL_SECONDS: positiveInt(60, 2_592_000).default(86_400),
+  DOCUMENT_CACHE_MAX_TTL_SECONDS: positiveInt(60, 2_592_000).default(2_592_000),
 });
 
 export type SearchProviderId = KnownSearchProviderId;
@@ -72,6 +80,9 @@ export interface GroundlaneConfig {
   maxOutputChars: number;
   maxConcurrency: number;
   maxQueue: number;
+  documentCacheStatePath?: string;
+  documentCacheDefaultTtlSeconds: number;
+  documentCacheMaxTtlSeconds: number;
 }
 
 const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
@@ -151,6 +162,9 @@ export function parseConfig(
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {
     throw new Error("BROWSERLESS_TOKEN is required when BROWSER_BACKEND=browserless");
   }
+  if (parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS > parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS) {
+    throw new Error("DOCUMENT_CACHE_DEFAULT_TTL_SECONDS must not exceed DOCUMENT_CACHE_MAX_TTL_SECONDS");
+  }
 
   return {
     port: parsed.PORT,
@@ -176,5 +190,10 @@ export function parseConfig(
     maxOutputChars: parsed.MAX_OUTPUT_CHARS,
     maxConcurrency: parsed.MAX_CONCURRENCY,
     maxQueue: parsed.MAX_QUEUE,
+    ...(parsed.DOCUMENT_CACHE_STATE_PATH === undefined
+      ? {}
+      : { documentCacheStatePath: parsed.DOCUMENT_CACHE_STATE_PATH }),
+    documentCacheDefaultTtlSeconds: parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS,
+    documentCacheMaxTtlSeconds: parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS,
   };
 }

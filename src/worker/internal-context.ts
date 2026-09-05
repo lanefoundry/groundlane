@@ -1,5 +1,7 @@
 import {
+  createStaticPrincipal,
   sanitizeCallerPrincipalHeaders,
+  type AuthenticatedPrincipal,
   type TimingSafeSubtleCrypto,
   type WorkerAuthProfile,
 } from "./auth.js";
@@ -28,6 +30,8 @@ export interface InternalContextPayload {
   readonly method: string;
   readonly path: string;
   readonly requestId: string;
+  readonly principal: AuthenticatedPrincipal;
+  readonly credentialBinding: string;
 }
 
 function bytesToHex(bytes: ArrayBuffer): string {
@@ -112,18 +116,17 @@ function base64UrlDecodeToString(input: string): string | null {
 async function computeSignature(
   payloadB64: string,
   signingSecret: string,
-  subtle: TimingSafeSubtleCrypto,
 ): Promise<string> {
-  // Integrity protection bound to an independent signing secret (PRD 707).
-  // Production deployments SHOULD use HMAC-SHA256 via WebCrypto importKey/sign;
-  // this digest construction keeps the same secret-separation and
-  // constant-time-compare contract while depending only on the minimal
-  // TimingSafeSubtleCrypto port used across Worker tests.
-  const digest = await subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${signingSecret}.${payloadB64}`),
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(signingSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
-  return bytesToHex(digest);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payloadB64));
+  return bytesToHex(signature);
 }
 
 /**
@@ -143,11 +146,14 @@ export async function mintInternalContext(
     method: string;
     path: string;
     requestId: string;
+    principal: AuthenticatedPrincipal;
+    credentialBinding: string;
     ttlMs?: number;
   },
   subtle: TimingSafeSubtleCrypto,
   clock: ManagedClock,
 ): Promise<string> {
+  void subtle;
   if (options.signingSecret.length === 0) {
     throw new Error("signing secret is required");
   }
@@ -156,6 +162,18 @@ export async function mintInternalContext(
   }
   if (options.requestId.length === 0 || options.requestId.length > 128) {
     throw new Error("invalid request id");
+  }
+  if (options.principal.principalId !== "owner") {
+    throw new Error("invalid principal");
+  }
+  if (options.principal.scopes.length === 0 || options.principal.scopes.length > 32) {
+    throw new Error("invalid principal scopes");
+  }
+  if (
+    options.credentialBinding.length === 0 ||
+    options.credentialBinding.length > 256
+  ) {
+    throw new Error("invalid credential binding");
   }
   const ttl = options.ttlMs ?? INTERNAL_DEFAULT_TTL_MS;
   if (!Number.isInteger(ttl) || ttl <= 0 || ttl > INTERNAL_MAX_TTL_MS) {
@@ -170,9 +188,11 @@ export async function mintInternalContext(
     method: options.method.toUpperCase(),
     path: options.path,
     requestId: options.requestId,
+    principal: options.principal,
+    credentialBinding: options.credentialBinding,
   };
   const payloadB64 = base64UrlEncodeString(JSON.stringify(payload));
-  const sig = await computeSignature(payloadB64, options.signingSecret, subtle);
+  const sig = await computeSignature(payloadB64, options.signingSecret);
   return `v1.${payloadB64}.${sig}`;
 }
 
@@ -201,7 +221,7 @@ export async function verifyInternalContext(
   const payloadB64 = parts[1] as string;
   const presentedSig = parts[2] as string;
   if (options.signingSecret.length === 0) return { ok: false, reason: "missing_secret" };
-  const expectedSig = await computeSignature(payloadB64, options.signingSecret, subtle);
+  const expectedSig = await computeSignature(payloadB64, options.signingSecret);
   const encoder = new TextEncoder();
   const [a, b] = await Promise.all([
     subtle.digest("SHA-256", encoder.encode(presentedSig)),
@@ -217,27 +237,52 @@ export async function verifyInternalContext(
   }
   const json = base64UrlDecodeToString(payloadB64);
   if (json === null) return { ok: false, reason: "malformed" };
-  let payload: InternalContextPayload;
+  let decoded: unknown;
   try {
-    payload = JSON.parse(json) as InternalContextPayload;
+    decoded = JSON.parse(json) as unknown;
   } catch {
     return { ok: false, reason: "malformed" };
   }
+  if (typeof decoded !== "object" || decoded === null) {
+    return { ok: false, reason: "malformed" };
+  }
+  const payload = decoded as Partial<InternalContextPayload>;
   if (payload.iss !== INTERNAL_ISSUER) return { ok: false, reason: "issuer" };
   if (payload.aud !== options.expectedAudience) return { ok: false, reason: "audience" };
   if (payload.method !== options.expectedMethod.toUpperCase()) return { ok: false, reason: "method" };
   if (payload.path !== options.expectedPath) return { ok: false, reason: "path" };
-  if (payload.requestId.length === 0) return { ok: false, reason: "request_binding" };
+  if (typeof payload.requestId !== "string" || payload.requestId.length === 0) {
+    return { ok: false, reason: "request_binding" };
+  }
+  if (
+    typeof payload.principal !== "object" ||
+    payload.principal === null ||
+    payload.principal.principalId !== "owner" ||
+    !["static_bearer", "managed_token", "oauth"].includes(payload.principal.authMethod) ||
+    !Array.isArray(payload.principal.scopes) ||
+    payload.principal.scopes.length === 0 ||
+    payload.principal.scopes.length > 32 ||
+    payload.principal.scopes.some((scope) => typeof scope !== "string" || scope.length === 0 || scope.length > 128)
+  ) {
+    return { ok: false, reason: "principal" };
+  }
+  if (
+    typeof payload.credentialBinding !== "string" ||
+    payload.credentialBinding.length === 0 ||
+    payload.credentialBinding.length > 256
+  ) {
+    return { ok: false, reason: "credential_binding" };
+  }
   if (options.expectedRequestId !== undefined && payload.requestId !== options.expectedRequestId) {
     return { ok: false, reason: "request_binding" };
   }
   const now = clock.now();
-  if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) {
+  if (typeof payload.iat !== "number" || typeof payload.exp !== "number" || !Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) {
     return { ok: false, reason: "time" };
   }
   if (!(payload.iat <= now && now < payload.exp)) return { ok: false, reason: "expired" };
   if (payload.exp - payload.iat > INTERNAL_MAX_TTL_MS) return { ok: false, reason: "ttl" };
-  return { ok: true, payload };
+  return { ok: true, payload: payload as InternalContextPayload };
 }
 
 /**
@@ -261,6 +306,8 @@ export function buildContainerRequestWithInternalContext(
 export interface ContainerAuthDecision {
   readonly ok: boolean;
   readonly reason: string;
+  readonly principal?: AuthenticatedPrincipal;
+  readonly credentialBinding?: string;
 }
 
 /**
@@ -300,7 +347,12 @@ export async function verifyContainerAuth(
     if (request.headers.has("authorization")) {
       return { ok: false, reason: "raw_bearer_rejected" };
     }
-    return { ok: true, reason: "internal_context" };
+    return {
+      ok: true,
+      reason: "internal_context",
+      principal: verified.payload.principal,
+      credentialBinding: verified.payload.credentialBinding,
+    };
   }
   const authorization = request.headers.get("authorization");
   if (authorization === null) return { ok: false, reason: "missing_bearer" };
@@ -309,5 +361,12 @@ export async function verifyContainerAuth(
   const { timingSafeTokenEqual, parseBearerToken } = await import("./auth.js");
   const candidate = parseBearerToken(authorization) ?? "";
   const matches = await timingSafeTokenEqual(candidate, expected, subtle);
-  return matches ? { ok: true, reason: "legacy" } : { ok: false, reason: "invalid_bearer" };
+  return matches
+    ? {
+        ok: true,
+        reason: "legacy",
+        principal: createStaticPrincipal(),
+        credentialBinding: "static:legacy",
+      }
+    : { ok: false, reason: "invalid_bearer" };
 }

@@ -45,6 +45,13 @@ export interface DocumentPolicyOverrides {
   readonly corpus?: PolicyExpiryRequest;
 }
 
+export interface DocumentPolicyBoundsOverrides {
+  readonly cache?: PolicySectionBounds;
+  readonly upload?: PolicySectionBounds;
+  readonly artifact?: PolicySectionBounds;
+  readonly corpus?: PolicySectionBounds;
+}
+
 // Working defaults and hard caps. Upload intent default is 15 minutes and
 // verified-artifact default is 24 hours, matching the upload-intent lifecycle;
 // the processing cache working default is 24 hours.
@@ -149,14 +156,15 @@ function viewSection(
 export function getDocumentPolicyView(
   nowMs: number,
   overrides?: DocumentPolicyOverrides,
+  bounds?: DocumentPolicyBoundsOverrides,
 ): DocumentPolicyView {
   if (!Number.isInteger(nowMs) || nowMs <= 0) {
     throw policyError("nowMs must be a positive integer number of milliseconds");
   }
   return {
-    cache: viewSection(CACHE_BOUNDS, overrides?.cache, nowMs),
-    upload: viewSection(UPLOAD_BOUNDS, overrides?.upload, nowMs),
-    artifact: viewSection(ARTIFACT_BOUNDS, overrides?.artifact, nowMs),
-    corpus: viewSection(CORPUS_BOUNDS, overrides?.corpus, nowMs),
+    cache: viewSection(bounds?.cache ?? CACHE_BOUNDS, overrides?.cache, nowMs),
+    upload: viewSection(bounds?.upload ?? UPLOAD_BOUNDS, overrides?.upload, nowMs),
+    artifact: viewSection(bounds?.artifact ?? ARTIFACT_BOUNDS, overrides?.artifact, nowMs),
+    corpus: viewSection(bounds?.corpus ?? CORPUS_BOUNDS, overrides?.corpus, nowMs),
   };
 }

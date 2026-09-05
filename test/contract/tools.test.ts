@@ -48,6 +48,7 @@ import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
 import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
+import { createDocumentParseModule } from "../../src/tools/document-parse.js";
 import { createWebExtractSchemaModule } from "../../src/tools/web-extract-schema.js";
 import { createProviderBalanceModule } from "../../src/tools/provider-balance.js";
 import { createProviderCapabilitiesModule } from "../../src/tools/provider-capabilities.js";
@@ -67,8 +68,36 @@ import { createWebSearchModule } from "../../src/tools/web-search.js";
 
 const html = `<!doctype html><html><head><title>Groundlane</title><meta name="description" content="Trusted web access"><meta name="author" content="Groundlane Team"></head><body><main><h1>Hello</h1><p>Groundlane provides readable web content for AI agents.</p><a href="/docs">Docs</a></main></body></html>`;
 
+function contractPdf(text: string): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${String(text.length + 31)} >>\nstream\nBT /F1 12 Tf 72 720 Td (${text}) Tj ET\nendstream`,
+  ];
+  let source = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => { offsets.push(Buffer.byteLength(source)); source += `${String(index + 1)} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(source);
+  source += `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`;
+  return new TextEncoder().encode(source);
+}
+
 const httpFetcher: HttpFetcher = {
   fetch(request): Promise<RawDocument> {
+    if (request.url.endsWith("/document.pdf")) {
+      return Promise.resolve({
+        requestedUrl: request.url,
+        finalUrl: request.url,
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+        contentType: "application/octet-stream",
+        body: contractPdf("Groundlane URL PDF"),
+        engine: "http",
+        backend: "direct",
+      });
+    }
     return Promise.resolve({
       requestedUrl: request.url,
       finalUrl: request.url,
@@ -374,6 +403,14 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       limiter,
       requestTimeoutMs: 5_000,
     }),
+    createDocumentParseModule({
+      pipeline,
+      caller: { ownerId: "owner", credentialBinding: "static:test" },
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxResponseBytes: 100_000,
+      maxOutputChars: 10_000,
+    }),
     createCorpusToolsModule({
       store: new CorpusStore(new InMemoryCorpusBackend()),
       limiter,
@@ -413,6 +450,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "crawl_create",
         "crawl_result",
         "crawl_status",
+        "document_parse",
         "document_policy",
         "parse",
         "provider_balance",
@@ -432,6 +470,12 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "web_search",
       ],
     );
+    const documentTool = tools.tools.find((tool) => tool.name === "document_parse");
+    assert.ok(documentTool !== undefined);
+    const documentSchema = JSON.stringify(documentTool.outputSchema);
+    for (const field of ["schemaVersion", "documentId", "canonicalContentId", "sourceIdentity", "blocks", "readingOrder", "capabilityStates", "provenance"]) {
+      assert.match(documentSchema, new RegExp(`"${field}"`, "u"));
+    }
 
     const capabilitiesResult = await client.callTool({
       name: "provider_capabilities",
@@ -757,6 +801,89 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       internal: true,
     });
 
+    const documentResult = await client.callTool({
+      name: "document_parse",
+      arguments: {
+        source: {
+          kind: "inline",
+          dataBase64: Buffer.from("Groundlane document contract", "utf8").toString("base64"),
+          mimeType: "text/plain",
+          filename: "contract.txt",
+        },
+      },
+    });
+    const documentEnvelope = documentResult.structuredContent as {
+      ok?: boolean;
+      data?: { projection?: { content?: string }; envelope?: { schemaVersion?: string } };
+    };
+    assert.equal(documentEnvelope.ok, true);
+    assert.equal(documentEnvelope.data?.envelope?.schemaVersion, "1.0.0");
+    assert.match(documentEnvelope.data?.projection?.content ?? "", /Groundlane document contract/u);
+
+    const mismatchResult = await client.callTool({
+      name: "document_parse",
+      arguments: {
+        source: {
+          kind: "inline",
+          dataBase64: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64"),
+          mimeType: "application/pdf",
+          filename: "forged.pdf",
+        },
+      },
+    });
+    const mismatchEnvelope = mismatchResult.structuredContent as {
+      ok?: boolean;
+      error?: { code?: string; stage?: string; hint?: { code?: string } };
+    };
+    assert.equal(mismatchEnvelope.ok, false);
+    assert.equal(mismatchEnvelope.error?.code, "INVALID_INPUT");
+    assert.equal(mismatchEnvelope.error?.stage, "document-source");
+    assert.equal(mismatchEnvelope.error?.hint?.code, "document.mime_mismatch");
+
+    const projections = new Map<string, string>();
+    for (const output of ["markdown", "structured", "text", "all"] as const) {
+      const result = await client.callTool({
+        name: "document_parse",
+        arguments: {
+          source: {
+            kind: "inline",
+            dataBase64: Buffer.from("deterministic projection", "utf8").toString("base64"),
+            mimeType: "text/plain",
+            filename: "projection.txt",
+          },
+          output,
+        },
+      });
+      const envelope = result.structuredContent as {
+        ok?: boolean;
+        data?: { envelope?: { documentId?: string; canonicalContentId?: string }; projection?: { kind?: string; content?: string } };
+      };
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.data?.projection?.kind, output);
+      projections.set(output, `${envelope.data?.envelope?.documentId ?? ""}:${envelope.data?.envelope?.canonicalContentId ?? ""}`);
+    }
+    assert.equal(new Set(projections.values()).size, 1);
+
+    const urlDocumentResult = await client.callTool({
+      name: "document_parse",
+      arguments: { source: { kind: "url", url: "https://example.com/document.pdf" }, output: "text" },
+    });
+    const urlDocumentEnvelope = urlDocumentResult.structuredContent as {
+      ok?: boolean;
+      data?: {
+        projection?: { content?: string };
+        envelope?: { metadata?: Array<{ key?: string; value?: string }> };
+        mediaType?: string;
+      };
+    };
+    assert.equal(urlDocumentEnvelope.ok, true);
+    assert.equal(urlDocumentEnvelope.data?.mediaType, "application/pdf");
+    assert.match(urlDocumentEnvelope.data?.projection?.content ?? "", /Groundlane URL PDF/u);
+    assert.deepEqual(
+      urlDocumentEnvelope.data?.envelope?.metadata?.find((entry) => entry.key === "requestedUrl"),
+      { key: "requestedUrl", value: "https://example.com/document.pdf" },
+    );
+
     const crawlCreateResult = await client.callTool({
       name: "crawl_create",
       arguments: { seedUrl: "https://example.com", ttlSeconds: 600 },
@@ -835,6 +962,16 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         upload?: { effectiveExpiresAt?: string };
         artifact?: { effectiveExpiresAt?: string };
         corpus?: { effectiveExpiresAt?: string };
+        runtime?: {
+          cacheEnabled?: boolean;
+          cacheDefaultMode?: string;
+          uploadAvailable?: boolean;
+          artifactSourceAvailable?: boolean;
+          durableAsyncJobsAvailable?: boolean;
+          durableCorporaAvailable?: boolean;
+          stagingCleanupWindowSeconds?: number;
+          ownershipScope?: string;
+        };
       };
     };
     assert.equal(policyEnvelope.ok, true);
@@ -842,6 +979,16 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.match(policyEnvelope.data?.upload?.effectiveExpiresAt ?? "", /^\d{4}-/u);
     assert.match(policyEnvelope.data?.artifact?.effectiveExpiresAt ?? "", /^\d{4}-/u);
     assert.match(policyEnvelope.data?.corpus?.effectiveExpiresAt ?? "", /^\d{4}-/u);
+    assert.deepEqual(policyEnvelope.data?.runtime, {
+      cacheEnabled: false,
+      cacheDefaultMode: "use",
+      uploadAvailable: false,
+      artifactSourceAvailable: false,
+      durableAsyncJobsAvailable: false,
+      durableCorporaAvailable: false,
+      stagingCleanupWindowSeconds: 3_600,
+      ownershipScope: "principal",
+    });
 
     const corpusCreateResult = await client.callTool({
       name: "corpus_create",

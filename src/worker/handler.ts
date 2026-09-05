@@ -8,7 +8,9 @@ import {
   isRegisterPath,
   parseBearerToken,
   resolveWorkerAuthProfile,
+  createStaticPrincipal,
   type TimingSafeSubtleCrypto,
+  type AuthenticatedPrincipal,
 } from "./auth.js";
 import {
   BoundedAuditLog,
@@ -42,7 +44,6 @@ export { CONTAINER_INSTANCE_NAME, type WorkerEnv } from "./proxy.js";
 type ExtendedEnv = WorkerEnv & {
   GROUNDLANE_ADMIN_TOKEN?: string;
   GROUNDLANE_INTERNAL_SIGNING_SECRET?: string;
-  GROUNDLANE_AUTH_MODE?: string;
   MANAGED_TOKEN_D1?: D1Database;
   __MANAGED_STORE__?: ManagedTokenStore | null;
   __MANAGED_CLOCK__?: ManagedClock;
@@ -92,11 +93,10 @@ async function proxyDataPlane(
   env: ExtendedEnv,
   requestId: string,
   subtle: TimingSafeSubtleCrypto,
+  principal: AuthenticatedPrincipal,
+  credentialBinding: string,
 ): Promise<Response> {
   const profile = resolveWorkerAuthProfile({
-    ...(env.GROUNDLANE_AUTH_MODE === undefined
-      ? {}
-      : { GROUNDLANE_AUTH_MODE: env.GROUNDLANE_AUTH_MODE }),
     ...(env.GROUNDLANE_INTERNAL_SIGNING_SECRET === undefined
       ? {}
       : { GROUNDLANE_INTERNAL_SIGNING_SECRET: env.GROUNDLANE_INTERNAL_SIGNING_SECRET }),
@@ -115,6 +115,8 @@ async function proxyDataPlane(
         method: request.method,
         path: url.pathname,
         requestId,
+        principal,
+        credentialBinding,
       },
       subtle,
       getManagedClock(env),
@@ -138,7 +140,10 @@ async function authenticateManagedRequest(
   request: Request,
   env: ExtendedEnv,
   subtle: TimingSafeSubtleCrypto,
-): Promise<{ ok: true } | { ok: false; response: Response }> {
+): Promise<
+  | { ok: true; principal: AuthenticatedPrincipal }
+  | { ok: false; response: Response }
+> {
   const authorization = request.headers.get("authorization");
   const token = parseBearerToken(authorization);
   // This helper is only called for managed-format bearers; non-managed callers
@@ -170,7 +175,7 @@ async function authenticateManagedRequest(
         }),
       };
     }
-    return { ok: true };
+    return { ok: true, principal };
   } catch (error) {
     if (error instanceof ManagedTokenError && error.code === "storage_unavailable") {
       return {
@@ -262,13 +267,27 @@ export async function handleWorkerRequest(
 
   if (isReadyzPath(pathname) && request.method === "GET") {
     if (await hasValidStaticBearerToken(request, env, subtle)) {
-      return proxyDataPlane(request, extended, requestId, subtle);
+      return proxyDataPlane(
+        request,
+        extended,
+        requestId,
+        subtle,
+        createStaticPrincipal(),
+        "static:legacy",
+      );
     }
     const candidate = parseBearerToken(request.headers.get("authorization"));
     if (candidate !== undefined && isManagedTokenFormat(candidate)) {
       const checked = await authenticateManagedRequest(request, extended, subtle);
       if (!checked.ok) return checked.response;
-      return proxyDataPlane(request, extended, requestId, subtle);
+      return proxyDataPlane(
+        request,
+        extended,
+        requestId,
+        subtle,
+        checked.principal,
+        `managed:${checked.principal.credentialId ?? "unknown"}`,
+      );
     }
     return jsonError(
       401,
@@ -293,7 +312,14 @@ export async function handleWorkerRequest(
   // unchanged static-token path, checked first so their behavior never
   // depends on the OAuth layer below.
   if (isMcpPath(pathname) && (await hasValidStaticBearerToken(request, env, subtle))) {
-    return proxyDataPlane(request, extended, requestId, subtle);
+    return proxyDataPlane(
+      request,
+      extended,
+      requestId,
+      subtle,
+      createStaticPrincipal(),
+      "static:legacy",
+    );
   }
 
   if (isMcpPath(pathname)) {
@@ -301,7 +327,14 @@ export async function handleWorkerRequest(
     if (candidate !== undefined && isManagedTokenFormat(candidate)) {
       const checked = await authenticateManagedRequest(request, extended, subtle);
       if (!checked.ok) return checked.response;
-      return proxyDataPlane(request, extended, requestId, subtle);
+      return proxyDataPlane(
+        request,
+        extended,
+        requestId,
+        subtle,
+        checked.principal,
+        `managed:${checked.principal.credentialId ?? "unknown"}`,
+      );
     }
   }
 
@@ -310,7 +343,18 @@ export async function handleWorkerRequest(
   // OAuth-issued bearer token still works on the same route.
   if (isOAuthManagedPath(pathname)) {
     const sanitized = stripCallerInternalHeaders(request);
-    return buildOAuthProvider(subtle).fetch(requestWithId(sanitized, requestId), env, ctx);
+    return buildOAuthProvider(
+      subtle,
+      (oauthRequest, oauthEnv, principal, credentialBinding) =>
+        proxyDataPlane(
+          oauthRequest,
+          oauthEnv,
+          requestId,
+          subtle,
+          principal,
+          credentialBinding,
+        ),
+    ).fetch(requestWithId(sanitized, requestId), env, ctx);
   }
 
   return jsonError(404, "not_found", "Route not found", requestId);

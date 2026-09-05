@@ -4,6 +4,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Request, Response } from "express";
 
 import type { McpRegistryFactory } from "./registry.js";
+import type { McpRequestContext } from "./registry.js";
 
 export const MCP_SERVER_INFO = {
   name: "groundlane",
@@ -23,7 +24,12 @@ export function createMcpHttpHandler(
   registryFactory: McpRegistryFactory,
 ): (request: Request, response: Response) => Promise<void> {
   return async (request, response) => {
-    const registry = await registryFactory();
+    const contextValue: unknown = response.locals.mcpRequestContext;
+    const context =
+      typeof contextValue === "object" && contextValue !== null
+        ? (contextValue as McpRequestContext)
+        : undefined;
+    const registry = await registryFactory(context);
     const server = new McpServer(MCP_SERVER_INFO, {
       instructions: MCP_SERVER_INSTRUCTIONS,
     });

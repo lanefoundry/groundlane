@@ -76,6 +76,7 @@ const crawlJobDataSchema = z.object({
 
 export interface CrawlJobsModuleOptions {
   manager: CrawlJobManager;
+  caller?: { readonly ownerId: string; readonly credentialBinding: string };
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
   maxOutputChars: number;
@@ -97,7 +98,10 @@ function assertWithinOutputLimit(value: unknown, maxOutputChars: number, tool: s
  * acknowledgment is recorded but never reported as upstream-cancelled.
  */
 export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModule {
-  const caller = { ownerId: MCP_OWNER_ID, credentialBinding: MCP_CREDENTIAL_BINDING };
+  const caller = options.caller ?? {
+    ownerId: MCP_OWNER_ID,
+    credentialBinding: MCP_CREDENTIAL_BINDING,
+  };
   return {
     name: "crawl_jobs",
     register(server: McpServer): void {

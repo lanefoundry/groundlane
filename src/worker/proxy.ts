@@ -24,7 +24,10 @@ export type WorkerEnv = Pick<
   GROUNDLANE_CONTAINER: ContainerNamespace;
 };
 
-export const CONTAINER_INSTANCE_NAME = "groundlane-mcp";
+// Bumped when the Container authentication contract moved from a duplicated
+// static bearer to signed Worker context. A fresh named instance prevents an
+// already-running Container from retaining stale startup environment.
+export const CONTAINER_INSTANCE_NAME = "groundlane-mcp-v2";
 
 export function requestWithId(request: Request, requestId: string): Request {
   const headers = new Headers(request.headers);

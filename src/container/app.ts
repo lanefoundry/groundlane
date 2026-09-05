@@ -9,7 +9,9 @@ import { timingSafeEqual } from "node:crypto";
 
 import { CloudflareErrorSink, type ErrorLogSink } from "../core/error-log.js";
 import { setErrorLogSink } from "../tools/common.js";
-import { hasValidBearerToken } from "../worker/auth.js";
+import { resolveWorkerAuthProfile } from "../worker/auth.js";
+import { verifyContainerAuth } from "../worker/internal-context.js";
+import { systemUtcClock, type ManagedClock } from "../worker/managed-tokens.js";
 import { createMcpHttpHandler } from "../mcp/server.js";
 import {
   createMcpRegistry,
@@ -43,6 +45,10 @@ const nodeTimingSafeSubtle = {
 
 export interface ContainerAppOptions {
   authToken?: string | undefined;
+  authMode?: string | undefined;
+  internalSigningSecret?: string | undefined;
+  expectedAudience?: string | undefined;
+  clock?: ManagedClock | undefined;
   registryFactory?: McpRegistryFactory | undefined;
   /**
    * Analytics Engine dataset the container writes error events to. When
@@ -104,6 +110,14 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
   setErrorLogSink(buildSink(options));
   const app = express();
   const authToken = options.authToken ?? process.env.GROUNDLANE_AUTH_TOKEN ?? "";
+  const internalSigningSecret =
+    options.internalSigningSecret ?? process.env.GROUNDLANE_INTERNAL_SIGNING_SECRET ?? "";
+  const authProfile = resolveWorkerAuthProfile({
+    GROUNDLANE_AUTH_MODE: options.authMode ?? process.env.GROUNDLANE_AUTH_MODE,
+    GROUNDLANE_INTERNAL_SIGNING_SECRET: internalSigningSecret,
+  });
+  const expectedAudience = options.expectedAudience ?? "groundlane-mcp-v2";
+  const clock = options.clock ?? systemUtcClock();
   const registryFactory =
     options.registryFactory ?? (() => createMcpRegistry());
   const handleMcp = createMcpHttpHandler(registryFactory);
@@ -121,12 +135,15 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
   });
 
   app.get("/readyz", (_request, response) => {
-    if (authToken.length === 0) {
+    const ready = authProfile === "worker_internal_context"
+      ? internalSigningSecret.length > 0
+      : authToken.length > 0;
+    if (!ready) {
       errorBody(
         response,
         503,
         "not_ready",
-        "GROUNDLANE_AUTH_TOKEN is not configured",
+        "Container authentication is not configured",
       );
       return;
     }
@@ -136,14 +153,25 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
   app.use(
     "/mcp",
     asyncHandler(async (request, response, next) => {
-      if (
-        authToken.length === 0 ||
-        !(await hasValidBearerToken(
-          request.headers.authorization ?? null,
-          authToken,
-          nodeTimingSafeSubtle,
-        ))
-      ) {
+      const url = new URL(request.originalUrl, "http://groundlane-container.internal");
+      const authRequest = new globalThis.Request(url, {
+        method: request.method,
+        headers: request.headers as HeadersInit,
+      });
+      const decision = await verifyContainerAuth(
+        authRequest,
+        authProfile,
+        {
+          legacyToken: authToken,
+          signingSecret: internalSigningSecret,
+          expectedAudience,
+          expectedMethod: request.method,
+          expectedPath: url.pathname,
+        },
+        nodeTimingSafeSubtle,
+        clock,
+      );
+      if (!decision.ok) {
         response.setHeader("www-authenticate", 'Bearer realm="groundlane"');
         errorBody(
           response,
@@ -153,6 +181,14 @@ export function createContainerApp(options: ContainerAppOptions = {}): express.E
         );
         return;
       }
+      if (decision.principal === undefined || decision.credentialBinding === undefined) {
+        errorBody(response, 401, "invalid_context", "Authenticated context is incomplete");
+        return;
+      }
+      response.locals.mcpRequestContext = {
+        principal: decision.principal,
+        credentialBinding: decision.credentialBinding,
+      };
       next();
     }),
   );

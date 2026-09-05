@@ -504,6 +504,8 @@ export type DocumentCacheProcessResult<T> =
       readonly data: T;
       readonly provenance: BillingProvenance;
       readonly stored: boolean;
+      readonly createdAt?: number;
+      readonly expiresAt?: number;
       readonly degraded?: boolean;
       readonly cacheError?: string;
     };

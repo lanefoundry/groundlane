@@ -148,7 +148,8 @@ rotation/revoke/audit) and durable async artifact storage need Cloudflare
 resources. The reference bindings are checked in and live:
 
 - D1 database `groundlane-managed-tokens` (`MANAGED_TOKEN_D1`), migrated
-  with `migrations/0001_managed_tokens.sql`;
+  with `migrations/0001_managed_tokens.sql` and
+  `migrations/0002_durable_records.sql`;
 - R2 bucket `groundlane-artifacts` (`GROUNDLANE_ARTIFACTS`).
 
 > [!IMPORTANT]
@@ -158,10 +159,22 @@ resources. The reference bindings are checked in and live:
 > as one atomic batch (guarded INSERT first, guarded UPDATE second); a lost
 > race changes zero rows and returns a stable conflict. Live SQL smoke on the
 > provisioned database confirmed rotate 1/0, revoke first-wins, and zero
-> residue rows. The R2 artifact storage backend is still pending — core
-> `ArtifactStoragePort` is synchronous and must migrate to an async port
-> before an R2 adapter can take the boundary; until then durable `ArtifactRef`
-> values stay in-memory only.
+> residue rows. Bounded D1/SQLite metadata adapters, an immutable R2 binding
+> adapter, durable cache/job/artifact/corpus repositories, and a durable
+> side-effect journal are now implemented and covered by deterministic
+> race/reopen/integrity tests. The self-hosted Node service can mount the cache
+> repository on SQLite with `DOCUMENT_CACHE_STATE_PATH`; the Cloudflare
+> Container does not forward that setting and does not yet compose the cache on
+> D1. MCP upload, artifact, durable corpus, and async-job lifecycles also remain
+> unavailable in the deployed tool path.
+
+For a self-hosted Node deployment, `DOCUMENT_CACHE_STATE_PATH` enables a local
+SQLite cache containing revision-fenced metadata and immutable parsed-payload
+blobs. `DOCUMENT_CACHE_DEFAULT_TTL_SECONDS` and
+`DOCUMENT_CACHE_MAX_TTL_SECONDS` configure the advertised default and hard
+maximum. Startup and hourly sweeps remove expired records and payload bytes.
+These variables are intentionally absent from the Worker-to-Container allowlist;
+they do not enable the Cloudflare D1/R2 path.
 
 1. (Already done for the reference deployment; repeat only for a new
    account.) Create the D1 database and the R2 bucket, then record their
@@ -182,7 +195,10 @@ resources. The reference bindings are checked in and live:
    ```
 
    `migrations/0001_managed_tokens.sql` stores verifiers/digests and bounded
-   metadata only — raw bearer secrets are never persisted. Planned rotation
+   metadata only — raw bearer secrets are never persisted.
+   `migrations/0002_durable_records.sql` creates a separate namespaced,
+   revision-fenced metadata table for future job/upload/artifact/cache/corpus
+   repositories; large bytes must remain in R2. Planned rotation
    must run as a single atomic conditional write (see the SQL comments); a
    lost race returns a stable conflict instead of a second successor.
 4. Set the two operator secrets through `pnpm secrets:setup` (they are part
@@ -197,6 +213,8 @@ resources. The reference bindings are checked in and live:
      Container internal principal context; raw caller credentials never
      cross that boundary.
 5. Deploy with `pnpm run deploy` as usual.
+
+The reference Container starts in `worker_internal_context` mode whenever the signing secret is bound. The Worker authenticates static, managed, or OAuth credentials and signs issuer, audience, issued/expiry time, HTTP method/path, request ID, principal, and a non-secret credential binding. The Container verifies every field and does not fall back to a raw caller bearer. Direct local Node operation uses the separate `local_static` mode.
 
 Future adapter constraints, recorded here so the wiring PR cannot miss them:
 authorization reads must use the D1 Sessions API with a primary/sequential
@@ -347,10 +365,12 @@ Run checks from a network outside the deployment account:
 6. A JavaScript fixture exercises the Container browser path.
 7. `web_search` identifies its selected provider.
 8. `web_extract` returns deterministic structured data and missing fields.
-9. Private, loopback, metadata, redirect-to-private, and browser-subresource targets are blocked.
-10. Timeouts, byte/output caps, concurrency, and queue limits behave as configured.
+9. `document_parse` accepts a bounded inline text fixture and a controlled public-URL fixture, then returns a canonical envelope and the requested projection.
+10. Forged, expired, wrong-audience, wrong-path, and replayed internal contexts are rejected; raw bearer fallback at the Container is rejected.
+11. Private, loopback, metadata, redirect-to-private, and browser-subresource targets are blocked.
+12. Timeouts, byte/output caps, concurrency, and queue limits behave as configured.
 
-The bundled smoke client verifies the exact MCP tool list, diagnostic tools, plus `web_fetch` and `web_extract` against the reserved `example.com` documentation domain:
+The bundled smoke client verifies the exact MCP tool list and diagnostic tools, plus `web_fetch`, `web_extract`, and inline `document_parse`, against the reserved `example.com` documentation domain:
 
 ```bash
 GROUNDLANE_MCP_URL=https://your-worker.example/mcp \
@@ -391,6 +411,7 @@ Tool schema changes should be backward compatible whenever possible. If a rollba
 | Symptom | Check |
 | --- | --- |
 | `/mcp` returns unauthorized (static-token client) | Bearer header format and `GROUNDLANE_AUTH_TOKEN` secret binding |
+| Worker accepts auth but Container returns unauthorized | `GROUNDLANE_INTERNAL_SIGNING_SECRET`, derived auth mode, `groundlane-mcp-v2` audience/instance, and Worker/Container deployment version alignment |
 | Cloud connector can't complete OAuth | `OAUTH_KV` binding exists and matches a real namespace, `OAUTH_OWNER_PASSPHRASE` is set, `global_fetch_strictly_public` compatibility flag is present |
 | `/authorize` never shows the consent form | Client registration failed upstream — check the connector's client_id/redirect_uri and that `/register` or CIMD succeeded |
 | `/readyz` fails but `/healthz` passes | Provider credentials, browser capability, forwarded Container configuration, and Container readiness |
@@ -399,3 +420,4 @@ Tool schema changes should be backward compatible whenever possible. If a rollba
 | Search reports unavailable | Provider order, matching API key, provider quota or rate limit |
 | Requests end early | End-to-end deadline, proxy/socket timeout, Container CPU limits |
 | Unexpected blocked URL | DNS answers, redirect chain, IP category, port allowlist, browser subresource policy |
+| `document_parse` rejects a file | Confirm supported MIME/extension, encryption or active/external package content, archive/page/byte/output limits; artifact sources remain unavailable until the R2-backed reader is wired |

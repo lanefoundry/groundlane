@@ -1,4 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { AuthenticatedPrincipal } from "../worker/auth.js";
+
+export interface McpRequestContext {
+  readonly principal: AuthenticatedPrincipal;
+  readonly credentialBinding: string;
+}
 
 export interface McpModule {
   readonly name: string;
@@ -27,7 +33,9 @@ export class McpRegistry {
   }
 }
 
-export type McpRegistryFactory = () => McpRegistry | Promise<McpRegistry>;
+export type McpRegistryFactory = (
+  context?: McpRequestContext,
+) => McpRegistry | Promise<McpRegistry>;
 
 export function createMcpRegistry(
   modules: readonly McpModule[] = [],

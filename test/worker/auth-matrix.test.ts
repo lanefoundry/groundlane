@@ -391,3 +391,29 @@ void test("707 worker strips caller internal headers before container", async ()
   assert.equal(forwarded.headers.get("x-groundlane-internal-auth"), null);
   assert.equal(forwarded.headers.get("x-principal-id"), null);
 });
+
+void test("Worker and Container select signed-context mode from the same signing-secret boundary", async () => {
+  const { INTERNAL_CONTEXT_HEADER } = await import("../../src/worker/internal-context.js");
+  const { env, containerCalls } = mockEnv({
+    GROUNDLANE_INTERNAL_SIGNING_SECRET: "internal-signing-secret-0123456789abcdef",
+    // This is deliberately an unrecognized Worker-only injection. Production
+    // mode is derived from the signing-secret binding and cannot drift from
+    // GroundlaneContainer.envVars.
+    GROUNDLANE_AUTH_MODE: "local_static",
+  });
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${LEGACY}` },
+      body: "{}",
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(containerCalls.length, 1);
+  const forwarded = containerCalls[0] as Request;
+  assert.ok((forwarded.headers.get(INTERNAL_CONTEXT_HEADER) ?? "").length > 0);
+  assert.equal(forwarded.headers.get("authorization"), null);
+});

@@ -125,6 +125,28 @@ void test("POST /authorize with the correct passphrase completes authorization a
   );
 });
 
+void test("authorization without an explicit scope grants the supported mcp scope", async () => {
+  const handler = createAuthorizeHandler(subtle);
+  let completedScope: readonly string[] | undefined;
+  const env = makeEnv({
+    parseAuthRequest: () => Promise.resolve({ ...baseAuthRequest, scope: [] }),
+    completeAuthorization: (options) => {
+      completedScope = options.scope;
+      return Promise.resolve({ redirectTo: "https://client.example/callback?code=abc" });
+    },
+  });
+  const response = await handler.fetch(
+    new Request("https://groundlane.test/authorize?client_id=client-123", {
+      method: "POST",
+      body: new URLSearchParams({ passphrase: OWNER_PASSPHRASE }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(response.status, 302);
+  assert.deepEqual(completedScope, ["mcp"]);
+});
+
 void test("POST /authorize with the wrong passphrase re-renders the form without completing authorization", async () => {
   const handler = createAuthorizeHandler(subtle);
   let completed = false;
