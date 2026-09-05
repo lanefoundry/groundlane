@@ -1,8 +1,7 @@
 import { jsonError, logWorkerEvent } from "./http.js";
 
 export interface ContainerStub {
-  readonly running?: boolean;
-  start?: () => void;
+  start(): void | Promise<void>;
   fetch(request: Request): Promise<Response>;
 }
 
@@ -35,10 +34,11 @@ export function requestWithId(request: Request, requestId: string): Request {
   return new Request(request, { headers });
 }
 
-export function ensureContainerStarted(container: ContainerStub): void {
-  if (container.running === false) {
-    container.start?.();
-  }
+export async function ensureContainerStarted(container: ContainerStub): Promise<void> {
+  // Cloudflare Durable Object stubs do not expose the Container's synchronous
+  // `running` field. Starting is idempotent in @cloudflare/containers, so
+  // explicitly await the RPC before forwarding a cold-start request.
+  await container.start();
 }
 
 /**
@@ -67,7 +67,7 @@ export async function proxyToContainer(
 ): Promise<Response> {
   try {
     const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
-    ensureContainerStarted(container);
+    await ensureContainerStarted(container);
     const response = await container.fetch(
       requestForContainer(request, requestId, env.GROUNDLANE_AUTH_TOKEN),
     );

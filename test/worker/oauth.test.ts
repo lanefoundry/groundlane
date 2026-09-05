@@ -77,7 +77,10 @@ function makeEnv(containerFetch: (request: Request) => Promise<Response>): {
       OAUTH_OWNER_PASSPHRASE: OWNER_PASSPHRASE,
       GROUNDLANE_CONTAINER: {
         getByName() {
-          return { fetch: containerRequiringSharedSecret(containerFetch) };
+          return {
+            start: () => Promise.resolve(),
+            fetch: containerRequiringSharedSecret(containerFetch),
+          };
         },
       },
     },

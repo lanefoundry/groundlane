@@ -55,7 +55,7 @@ function mockEnv(overrides: Partial<TestEnv> = {}): { env: TestEnv; containerCal
     GROUNDLANE_CONTAINER: {
       getByName() {
         return {
-          running: true,
+          start: () => Promise.resolve(),
           fetch: (request: Request) => {
             containerCalls.push(request);
             return Promise.resolve(Response.json({ ok: true }));
@@ -416,4 +416,41 @@ void test("Worker and Container select signed-context mode from the same signing
   const forwarded = containerCalls[0] as Request;
   assert.ok((forwarded.headers.get(INTERNAL_CONTEXT_HEADER) ?? "").length > 0);
   assert.equal(forwarded.headers.get("authorization"), null);
+});
+
+void test("signed-context proxy awaits container start before forwarding", async () => {
+  let running = false;
+  const { env } = mockEnv({
+    GROUNDLANE_INTERNAL_SIGNING_SECRET: "internal-signing-secret-0123456789abcdef",
+    GROUNDLANE_CONTAINER: {
+      getByName() {
+        return {
+          start: async () => {
+            await Promise.resolve();
+            running = true;
+          },
+          fetch: () => {
+            if (!running) {
+              throw new Error("The container is not running, consider calling start()");
+            }
+            return Promise.resolve(Response.json({ ok: true }));
+          },
+        };
+      },
+    },
+  });
+
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${LEGACY}` },
+      body: "{}",
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(running, true);
 });

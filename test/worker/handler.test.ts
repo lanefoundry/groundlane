@@ -49,7 +49,6 @@ function mockEnv(fetchImpl: (request: Request) => Promise<Response>): {
         getByName(name) {
           names.push(name);
           return {
-            running: true,
             start: () => {
               starts.push(name);
             },
@@ -121,7 +120,6 @@ void test("readiness endpoint starts an inactive named container before fetching
   env.GROUNDLANE_CONTAINER = {
     getByName(name) {
       return {
-        running: false,
         start: () => {
           starts.push(name);
         },
@@ -271,7 +269,6 @@ void test("authenticated MCP requests start an inactive named container before p
   env.GROUNDLANE_CONTAINER = {
     getByName(name) {
       return {
-        running: false,
         start: () => {
           starts.push(name);
         },
@@ -293,6 +290,78 @@ void test("authenticated MCP requests start an inactive named container before p
 
   assert.equal(response.status, 202);
   assert.deepEqual(starts, [CONTAINER_INSTANCE_NAME]);
+});
+
+void test("authenticated MCP requests await an asynchronous container start before proxying", async () => {
+  let running = false;
+  const { env } = mockEnv(() => Promise.resolve(new Response()));
+  env.GROUNDLANE_CONTAINER = {
+    getByName() {
+      return {
+        start: async () => {
+          await Promise.resolve();
+          running = true;
+        },
+        fetch: () => {
+          if (!running) {
+            throw new Error("The container is not running, consider calling start()");
+          }
+          return Promise.resolve(Response.json({ ok: true }, { status: 202 }));
+        },
+      };
+    },
+  };
+
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret" },
+      body: "{}",
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 202);
+  assert.equal(running, true);
+});
+
+void test("container start failures return a structured gateway error without fetching", async () => {
+  let fetched = false;
+  const { env } = mockEnv(() => Promise.resolve(new Response()));
+  env.GROUNDLANE_CONTAINER = {
+    getByName() {
+      return {
+        start: () => Promise.reject(new Error("secret start detail")),
+        fetch: () => {
+          fetched = true;
+          return Promise.resolve(new Response());
+        },
+      };
+    },
+  };
+
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret" },
+      body: "{}",
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(fetched, false);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "container_unavailable",
+      message: "The MCP runtime is unavailable",
+    },
+    requestId: response.headers.get("x-request-id"),
+  });
 });
 
 void test("container failures return a structured gateway error", async () => {

@@ -124,7 +124,7 @@ async function proxyDataPlane(
     const forContainer = buildContainerRequestWithInternalContext(sanitized, token, requestId);
     try {
       const container = env.GROUNDLANE_CONTAINER.getByName(CONTAINER_INSTANCE_NAME);
-      ensureContainerStarted(container);
+      await ensureContainerStarted(container);
       const response = await container.fetch(forContainer);
       const headers = new Headers(response.headers);
       headers.set("x-request-id", requestId);
