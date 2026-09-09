@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateMcpRoutingHeaders } from "../../src/core/mcp-routing.js";
+import { missingRequestMetaVersion, validateMcpRoutingHeaders } from "../../src/core/mcp-routing.js";
 
 const VERSION = "2026-07-28";
 
@@ -97,4 +97,34 @@ void test("legacy traffic is not forced through modern standard headers", () => 
       clientInfo: { name: "legacy", version: "1" },
     },
   }), undefined);
+});
+
+void test("missing _meta protocol version is Invalid params, not routing drift", () => {
+  const headers = { protocolVersion: VERSION, method: "server/discover" };
+  const full = body("server/discover");
+  assert.deepEqual(missingRequestMetaVersion(headers, full), undefined);
+
+  const params = full.params as Record<string, unknown>;
+  const meta = params._meta as Record<string, unknown>;
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    if (key !== "io.modelcontextprotocol/protocolVersion") rest[key] = value;
+  }
+  assert.deepEqual(
+    missingRequestMetaVersion(headers, { ...full, params: { _meta: rest } }),
+    ["io.modelcontextprotocol/protocolVersion"],
+  );
+  // No _meta at all is the same Invalid-params carve-out.
+  assert.deepEqual(missingRequestMetaVersion(headers, { ...full, params: {} }), ["_meta"]);
+  // No protocol-version header: not this carve-out (header ladder owns it).
+  assert.deepEqual(missingRequestMetaVersion({ method: "server/discover" }, full), undefined);
+  // Legacy handshake stays on the routing ladder even with modern headers.
+  assert.deepEqual(
+    missingRequestMetaVersion(headers, { ...full, method: "initialize" }),
+    undefined,
+  );
+  // Notifications (no id) are never rejected here.
+  const notification: Record<string, unknown> = { ...full };
+  delete notification.id;
+  assert.deepEqual(missingRequestMetaVersion(headers, notification), undefined);
 });

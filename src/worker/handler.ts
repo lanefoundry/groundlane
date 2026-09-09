@@ -35,7 +35,9 @@ import { INTERNAL_ARTIFACT_PURPOSE } from "../mcp/artifact-bridge.js";
 import { jsonError } from "./http.js";
 import {
   mcpBodyTooLargeResponse,
+  mcpInvalidMetaResponse,
   mcpRoutingRejectionResponse,
+  missingRequestMetaVersion,
   validateMcpRoutingHeaders,
 } from "../core/mcp-routing.js";
 import {
@@ -131,15 +133,23 @@ async function validateMcpEdgeRequest(
     // parsing errors. Edge validation only rejects proven header/body drift.
     return undefined;
   }
+  const routingHeaders = {
+    protocolVersion: request.headers.get("mcp-protocol-version") ?? undefined,
+    method: request.headers.get("mcp-method") ?? undefined,
+    name: request.headers.get("mcp-name") ?? undefined,
+  };
+  const missingMeta = missingRequestMetaVersion(routingHeaders, body);
   const rejected = validateMcpRoutingHeaders(
     request.method,
-    {
-      protocolVersion: request.headers.get("mcp-protocol-version") ?? undefined,
-      method: request.headers.get("mcp-method") ?? undefined,
-      name: request.headers.get("mcp-name") ?? undefined,
-    },
+    routingHeaders,
     body,
   );
+  if (rejected !== undefined && missingMeta !== undefined) {
+    // Same SEP-2575 carve-out as the Container: a coherent header set with
+    // _meta missing (or its protocol version missing) is Invalid params,
+    // not routing drift.
+    return mcpInvalidMetaResponse(requestId, body, missingMeta);
+  }
   return rejected === undefined
     ? undefined
     : mcpRoutingRejectionResponse(rejected, requestId, body);

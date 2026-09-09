@@ -574,5 +574,6 @@ Tool schema changes should be backward compatible whenever possible. If a rollba
 | Search reports unavailable | Provider order, matching API key, provider quota or rate limit |
 | Requests end early | End-to-end deadline, proxy/socket timeout, Container CPU limits |
 | Modern `/mcp` returns `-32020` | Compare `MCP-Protocol-Version`, `Mcp-Method`, method-specific `Mcp-Name`, and the JSON-RPC body/envelope; headers do not replace body validation |
+| Modern `/mcp` returns `-32602` for `_meta` | The modern envelope reached routing but `params._meta` omits `io.modelcontextprotocol/protocolVersion` or `io.modelcontextprotocol/clientCapabilities`; `clientInfo` stays optional |
 | Unexpected blocked URL | DNS answers, redirect chain, IP category, port allowlist, browser subresource policy |
 | `document_parse` rejects a file | Confirm supported MIME/extension, encryption or active/external package content, archive/page/byte/output limits; for ArtifactRef sources also confirm D1/R2, all R2 S3 presigning settings, and internal signing are configured |

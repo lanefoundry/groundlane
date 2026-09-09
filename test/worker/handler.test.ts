@@ -666,3 +666,40 @@ void test("unknown routes return a structured 404 without touching OAuth or the 
   });
   assert.equal(names.length, 0);
 });
+
+void test("Worker maps _meta missing protocol version to -32602", async () => {
+  const { env, names } = mockEnv(() => Promise.resolve(Response.json({ ok: true })));
+  const response = await handleWorkerRequest(
+    new Request("https://groundlane.test/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-secret",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2026-07-28",
+        "mcp-method": "server/discover",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 47,
+        method: "server/discover",
+        params: {
+          _meta: {
+            "io.modelcontextprotocol/clientInfo": { name: "edge-test", version: "1" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+      }),
+    }),
+    env,
+    subtle,
+    ctx,
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(names, []);
+  const payload: unknown = await response.json();
+  assert.equal(
+    (payload as { error?: { code?: number } }).error?.code,
+    -32602,
+  );
+});

@@ -18,7 +18,7 @@ import { ZodError } from "zod";
 import type { McpRegistryFactory } from "./registry.js";
 import type { McpRequestContext } from "./registry.js";
 import { GroundlaneError } from "../core/errors.js";
-import { validateMcpRoutingHeaders } from "../core/mcp-routing.js";
+import { missingRequestMetaVersion, validateMcpRoutingHeaders } from "../core/mcp-routing.js";
 
 export const MCP_SERVER_INFO = {
   name: "groundlane",
@@ -94,6 +94,27 @@ function requestParams(body: unknown): unknown {
   return typeof body === "object" && body !== null && "params" in body
     ? body.params
     : undefined;
+}
+
+const META_CLIENT_CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities";
+
+/**
+ * SEP-2575 request _meta contract (alpha conformance RequestMetaInvalid).
+ * The missing-protocol-version carve-out runs before routing-header
+ * validation via the shared core helper; this covers the remaining
+ * required field (clientCapabilities), which always passes the header
+ * ladder. clientInfo remains optional, and an entirely absent _meta keeps
+ * existing SDK behavior.
+ */
+function missingMetaCapabilities(body: unknown): boolean {
+  if (typeof body !== "object" || body === null || !("id" in body)) return false;
+  const params = requestParams(body);
+  if (typeof params !== "object" || params === null || !("_meta" in params)) return false;
+  const meta = (params as Record<string, unknown>)._meta;
+  if (typeof meta !== "object" || meta === null) return false;
+  const capabilities = (meta as Record<string, unknown>)[META_CLIENT_CAPABILITIES_KEY];
+  return typeof capabilities !== "object" || capabilities === null ||
+    Array.isArray(capabilities);
 }
 
 function protocolErrorData(error: ProtocolError): unknown {
@@ -278,13 +299,30 @@ export function createMcpHttpHandler(
     }
 
     if (!legacy) {
+      const routingHeaders = {
+        protocolVersion: request.header("mcp-protocol-version"),
+        method: request.header("mcp-method"),
+        name: request.header("mcp-name"),
+      };
+      const missingMetaVersion = missingRequestMetaVersion(
+        routingHeaders,
+        request.body as unknown,
+      );
+      if (missingMetaVersion !== undefined) {
+        response.status(400).json({
+          jsonrpc: "2.0",
+          id: jsonRpcId(request.body as unknown),
+          error: {
+            code: -32602,
+            message: "Bad Request: the request _meta is missing required MCP fields",
+            data: { missing: missingMetaVersion },
+          },
+        });
+        return;
+      }
       const rejected = validateMcpRoutingHeaders(
         request.method,
-        {
-          protocolVersion: request.header("mcp-protocol-version"),
-          method: request.header("mcp-method"),
-          name: request.header("mcp-name"),
-        },
+        routingHeaders,
         request.body as unknown,
       );
       if (rejected !== undefined) {
@@ -295,6 +333,19 @@ export function createMcpHttpHandler(
             code: rejected.code,
             message: rejected.message,
             ...(rejected.data === undefined ? {} : { data: rejected.data }),
+          },
+        });
+        return;
+      }
+
+      if (missingMetaCapabilities(request.body as unknown)) {
+        response.status(400).json({
+          jsonrpc: "2.0",
+          id: jsonRpcId(request.body as unknown),
+          error: {
+            code: -32602,
+            message: "Bad Request: the request _meta is missing required MCP fields",
+            data: { missing: ["io.modelcontextprotocol/clientCapabilities"] },
           },
         });
         return;

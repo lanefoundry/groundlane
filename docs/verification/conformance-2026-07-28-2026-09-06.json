@@ -1,0 +1,1088 @@
+{
+ "schemaVersion": "1",
+ "checkedAt": "2026-09-06T15:10:00+08:00",
+ "commit": "d74ff5c4c7eb6e3f75eac2619b1046d6eaeb1561",
+ "worktree": [
+  "M AGENTS.md",
+  " M docs/deployment/cloudflare.md",
+  " M src/core/mcp-routing.ts",
+  " M src/mcp/server.ts",
+  " M src/worker/handler.ts",
+  " M test/contract/mcp-modern-2026-07-28.test.ts",
+  " M test/unit/mcp-routing.test.ts",
+  " M test/worker/handler.test.ts",
+  "?? docs/verification/conformance-2026-07-28-2026-09-06.json"
+ ],
+ "tool": {
+  "package": "@modelcontextprotocol/conformance",
+  "version": "0.2.0-alpha.11",
+  "channel": "prerelease-alpha",
+  "note": "Latest stable 0.1.16 does not recognize spec-version 2026-07-28; the frozen 2026-07-28 requirement set (69 scenarios) is only in the alpha channel."
+ },
+ "spec": "2026-07-28",
+ "target": {
+  "checkout": "local",
+  "protocolMode": "dual",
+  "auth": "legacy static bearer over loopback",
+  "harness": "The official CLI has no auth-header option, so a loopback-only forwarder injected Authorization server-side. Forwarder source was ephemeral test scaffolding, removed after the runs; it never left the loopback interface and carried no secrets in logs."
+ },
+ "runs": {
+  "fullRequirements": {
+   "invocation": "conformance server --url http://127.0.0.1:18082/mcp --requirements 2026-07-28",
+   "scenarios": 50,
+   "passed": 94,
+   "failed": 74,
+   "note": "Run BEFORE the -32020/-32602 fix except server-stateless notes below; the 13 extension/pending scenarios are not scored for 2026-07-28 by the suite itself. Per-scenario detail below is the pre-fix record; the two server-stateless RequestMetaInvalid entries are superseded by serverStatelessAfterFix."
+  },
+  "serverStatelessAfterFix": {
+   "invocation": "conformance server --url http://127.0.0.1:18082/mcp --suite all --spec-version 2026-07-28 --scenario server-stateless",
+   "result": {
+    "SUCCESS": 24,
+    "FAILURE": 4,
+    "SKIPPED": 1,
+    "WARNING": 1
+   },
+   "note": "Re-run AFTER the fix on the same checkout. RequestMetaInvalid (3 probes) fully green.",
+   "detail": {
+    "counts": {
+     "SUCCESS": 24,
+     "FAILURE": 4,
+     "SKIPPED": 1,
+     "WARNING": 1
+    },
+    "nonPass": [
+     {
+      "check": "ServerRejectsUndeclaredCapability",
+      "error": "Not testable: server does not list the diagnostic tool 'test_missing_capability' in tools/list and the probe call did not exercise it (required for the undeclared-capability rejection)"
+     },
+     {
+      "check": "MissingCapabilityHttp400",
+      "error": "Not testable: server does not list the diagnostic tool 'test_missing_capability' in tools/list, so the -32021 HTTP status could not be validated"
+     },
+     {
+      "check": "HttpServerNoIndependentRequestsOnStream",
+      "error": "Not testable: server does not list the diagnostic tool 'test_streaming_elicitation' in tools/list, so the response stream could not be exercised"
+     },
+     {
+      "check": "ServerNoLogWithoutLogLevel",
+      "error": "Not testable: server does not list the diagnostic tool 'test_logging_tool' in tools/list, so the no-log-without-logLevel requirement could not be exercised"
+     }
+    ],
+    "notes": [
+     {
+      "check": "ServerSendsPromptsListChangedOnSubscription",
+      "state": "SKIPPED",
+      "note": ""
+     },
+     {
+      "check": "ServerSendsToolsListChangedOnSubscription",
+      "state": "WARNING",
+      "note": "Mutated the tool list but no notifications/tools/list_changed arrived on the open subscription stream. This is a SHOULD requirement."
+     }
+    ]
+   }
+  }
+ },
+ "perScenario": {
+  "caching": {
+   "counts": {
+    "SUCCESS": 4,
+    "FAILURE": 3,
+    "SKIPPED": 1,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsListCachingHints",
+     "error": "prompts/list returned JSON-RPC error -32601: Method not found"
+    },
+    {
+     "check": "ResourcesListCachingHints",
+     "error": "resources/list returned JSON-RPC error -32601: Method not found"
+    },
+    {
+     "check": "ResourcesTemplatesListCachingHints",
+     "error": "resources/templates/list returned JSON-RPC error -32601: Method not found"
+    }
+   ],
+   "notes": [
+    {
+     "check": "ResourcesReadCachingHints",
+     "state": "SKIPPED",
+     "note": "resources/read was not exercised: resources/list failed or returned no resources."
+    }
+   ]
+  },
+  "completion-complete": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "CompletionComplete",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "dns-rebinding-protection": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "DNSRebindingRejected",
+     "error": "Expected HTTP 4xx for invalid Host/Origin headers, got 200"
+    }
+   ],
+   "notes": []
+  },
+  "http-custom-header-server-validation": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 5,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "HttpCustomHeaderServerNoTool",
+     "error": "Not testable: server exposes no tool with x-mcp-header annotations, so none of the custom-header validation requirements could be exercised"
+    },
+    {
+     "check": "NotTestable",
+     "error": "Not testable: server exposes no tool with x-mcp-header annotations"
+    },
+    {
+     "check": "NotTestable",
+     "error": "Not testable: server exposes no tool with x-mcp-header annotations"
+    },
+    {
+     "check": "NotTestable",
+     "error": "Not testable: server exposes no tool with x-mcp-header annotations"
+    },
+    {
+     "check": "NotTestable",
+     "error": "Not testable: server exposes no tool with x-mcp-header annotations"
+    }
+   ],
+   "notes": []
+  },
+  "http-header-validation": {
+   "counts": {
+    "SUCCESS": 14,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [],
+   "notes": []
+  },
+  "input-required-result-basic-elicitation": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultElicitationIncomplete",
+     "error": "JSON-RPC error: Tool test_input_required_result_elicitation not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-basic-list-roots": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultListRootsIncomplete",
+     "error": "JSON-RPC error: Tool test_input_required_result_list_roots not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-basic-sampling": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultSamplingIncomplete",
+     "error": "JSON-RPC error: Tool test_input_required_result_sampling not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-capability-check": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "RespectClientCapabilities",
+     "error": "JSON-RPC error: Tool test_input_required_result_capabilities not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-ignore-extra-params": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 1
+   },
+   "nonPass": [],
+   "notes": [
+    {
+     "check": "IgnoreUnexpectedParams",
+     "state": "WARNING",
+     "note": "Server returned JSON-RPC error when extra params were included: Tool test_input_required_result_elicitation not found. Servers SHOULD ignore unrecognized information."
+    }
+   ]
+  },
+  "input-required-result-missing-input-response": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 1
+   },
+   "nonPass": [],
+   "notes": [
+    {
+     "check": "InputRequiredResultMissingResponseRerequests",
+     "state": "WARNING",
+     "note": "Server returned JSON-RPC error instead of re-requesting via InputRequiredResult. SEP-2322 recommends servers re-request missing information."
+    }
+   ]
+  },
+  "input-required-result-multi-round": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultMultiRoundR1",
+     "error": "Expected InputRequiredResult with inputRequests and requestState"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-multiple-input-requests": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultMultipleInputsIncomplete",
+     "error": "JSON-RPC error: Tool test_input_required_result_multiple_inputs not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-non-tool-request": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultNonToolIncomplete",
+     "error": "JSON-RPC error: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-request-state": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "InputRequiredResultRequestStateIncomplete",
+     "error": "JSON-RPC error: Tool test_input_required_result_request_state not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-result-type": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ResultTypeIncluded",
+     "error": "JSON-RPC error: Tool test_input_required_result_elicitation not found"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-tampered-state": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "RejectTamperedState",
+     "error": "Prerequisite failed: could not get initial InputRequiredResult with requestState"
+    }
+   ],
+   "notes": []
+  },
+  "input-required-result-unsupported-methods": {
+   "counts": {
+    "SUCCESS": 2,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [],
+   "notes": []
+  },
+  "input-required-result-validate-input": {
+   "counts": {
+    "SUCCESS": 3,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [],
+   "notes": []
+  },
+  "json-schema-2020-12": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "JsonSchema2020_12ToolFound",
+     "error": "Tool 'json_schema_2020_12_tool' not found. Available tools: corpus_create, corpus_enroll, corpus_update, corpus_remove, corpus_status, corpus_search, corpus_delete, crawl_create, crawl_status, crawl_result, crawl_cancel,"
+    }
+   ],
+   "notes": []
+  },
+  "prompts-get-embedded-resource": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsGetEmbeddedResource",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "prompts-get-simple": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsGetSimple",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "prompts-get-with-args": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsGetWithArgs",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "prompts-get-with-image": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsGetWithImage",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "prompts-list": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "PromptsList",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "resources-list": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ResourcesList",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "resources-read-binary": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ResourcesReadBinary",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "resources-read-text": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ResourcesReadText",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "resources-templates-read": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ResourcesTemplateRead",
+     "error": "Failed: Method not found"
+    }
+   ],
+   "notes": []
+  },
+  "sep-2164-resource-not-found": {
+   "counts": {
+    "SUCCESS": 2,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 2
+   },
+   "nonPass": [],
+   "notes": [
+    {
+     "check": "ResourcesNotFoundErrorCode",
+     "state": "WARNING",
+     "note": "Expected error code -32602 (Invalid Params), got -32601. "
+    },
+    {
+     "check": "ResourcesNotFoundDataUri",
+     "state": "WARNING",
+     "note": "Error data.uri is undefined, expected \"test://nonexistent-resource-for-conformance-testing\". This is a SHOULD requirement."
+    }
+   ]
+  },
+  "server-sse-multiple-streams": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 0,
+    "INFO": 1
+   },
+   "nonPass": [],
+   "notes": []
+  },
+  "server-stateless": {
+   "counts": {
+    "SUCCESS": 22,
+    "FAILURE": 6,
+    "SKIPPED": 1,
+    "WARNING": 1
+   },
+   "nonPass": [
+    {
+     "check": "RequestMetaInvalid",
+     "error": "Expected error code -32602, got -32020"
+    },
+    {
+     "check": "RequestMetaInvalid",
+     "error": "Expected error code -32602, got -32020"
+    },
+    {
+     "check": "ServerRejectsUndeclaredCapability",
+     "error": "Not testable: server does not list the diagnostic tool 'test_missing_capability' in tools/list and the probe call did not exercise it (required for the undeclared-capability rejection)"
+    },
+    {
+     "check": "MissingCapabilityHttp400",
+     "error": "Not testable: server does not list the diagnostic tool 'test_missing_capability' in tools/list, so the -32021 HTTP status could not be validated"
+    },
+    {
+     "check": "HttpServerNoIndependentRequestsOnStream",
+     "error": "Not testable: server does not list the diagnostic tool 'test_streaming_elicitation' in tools/list, so the response stream could not be exercised"
+    },
+    {
+     "check": "ServerNoLogWithoutLogLevel",
+     "error": "Not testable: server does not list the diagnostic tool 'test_logging_tool' in tools/list, so the no-log-without-logLevel requirement could not be exercised"
+    }
+   ],
+   "notes": [
+    {
+     "check": "ServerSendsPromptsListChangedOnSubscription",
+     "state": "SKIPPED",
+     "note": ""
+    },
+    {
+     "check": "ServerSendsToolsListChangedOnSubscription",
+     "state": "WARNING",
+     "note": "Mutated the tool list but no notifications/tools/list_changed arrived on the open subscription stream. This is a SHOULD requirement."
+    }
+   ]
+  },
+  "tasks-capability-negotiation": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 4,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksExtensionAdvertised",
+     "error": "capabilities.extensions MUST be advertised"
+    },
+    {
+     "check": "TasksMethodsGatedWithoutExtension",
+     "error": "tasks/get MUST return -32021; got -32601; tasks/update MUST return -32021; got -32601; tasks/cancel MUST return -32021; got -32601"
+    },
+    {
+     "check": "TasksToolsCallWithoutExtensionSync",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksPerRequestMetaOptIn",
+     "error": "Tool slow_compute not found"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-dispatch-and-envelope": {
+   "counts": {
+    "SUCCESS": 2,
+    "FAILURE": 7,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksRemovedTasksResult",
+     "error": "expected -32601; got -32020 (if the server is otherwise compliant, verify it does not validate other dimensions — routing headers, _meta, params shape — before method dispatch)"
+    },
+    {
+     "check": "TasksServerDirectedCreationNoHint",
+     "error": "Tool failing_job not found"
+    },
+    {
+     "check": "TasksLegacyTaskParamIgnored",
+     "error": "Tool greet not found"
+    },
+    {
+     "check": "TasksImmediateResultShortcut",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksResultTypeCompleteOnNonTaskResponses",
+     "error": "Tool greet not found"
+    },
+    {
+     "check": "TasksStrongConsistencyImmediateGet",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksGetUnknownTaskIdRejected",
+     "error": "expected -32602; got -32601 (if the server is otherwise compliant, verify it does not validate other dimensions — routing headers, _meta, params shape — before method dispatch)"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-lifecycle": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 8,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksSyncToolCall",
+     "error": "Tool greet not found"
+    },
+    {
+     "check": "TasksServerTaskCreation",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksGetDuringWorking",
+     "error": "Not testable: no task was created by the preceding step, so this check could not be exercised"
+    },
+    {
+     "check": "TasksGetTerminalInlinedResult",
+     "error": "Not testable: no task was created by the preceding step, so this check could not be exercised"
+    },
+    {
+     "check": "TasksToolErrorCompletedIsError",
+     "error": "Tool failing_job not found"
+    },
+    {
+     "check": "TasksProtocolErrorFailedShape",
+     "error": "Tool protocol_error_job not found"
+    },
+    {
+     "check": "TasksCancelEmptyAck",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksCancelTerminalIdempotentAck",
+     "error": "Tool slow_compute not found"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-mrtr-composition": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "Sep2663MrtrSynchronousBeforeTaskCreation",
+     "error": "Tool test_tool_with_task not found"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-mrtr-input": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 3,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksMRTRInputRequestsOnTasksGet",
+     "error": "Tool confirm_delete not found"
+    },
+    {
+     "check": "TasksMRTRTasksUpdateResumes",
+     "error": "Tool confirm_delete not found"
+    },
+    {
+     "check": "TasksMRTRPartialFulfillment",
+     "error": "Tool multi_input not found"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-request-headers": {
+   "counts": {
+    "SUCCESS": 2,
+    "FAILURE": 3,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksHeadersTolerateMcpMethodOnToolsCall",
+     "error": "Tool greet not found"
+    },
+    {
+     "check": "Sep2663RoutingHeadersAcceptedOnTasksGet",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "Sep2663ServerRejectsMismatchedMcpNameOnTasksGet",
+     "error": "routing-task fixture from Check 2 unavailable; cannot drive negative-path probe"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-request-state-removal": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksRequestStateRemovalSetup",
+     "error": "Tool slow_compute not found"
+    }
+   ],
+   "notes": []
+  },
+  "tasks-required-task-error": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "Sep2663ServerReturnsMissingCapabilityWhenRequired",
+     "error": "tools/call for failing_job returned error code -32602; spec requires -32021."
+    }
+   ],
+   "notes": []
+  },
+  "tasks-status-notifications": {
+   "counts": {
+    "SUCCESS": 0,
+    "FAILURE": 0,
+    "SKIPPED": 1,
+    "WARNING": 0
+   },
+   "nonPass": [],
+   "notes": [
+    {
+     "check": "TasksStatusNotificationsScenario",
+     "state": "SKIPPED",
+     "note": "Skipped: SEP-2663 delivers notifications/tasks via the SEP-2575 subscriptions/listen stream, not via the tools/call POST SSE response that the prior harness observed. The harness needs a rewrite against the new channel; "
+    }
+   ]
+  },
+  "tasks-wire-fields": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 3,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "TasksWireFieldRenames",
+     "error": "Tool slow_compute not found"
+    },
+    {
+     "check": "TasksNoEarlyTtlExpiry",
+     "error": "Not testable: no task was created by the preceding step, so this check could not be exercised"
+    },
+    {
+     "check": "TasksNoRelatedTaskMetaOnInlinedResult",
+     "error": "Tool slow_compute not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-audio": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallAudio",
+     "error": "Failed: Tool test_audio_content not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-embedded-resource": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallEmbeddedResource",
+     "error": "Failed: Tool test_embedded_resource not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-error": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallError",
+     "error": "Failed: Tool test_error_handling not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-image": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallImage",
+     "error": "Failed: Tool test_image_content not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-mixed-content": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallMixedContent",
+     "error": "Failed: Tool test_multiple_content_types not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-simple-text": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallSimpleText",
+     "error": "Failed: Tool test_simple_text not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-call-with-progress": {
+   "counts": {
+    "SUCCESS": 1,
+    "FAILURE": 1,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [
+    {
+     "check": "ToolsCallWithProgress",
+     "error": "Failed: Tool test_tool_with_progress not found"
+    }
+   ],
+   "notes": []
+  },
+  "tools-list": {
+   "counts": {
+    "SUCCESS": 3,
+    "FAILURE": 0,
+    "SKIPPED": 0,
+    "WARNING": 0
+   },
+   "nonPass": [],
+   "notes": []
+  }
+ },
+ "failureBuckets": {
+  "fixture-harness-not-testable": 27,
+  "out-of-scope-capability": 14,
+  "extension-or-pending-not-scored": 28,
+  "accepted-boundary": 1,
+  "needs-review": [
+   {
+    "check": "input-required-result-multi-round::InputRequiredResultMultiRoundR1",
+    "error": "Expected InputRequiredResult with inputRequests and requestState",
+    "resolution": "Harness mismatch, not a product gap: suite source requires a fixture tool test_input_required_result_multi_round (verified in suite dist). Our own MRTR path is covered deterministically: test/contract/mcp-modern-2026-07-28.test.ts multi-round requestState round-trips with tamper rejection + test/container/internal-auth.test.ts, all passing in pnpm test."
+   },
+   {
+    "check": "input-required-result-tampered-state::RejectTamperedState",
+    "error": "Prerequisite failed: could not get initial InputRequiredResult with requestState",
+    "resolution": "Harness mismatch, not a product gap: suite source requires a fixture tool test_input_required_result_multi_round (verified in suite dist). Our own MRTR path is covered deterministically: test/contract/mcp-modern-2026-07-28.test.ts multi-round requestState round-trips with tamper rejection + test/container/internal-auth.test.ts, all passing in pnpm test."
+   },
+   {
+    "check": "server-stateless::RequestMetaInvalid",
+    "error": "Expected error code -32602, got -32020",
+    "resolution": "Fixed after the full run by the missingRequestMetaVersion carve-out; 3/3 green in serverStatelessAfterFix. Pre-fix record kept for audit."
+   },
+   {
+    "check": "server-stateless::RequestMetaInvalid",
+    "error": "Expected error code -32602, got -32020",
+    "resolution": "Fixed after the full run by the missingRequestMetaVersion carve-out; 3/3 green in serverStatelessAfterFix. Pre-fix record kept for audit."
+   }
+  ]
+ },
+ "failureBucketMembers": {
+  "fixture-harness-not-testable": [
+   "http-custom-header-server-validation::HttpCustomHeaderServerNoTool",
+   "http-custom-header-server-validation::NotTestable",
+   "http-custom-header-server-validation::NotTestable",
+   "http-custom-header-server-validation::NotTestable",
+   "http-custom-header-server-validation::NotTestable",
+   "input-required-result-basic-elicitation::InputRequiredResultElicitationIncomplete",
+   "input-required-result-basic-list-roots::InputRequiredResultListRootsIncomplete",
+   "input-required-result-basic-sampling::InputRequiredResultSamplingIncomplete",
+   "input-required-result-capability-check::RespectClientCapabilities",
+   "input-required-result-multiple-input-requests::InputRequiredResultMultipleInputsIncomplete",
+   "input-required-result-request-state::InputRequiredResultRequestStateIncomplete",
+   "input-required-result-result-type::ResultTypeIncluded",
+   "server-stateless::ServerRejectsUndeclaredCapability",
+   "server-stateless::MissingCapabilityHttp400",
+   "server-stateless::HttpServerNoIndependentRequestsOnStream",
+   "server-stateless::ServerNoLogWithoutLogLevel",
+   "tasks-lifecycle::TasksGetDuringWorking",
+   "tasks-lifecycle::TasksGetTerminalInlinedResult",
+   "tasks-mrtr-composition::Sep2663MrtrSynchronousBeforeTaskCreation",
+   "tasks-wire-fields::TasksNoEarlyTtlExpiry",
+   "tools-call-audio::ToolsCallAudio",
+   "tools-call-embedded-resource::ToolsCallEmbeddedResource",
+   "tools-call-error::ToolsCallError",
+   "tools-call-image::ToolsCallImage",
+   "tools-call-mixed-content::ToolsCallMixedContent",
+   "tools-call-simple-text::ToolsCallSimpleText",
+   "tools-call-with-progress::ToolsCallWithProgress"
+  ],
+  "out-of-scope-capability": [
+   "caching::PromptsListCachingHints",
+   "caching::ResourcesListCachingHints",
+   "caching::ResourcesTemplatesListCachingHints",
+   "completion-complete::CompletionComplete",
+   "input-required-result-non-tool-request::InputRequiredResultNonToolIncomplete",
+   "prompts-get-embedded-resource::PromptsGetEmbeddedResource",
+   "prompts-get-simple::PromptsGetSimple",
+   "prompts-get-with-args::PromptsGetWithArgs",
+   "prompts-get-with-image::PromptsGetWithImage",
+   "prompts-list::PromptsList",
+   "resources-list::ResourcesList",
+   "resources-read-binary::ResourcesReadBinary",
+   "resources-read-text::ResourcesReadText",
+   "resources-templates-read::ResourcesTemplateRead"
+  ],
+  "extension-or-pending-not-scored": [
+   "json-schema-2020-12::JsonSchema2020_12ToolFound",
+   "tasks-capability-negotiation::TasksExtensionAdvertised",
+   "tasks-capability-negotiation::TasksMethodsGatedWithoutExtension",
+   "tasks-capability-negotiation::TasksToolsCallWithoutExtensionSync",
+   "tasks-capability-negotiation::TasksPerRequestMetaOptIn",
+   "tasks-dispatch-and-envelope::TasksRemovedTasksResult",
+   "tasks-dispatch-and-envelope::TasksServerDirectedCreationNoHint",
+   "tasks-dispatch-and-envelope::TasksLegacyTaskParamIgnored",
+   "tasks-dispatch-and-envelope::TasksImmediateResultShortcut",
+   "tasks-dispatch-and-envelope::TasksResultTypeCompleteOnNonTaskResponses",
+   "tasks-dispatch-and-envelope::TasksStrongConsistencyImmediateGet",
+   "tasks-dispatch-and-envelope::TasksGetUnknownTaskIdRejected",
+   "tasks-lifecycle::TasksSyncToolCall",
+   "tasks-lifecycle::TasksServerTaskCreation",
+   "tasks-lifecycle::TasksToolErrorCompletedIsError",
+   "tasks-lifecycle::TasksProtocolErrorFailedShape",
+   "tasks-lifecycle::TasksCancelEmptyAck",
+   "tasks-lifecycle::TasksCancelTerminalIdempotentAck",
+   "tasks-mrtr-input::TasksMRTRInputRequestsOnTasksGet",
+   "tasks-mrtr-input::TasksMRTRTasksUpdateResumes",
+   "tasks-mrtr-input::TasksMRTRPartialFulfillment",
+   "tasks-request-headers::TasksHeadersTolerateMcpMethodOnToolsCall",
+   "tasks-request-headers::Sep2663RoutingHeadersAcceptedOnTasksGet",
+   "tasks-request-headers::Sep2663ServerRejectsMismatchedMcpNameOnTasksGet",
+   "tasks-request-state-removal::TasksRequestStateRemovalSetup",
+   "tasks-required-task-error::Sep2663ServerReturnsMissingCapabilityWhenRequired",
+   "tasks-wire-fields::TasksWireFieldRenames",
+   "tasks-wire-fields::TasksNoRelatedTaskMetaOnInlinedResult"
+  ],
+  "accepted-boundary": [
+   "dns-rebinding-protection::DNSRebindingRejected"
+  ]
+ },
+ "fixBeforeAfter": {
+  "finding": "SEP-2575 RequestMetaInvalid probes (_meta missing protocolVersion/clientCapabilities, or _meta absent) were rejected with -32020 instead of -32602.",
+  "fix": "Shared core carve-out missingRequestMetaVersion + mcpInvalidMetaResponse, wired in Worker edge and Container modern path; legacy handshake untouched; header/body mismatch stays -32020.",
+  "before": "RequestMetaInvalid 0/3",
+  "after": "RequestMetaInvalid 3/3 (verified in server-stateless re-run)"
+ },
+ "scope": "Supplementary signal only. Not 2026-07-28 acceptance: no staging/controlled deployment, no target-client runs, alpha CLI is prerelease, fixture-tool scenarios cannot pass on a production server by design.",
+ "repro": "PORT=18081 dual-mode local container + loopback auth-injecting forwarder on 18082, then the invocations above. Raw per-check transcripts (1.7M) retained outside the repo; regenerate on demand."
+}

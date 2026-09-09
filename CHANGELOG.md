@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Modern MCP requests with coherent routing headers but SEP-2575 `_meta`
+  missing `_meta`/`protocolVersion`/`clientCapabilities` now fail with
+  `-32602 Invalid params` (HTTP 400) instead of `-32020`; header/body
+  routing drift and the legacy handshake keep `-32020`. Worker edge and
+  Container agree; see `docs/verification/conformance-2026-07-28-2026-09-06.json`.
 - Added optional private D1/R2 result storage with signed save/read/delete,
   streaming body caps, bounded reads and retryable scheduled cleanup.
 - Connected enrolled normalized corpus text to `document_parse` and shared

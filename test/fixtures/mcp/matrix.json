@@ -26,8 +26,8 @@
       "npm exec --yes --package=@modelcontextprotocol/conformance@0.1.16 -- conformance list --server --spec-version draft"
     ],
     "requiredSpecVersion": "2026-07-28",
-    "status": "blocked",
-    "reason": "The latest released CLI does not recognize 2026-07-28; valid filters stop at 2025-11-25 plus draft and extension. The draft active suite contains zero scenarios. A 2025-11-25 full-capability run is not a substitute for Groundlane's requirement-scoped modern acceptance."
+    "status": "partial",
+    "reason": "Stable 0.1.16 still does not recognize 2026-07-28 (valid filters stop at 2025-11-25 plus draft/extension; draft suite is empty). The frozen 2026-07-28 requirement set (69 scenarios) exists only in the 0.2.0-alpha channel; a local dual-mode alpha run (0.2.0-alpha.11) is recorded in docs/verification/conformance-2026-07-28-2026-09-06.json. Stable-channel suite, controlled Cloudflare transcripts, and target-client runs remain open."
   },
   "controlledCloudflare": {
     "status": "partial",

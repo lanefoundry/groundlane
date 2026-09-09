@@ -349,7 +349,10 @@ void test("MCP 2026-07-28 validates standard routing headers against the body", 
       true,
       { jsonrpc: "2.0", id: 8, method: "tools/list", params: {} },
     );
-    assert.equal(noModernEnvelope.error?.code, -32020);
+    // SEP-2575 carve-out: coherent headers with _meta absent is Invalid
+    // params, not header/body routing drift.
+    assert.equal(noModernEnvelope.error?.code, -32602);
+    assert.match(noModernEnvelope.error?.message ?? "", /missing required MCP fields/u);
 
     const legacyInitialize = await send(
       { "mcp-method": "initialize" },
@@ -831,4 +834,68 @@ void test("MCP protocol mode parser fails closed on unknown values", () => {
     () => parseMcpProtocolMode("legacy-ish"),
     /must be legacy-only, dual, or modern-only/u,
   );
+});
+
+void test("MCP 2026-07-28 maps missing _meta fields to -32602 Invalid params", async () => {
+  const app = createContainerApp({
+    authToken: TOKEN,
+    mcpProtocolMode: "dual",
+    registryFactory: () => createMcpRegistry(),
+  });
+  const server = createServer(app);
+  const port = await listen(server);
+  const endpoint = `http://127.0.0.1:${String(port)}/mcp`;
+
+  async function send(
+    id: number,
+    meta: Record<string, unknown> | undefined,
+  ): Promise<{ status: number; body: z.infer<typeof rpcResponseSchema> }> {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${TOKEN}`,
+        "content-type": "application/json",
+        "mcp-protocol-version": MCP_MODERN_PROTOCOL_VERSION,
+        "mcp-method": "server/discover",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method: "server/discover",
+        params: meta === undefined ? {} : { _meta: meta },
+      }),
+    });
+    return { status: response.status, body: rpcResponseSchema.parse(await response.json()) };
+  }
+
+  const fullMeta = {
+    [PROTOCOL_VERSION_META_KEY]: MCP_MODERN_PROTOCOL_VERSION,
+    [CLIENT_INFO_META_KEY]: { name: "meta-contract", version: "1.0.0" },
+    [CLIENT_CAPABILITIES_META_KEY]: {},
+  };
+
+  try {
+    const noCapabilities = {
+      [PROTOCOL_VERSION_META_KEY]: MCP_MODERN_PROTOCOL_VERSION,
+      [CLIENT_INFO_META_KEY]: { name: "meta-contract", version: "1.0.0" },
+    };
+    const missingCapabilities = await send(101, noCapabilities);
+    assert.equal(missingCapabilities.status, 400);
+    assert.equal(missingCapabilities.body.error?.code, -32602);
+
+    const noVersion = {
+      [CLIENT_INFO_META_KEY]: { name: "meta-contract", version: "1.0.0" },
+      [CLIENT_CAPABILITIES_META_KEY]: {},
+    };
+    const missingVersion = await send(102, noVersion);
+    assert.equal(missingVersion.status, 400);
+    assert.equal(missingVersion.body.error?.code, -32602);
+
+    const control = await send(103, fullMeta);
+    assert.equal(control.status, 200);
+    assert.ok(control.body.result !== undefined);
+  } finally {
+    await close(server);
+  }
 });
