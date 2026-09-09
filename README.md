@@ -302,7 +302,30 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | --- | --- | --- |
 | Local Node | Development and evaluation | [Quick start](#quick-start) |
 | Docker | Standalone Node/Chromium container | `docker build -t groundlane .` then `docker run --rm -p 8080:8080 --env-file .env groundlane` |
-| Cloudflare Worker + Container | Intended production topology | [Deploy to Cloudflare](#deploy-to-cloudflare) |
+| **Cloudflare Worker Lite** | **Zero-cost production ($0)** | `wrangler deploy -c wrangler.lite.jsonc` |
+| Cloudflare Worker + Container | Full mode with Playwright browser | `wrangler deploy` |
+
+### Lite vs Full mode
+
+Groundlane supports two Cloudflare deployment modes:
+
+| | Lite (Worker-only) | Full (Worker + Container) |
+| --- | --- | --- |
+| Config | `wrangler.lite.jsonc` | `wrangler.jsonc` |
+| Entry | `src/worker/lite-index.ts` | `src/worker/index.ts` |
+| Data layer | D1 + R2 | node:sqlite (in-container) |
+| HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
+| Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
+| MCP tools | All 42 tools | All 42 tools |
+| Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
+
+Deploy lite mode:
+
+```bash
+wrangler d1 migrations apply groundlane-managed-tokens -c wrangler.lite.jsonc --remote
+wrangler secret bulk .cloudflare-secrets.env -c wrangler.lite.jsonc
+wrangler deploy -c wrangler.lite.jsonc
+```
 
 ## Supported adapters
 
@@ -319,8 +342,8 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 | Account balance | Linkup, You.com, Firecrawl, SerpApi |
 | Quota diagnostics | Provider quota summary and local provider budget status |
 | Hosted Reader fallback | Jina Reader (opt-in) |
-| Browser rendering | Local Playwright or Browserless (opt-in) |
-| Cloudflare runtime | Worker + Container deployment today; Browser Run, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
+| Browser rendering | Local Playwright, Browserless, or CF Browser Rendering API (opt-in) |
+| Cloudflare runtime | Worker-only lite mode or Worker + Container full mode; CF Browser Rendering, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
 
 ### Provider capabilities, pricing, and free allowances
 

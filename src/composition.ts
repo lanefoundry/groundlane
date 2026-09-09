@@ -120,133 +120,28 @@ import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
 } from "./tools/async-research.js";
-export interface GroundlaneServices {
-  registryFactory: McpRegistryFactory;
-  parseResolvedDocument(
-    input: DocumentParseInput,
-    resolved: ResolvedDocumentSource,
-    context: McpRequestContext,
-    signal: AbortSignal,
-  ): Promise<unknown>;
-  close(): Promise<void>;
-}
-
-interface AdapterEntry<T> {
-  readonly providerId: string;
-  readonly create: (apiKey?: string) => T;
-  readonly requiresKey: boolean;
-}
-
-function providerKey(config: GroundlaneConfig, id: string): string | undefined {
-  return (config.providerKeys as Partial<Record<string, string>>)[id];
-}
-
-function buildProviders<T>(
-  capability: keyof ProviderCapabilities,
-  adapters: readonly AdapterEntry<T>[],
-  config: GroundlaneConfig,
-): T[] {
-  const providers: T[] = [];
-  for (const adapter of adapters) {
-    const reg = builtInRegistry.get(adapter.providerId);
-    if (!reg?.capabilities[capability]) continue;
-    const key = providerKey(config, adapter.providerId);
-    if (adapter.requiresKey && key === undefined) continue;
-    providers.push(adapter.create(key));
-  }
-  return providers;
-}
-
-const SEARCH_ADAPTERS: readonly AdapterEntry<SearchProvider>[] = [
-  { providerId: "tavily", create: (key) => new TavilySearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "exa", create: (key) => new ExaSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "brave", create: (key) => new BraveSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "firecrawl", create: (key) => new FirecrawlSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "serpapi", create: (key) => new SerpApiSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "searchapi", create: (key) => new SearchApiSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "browserbase", create: (key) => new BrowserbaseSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "parallel", create: (key) => new ParallelSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "linkup", create: (key) => new LinkupSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "tinyfish", create: (key) => new TinyFishSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "keenable", create: (key) => new KeenableSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
-  { providerId: "serper", create: (key) => new SerperSearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "you", create: (key) => new YouSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
-];
-
-const ANSWER_ADAPTERS: readonly AdapterEntry<AnswerProvider>[] = [
-  { providerId: "linkup", create: (key) => new LinkupAnswerProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "you", create: (key) => new YouAnswerProvider({ apiKey: key! }), requiresKey: true },
-];
-
-const RESEARCH_ADAPTERS: readonly AdapterEntry<ResearchProvider>[] = [
-  { providerId: "linkup", create: (key) => new LinkupResearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "you", create: (key) => new YouResearchProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "parallel", create: (key) => new ParallelResearchProvider({ apiKey: key! }), requiresKey: true },
-];
-
-const CONTENT_ADAPTERS: readonly AdapterEntry<ContentProvider>[] = [
-  { providerId: "linkup", create: (key) => new LinkupContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "you", create: (key) => new YouContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "exa", create: (key) => new ExaContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "tavily", create: (key) => new TavilyContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "firecrawl", create: (key) => new FirecrawlContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "tinyfish", create: (key) => new TinyFishContentProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "keenable", create: (key) => new KeenableContentProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
-];
-
-const MAP_ADAPTERS: readonly AdapterEntry<MapProvider>[] = [
-  { providerId: "firecrawl", create: (key) => new FirecrawlMapProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "tavily", create: (key) => new TavilyMapProvider({ apiKey: key! }), requiresKey: true },
-];
-
-const CRAWL_ADAPTERS: readonly AdapterEntry<CrawlProvider>[] = [
-  { providerId: "firecrawl", create: (key) => new FirecrawlCrawlProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "tavily", create: (key) => new TavilyCrawlProvider({ apiKey: key! }), requiresKey: true },
-];
-
-const NEWS_ADAPTERS: readonly AdapterEntry<NewsProvider>[] = [
-  { providerId: "brave", create: (key) => new BraveNewsProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "serper", create: (key) => new SerperNewsProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "serpapi", create: (key) => new SerpApiNewsProvider({ apiKey: key! }), requiresKey: true },
-];
-
-const IMAGES_ADAPTERS: readonly AdapterEntry<ImagesProvider>[] = [
-  { providerId: "brave", create: (key) => new BraveImagesProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "serper", create: (key) => new SerperImagesProvider({ apiKey: key! }), requiresKey: true },
-  { providerId: "serpapi", create: (key) => new SerpApiImagesProvider({ apiKey: key! }), requiresKey: true },
-];
-
-export function createSearchProviders(config: GroundlaneConfig): SearchProvider[] {
-  return buildProviders("search", SEARCH_ADAPTERS, config);
-}
-
-export function createAnswerProviders(config: GroundlaneConfig): AnswerProvider[] {
-  return buildProviders("answer", ANSWER_ADAPTERS, config);
-}
-
-export function createResearchProviders(config: GroundlaneConfig): ResearchProvider[] {
-  return buildProviders("research", RESEARCH_ADAPTERS, config);
-}
-
-export function createContentProviders(config: GroundlaneConfig): ContentProvider[] {
-  return buildProviders("content", CONTENT_ADAPTERS, config);
-}
-
-export function createMapProviders(config: GroundlaneConfig): MapProvider[] {
-  return buildProviders("map", MAP_ADAPTERS, config);
-}
-
-export function createCrawlProviders(config: GroundlaneConfig): CrawlProvider[] {
-  return buildProviders("crawl", CRAWL_ADAPTERS, config);
-}
-
-export function createNewsProviders(config: GroundlaneConfig): NewsProvider[] {
-  return buildProviders("news", NEWS_ADAPTERS, config);
-}
-
-export function createImagesProviders(config: GroundlaneConfig): ImagesProvider[] {
-  return buildProviders("images", IMAGES_ADAPTERS, config);
-}
+import {
+  type GroundlaneServices,
+  createSearchProviders,
+  createAnswerProviders,
+  createResearchProviders,
+  createContentProviders,
+  createMapProviders,
+  createCrawlProviders,
+  createNewsProviders,
+  createImagesProviders,
+} from "./provider-factories.js";
+export {
+  type GroundlaneServices,
+  createSearchProviders,
+  createAnswerProviders,
+  createResearchProviders,
+  createContentProviders,
+  createMapProviders,
+  createCrawlProviders,
+  createNewsProviders,
+  createImagesProviders,
+};
 
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {
   const artifactRetention = createArtifactRetentionPolicy({

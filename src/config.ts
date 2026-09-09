@@ -56,7 +56,10 @@ const environmentSchema = z.object({
   SERPER_API_KEY: optionalSecret,
   YOU_API_KEY: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
-  BROWSER_BACKEND: z.enum(["disabled", "local", "browserless"]).default("disabled"),
+  BROWSER_BACKEND: z.enum(["disabled", "local", "browserless", "cf-rendering"]).default("disabled"),
+  CF_BROWSER_ACCOUNT_ID: optionalSecret,
+  CF_BROWSER_API_TOKEN: optionalSecret,
+  CF_BROWSER_DAILY_BUDGET_MS: positiveInt(0, 3_600_000).optional(),
   BROWSERLESS_TOKEN: optionalSecret,
   BROWSERLESS_REGION: z.enum(["sfo", "lon", "ams"]).default("sfo"),
   JINA_READER_RPM: positiveInt(1, 1_000).default(20),
@@ -99,9 +102,12 @@ export interface GroundlaneConfig {
   searchDailyRequestBudgets: Partial<Record<SearchProviderId, number>>;
   providerKeys: Partial<Record<SearchProviderId, string>>;
   readerBackend: "disabled" | "jina";
-  browserBackend: "disabled" | "local" | "browserless";
+  browserBackend: "disabled" | "local" | "browserless" | "cf-rendering";
   browserlessToken?: string;
   browserlessRegion: "sfo" | "lon" | "ams";
+  cfBrowserAccountId?: string;
+  cfBrowserApiToken?: string;
+  cfBrowserDailyBudgetMs?: number;
   jinaReaderRpm: number;
   browserlessMonthlyUnits: number;
   requestTimeoutMs: number;
@@ -203,6 +209,14 @@ export function parseConfig(
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {
     throw new Error("BROWSERLESS_TOKEN is required when BROWSER_BACKEND=browserless");
   }
+  if (parsed.BROWSER_BACKEND === "cf-rendering") {
+    if (parsed.CF_BROWSER_ACCOUNT_ID === undefined) {
+      throw new Error("CF_BROWSER_ACCOUNT_ID is required when BROWSER_BACKEND=cf-rendering");
+    }
+    if (parsed.CF_BROWSER_API_TOKEN === undefined) {
+      throw new Error("CF_BROWSER_API_TOKEN is required when BROWSER_BACKEND=cf-rendering");
+    }
+  }
   if (parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS > parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS) {
     throw new Error("DOCUMENT_CACHE_DEFAULT_TTL_SECONDS must not exceed DOCUMENT_CACHE_MAX_TTL_SECONDS");
   }
@@ -230,6 +244,15 @@ export function parseConfig(
       ? {}
       : { browserlessToken: parsed.BROWSERLESS_TOKEN }),
     browserlessRegion: parsed.BROWSERLESS_REGION,
+    ...(parsed.CF_BROWSER_ACCOUNT_ID === undefined
+      ? {}
+      : { cfBrowserAccountId: parsed.CF_BROWSER_ACCOUNT_ID }),
+    ...(parsed.CF_BROWSER_API_TOKEN === undefined
+      ? {}
+      : { cfBrowserApiToken: parsed.CF_BROWSER_API_TOKEN }),
+    ...(parsed.CF_BROWSER_DAILY_BUDGET_MS === undefined
+      ? {}
+      : { cfBrowserDailyBudgetMs: parsed.CF_BROWSER_DAILY_BUDGET_MS }),
     jinaReaderRpm: parsed.JINA_READER_RPM,
     browserlessMonthlyUnits: parsed.BROWSERLESS_MONTHLY_UNITS,
     requestTimeoutMs: parsed.REQUEST_TIMEOUT_MS,

@@ -53,13 +53,20 @@ import {
   requestWithId,
   type WorkerEnv,
 } from "./proxy.js";
+import { handleLiteMcpRequest } from "./lite-mcp-transport.js";
+import { createLiteGroundlaneServices, type LiteEnvBindings } from "../lite-composition.js";
+import { parseConfig } from "../config.js";
 
 export { CONTAINER_INSTANCE_NAME, type WorkerEnv } from "./proxy.js";
+
+let cachedLiteServices: import("../provider-factories.js").GroundlaneServices | undefined;
 
 type ExtendedEnv = WorkerEnv & {
   GROUNDLANE_ADMIN_TOKEN?: string;
   GROUNDLANE_INTERNAL_SIGNING_SECRET?: string;
+  GROUNDLANE_MODE?: string;
   MANAGED_TOKEN_D1?: D1Database;
+  GROUNDLANE_ARTIFACTS?: R2Bucket;
   __MANAGED_STORE__?: ManagedTokenStore | null;
   __MANAGED_CLOCK__?: ManagedClock;
   __ADMIN_AUDIT__?: BoundedAuditLog;
@@ -189,6 +196,57 @@ async function isAdminBearer(
   return isBearerEqualToSecret(request.headers.get("authorization"), expected, subtle);
 }
 
+function isLiteMode(env: ExtendedEnv): boolean {
+  return env.GROUNDLANE_MODE === "lite";
+}
+
+function getLiteServices(env: ExtendedEnv): import("../provider-factories.js").GroundlaneServices {
+  if (cachedLiteServices !== undefined) return cachedLiteServices;
+  const envRecord: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === "string") envRecord[key] = value;
+  }
+  const config = parseConfig(envRecord);
+  const bindings: LiteEnvBindings = {
+    d1: env.MANAGED_TOKEN_D1 as unknown as import("../worker/d1-managed-store.js").D1DatabaseLike,
+    r2: env.GROUNDLANE_ARTIFACTS as unknown as import("../worker/r2-immutable-blob.js").R2BucketLike,
+  };
+  cachedLiteServices = createLiteGroundlaneServices(config, bindings);
+  return cachedLiteServices;
+}
+
+async function handleLiteDataPlane(
+  request: Request,
+  env: ExtendedEnv,
+  requestId: string,
+  principal: AuthenticatedPrincipal,
+  credentialBinding: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/mcp" || request.method !== "POST") {
+    return jsonError(404, "not_found", "Route not found in lite mode", requestId);
+  }
+  const edgeRejection = await validateMcpEdgeRequest(request, requestId);
+  if (edgeRejection !== undefined) return edgeRejection;
+
+  let services;
+  try {
+    services = getLiteServices(env);
+  } catch (err) {
+    console.error("lite services init failed", err);
+    return jsonError(500, "lite_init_error", String(err), requestId);
+  }
+  try {
+    return await handleLiteMcpRequest(request, services.registryFactory, {
+      principal,
+      credentialBinding,
+    });
+  } catch (err) {
+    console.error("lite mcp request failed", err);
+    return jsonError(500, "internal_error", String(err), requestId);
+  }
+}
+
 async function proxyDataPlane(
   request: Request,
   env: ExtendedEnv,
@@ -197,6 +255,9 @@ async function proxyDataPlane(
   principal: AuthenticatedPrincipal,
   credentialBinding: string,
 ): Promise<Response> {
+  if (isLiteMode(env)) {
+    return handleLiteDataPlane(request, env, requestId, principal, credentialBinding);
+  }
   const edgeRejection = await validateMcpEdgeRequest(request, requestId);
   if (edgeRejection !== undefined) return edgeRejection;
   const documentJob = await maybeHandleEdgeDocumentJobs(request, env, principal, credentialBinding, requestId);

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "groundlane",
-  "main": "src/worker/index.ts",
+  "main": "src/worker/lite-index.ts",
   "compatibility_date": "2026-08-20",
   "compatibility_flags": [
     "nodejs_compat",
@@ -13,9 +13,6 @@
       "id": "5af8b9bb5bcd4964abe95c0f25473c4b"
     }
   ],
-  // Managed-token registry (D1) and artifact storage (R2). Provisioned;
-  // managed auth is active. Artifact upload remains fail-closed until the
-  // R2 S3 presigning vars/secrets and internal signing secret are present.
   "d1_databases": [
     {
       "binding": "MANAGED_TOKEN_D1",
@@ -31,12 +28,12 @@
     }
   ],
   "vars": {
+    "GROUNDLANE_MODE": "lite",
     "SEARCH_PROVIDER_ORDER": "tavily,exa,brave,you,keenable,browserbase,firecrawl,linkup,parallel,serpapi",
     "SEARCH_MONTHLY_REQUEST_BUDGETS": "tavily:800,exa:1200,brave:1000,you:3000,keenable:100,browserbase:1000,firecrawl:500,linkup:100,parallel:500,serpapi:250,serper:0",
     "SEARCH_DAILY_REQUEST_BUDGETS": "you:100",
     "READER_BACKEND": "disabled",
-    "BROWSER_BACKEND": "local",
-    "BROWSERLESS_REGION": "sfo",
+    "BROWSER_BACKEND": "disabled",
     "REQUEST_TIMEOUT_MS": "30000",
     "MAX_RESPONSE_BYTES": "2000000",
     "MAX_OUTPUT_CHARS": "100000",
@@ -44,43 +41,17 @@
     "MAX_QUEUE": "16",
     "DOCUMENT_UPLOAD_MAX_TTL_SECONDS": "3600",
     "DOCUMENT_ARTIFACT_MAX_TTL_SECONDS": "2592000",
-    "DOCUMENT_CACHE_EDGE_ENABLED": "true",
+    "DOCUMENT_CACHE_EDGE_ENABLED": "false",
     "DOCUMENT_OUTPUT_EDGE_ENABLED": "false",
     "DOCUMENT_ASYNC_EDGE_ENABLED": "false",
     "DOCUMENT_CACHE_DEFAULT_TTL_SECONDS": "86400",
     "DOCUMENT_CACHE_MAX_TTL_SECONDS": "2592000"
   },
-  // Hourly execution keeps expired staging objects within the documented
-  // one-hour physical cleanup window. Each pass is page- and work-bounded.
   "triggers": {
     "crons": [
       "0 * * * *"
     ]
   },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "GROUNDLANE_CONTAINER",
-        "class_name": "GroundlaneContainer"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "GroundlaneContainer"
-      ]
-    }
-  ],
-  "containers": [
-    {
-      "class_name": "GroundlaneContainer",
-      "image": "./Dockerfile",
-      "instance_type": "basic",
-      "max_instances": 1
-    }
-  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
