@@ -57,6 +57,7 @@ try {
     "document_job_cancel",
     "document_job_create",
     "document_job_status",
+    "document_ocr",
     "document_parse",
     "document_policy",
     "document_upload_complete",

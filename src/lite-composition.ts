@@ -78,11 +78,13 @@ import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
+import { createDocumentOcrModule } from "./tools/document-ocr.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
 } from "./tools/async-research.js";
+import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
 import { FirecrawlBalanceChecker } from "./adapters/balance/firecrawl.js";
 import { SerpApiBalanceChecker } from "./adapters/balance/serpapi.js";
@@ -219,6 +221,12 @@ export function createLiteGroundlaneServices(
     createWebExtractModule({ pipeline: fetchPipeline, limiter, requestTimeoutMs: config.requestTimeoutMs, maxResponseBytes: config.maxResponseBytes, maxOutputChars: config.maxOutputChars }),
     createParseModule({ pipeline: fetchPipeline, limiter, requestTimeoutMs: config.requestTimeoutMs, maxResponseBytes: config.maxResponseBytes, maxOutputChars: config.maxOutputChars }),
     createWebExtractSchemaModule({ providers: [], benchmarkReport: null, limiter, requestTimeoutMs: config.requestTimeoutMs, maxOutputChars: config.maxOutputChars }),
+    createDocumentOcrModule({
+      provider: config.ocrSpaceApiKey === undefined ? undefined : new OcrSpaceProvider({ apiKey: config.ocrSpaceApiKey }),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
     createErrorLogModule({ sink: new NoopErrorSink(), cloudflareQuery: undefined }),
   ];
 

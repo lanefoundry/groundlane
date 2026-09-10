@@ -102,6 +102,7 @@ import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
+import { createDocumentOcrModule } from "./tools/document-ocr.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import { getErrorLogSink } from "./tools/common.js";
 import { NoopErrorSink } from "./core/error-log.js";
@@ -116,6 +117,7 @@ import {
   RemoteDocumentCacheRuntime,
 } from "./container/remote-document-cache.js";
 import { systemUtcClock } from "./worker/managed-tokens.js";
+import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
 import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
@@ -325,6 +327,9 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   });
   const limiter = new ConcurrencyLimiter(config.maxConcurrency, config.maxQueue);
   const crawlJobManager = new CrawlJobManager();
+  const ocrProvider = config.ocrSpaceApiKey === undefined
+    ? undefined
+    : new OcrSpaceProvider({ apiKey: config.ocrSpaceApiKey });
   const modules = [
     createProviderCapabilitiesModule(),
     createProviderBalanceModule({
@@ -428,6 +433,12 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
           maxOutputChars: config.maxOutputChars,
         })]
       : []),
+    createDocumentOcrModule({
+      provider: ocrProvider,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
     createErrorLogModule({
       sink: getErrorLogSink() ?? new NoopErrorSink(),
       cloudflareQuery: undefined,
