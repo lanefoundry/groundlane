@@ -78,13 +78,17 @@ import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
+import { createDocumentConvertModule } from "./tools/document-convert.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
+import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
 } from "./tools/async-research.js";
+import { CloudConvertProvider } from "./adapters/document/cloudconvert.js";
 import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
+import { WorkersAiWhisperProvider } from "./adapters/document/workers-ai-whisper.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
 import { FirecrawlBalanceChecker } from "./adapters/balance/firecrawl.js";
 import { SerpApiBalanceChecker } from "./adapters/balance/serpapi.js";
@@ -223,6 +227,20 @@ export function createLiteGroundlaneServices(
     createWebExtractSchemaModule({ providers: [], benchmarkReport: null, limiter, requestTimeoutMs: config.requestTimeoutMs, maxOutputChars: config.maxOutputChars }),
     createDocumentOcrModule({
       provider: config.ocrSpaceApiKey === undefined ? undefined : new OcrSpaceProvider({ apiKey: config.ocrSpaceApiKey }),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentTranscribeModule({
+      provider: config.cfBrowserAccountId === undefined || config.cfBrowserApiToken === undefined
+        ? undefined
+        : new WorkersAiWhisperProvider({ accountId: config.cfBrowserAccountId, apiToken: config.cfBrowserApiToken }),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentConvertModule({
+      provider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

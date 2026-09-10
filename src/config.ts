@@ -78,6 +78,7 @@ const environmentSchema = z.object({
   ASYNC_TASK_EDGE_ENABLED: booleanFlag,
   ARTIFACT_EDGE_ENABLED: booleanFlag,
   OCR_SPACE_API_KEY: optionalSecret,
+  CLOUDCONVERT_API_KEY: optionalSecret,
   DOCUMENT_CACHE_EDGE_ENABLED: booleanFlag,
   DOCUMENT_OUTPUT_EDGE_ENABLED: booleanFlag,
   GROUNDLANE_INTERNAL_SIGNING_SECRET: optionalSecret,
@@ -132,6 +133,7 @@ export interface GroundlaneConfig {
   documentCacheDefaultTtlSeconds: number;
   documentCacheMaxTtlSeconds: number;
   ocrSpaceApiKey?: string;
+  cloudConvertApiKey?: string;
 }
 
 const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
@@ -290,5 +292,8 @@ export function parseConfig(
     ...(parsed.OCR_SPACE_API_KEY === undefined
       ? {}
       : { ocrSpaceApiKey: parsed.OCR_SPACE_API_KEY }),
+    ...(parsed.CLOUDCONVERT_API_KEY === undefined
+      ? {}
+      : { cloudConvertApiKey: parsed.CLOUDCONVERT_API_KEY }),
   };
 }
