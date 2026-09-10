@@ -60,6 +60,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `web_extract` | Extracts named fields into structured JSON | Deterministic selector and bounded pattern engines with per-call output caps; no implicit LLM step |
 | `web_extract_schema` | Extracts structured fields from a URL against a caller-provided bounded schema using a provider model | Explicit opt-in provider-backed extraction; remote `$ref` and unbounded nesting are rejected |
 | `parse` | Parses a URL or raw HTML into reusable structures | Local document, metadata, link, media, and table parsers; URL inputs use the bounded fetch pipeline |
+| `document_ocr` | Extracts text from scanned PDFs and images using OCR | OCR.space API (free 25k requests/month); supports PDF, PNG, JPEG, GIF, TIFF, BMP, WebP; fail-closed when `OCR_SPACE_API_KEY` is not configured |
 | `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; verified source ArtifactRef on the fully configured Cloudflare edge profile |
 | `document_upload_create` / `document_upload_complete` | Creates a credential-bound single-PUT handoff, then verifies and finalizes a source ArtifactRef | Cloudflare Worker edge only when D1, R2, R2 S3 presigning credentials, and internal signing are configured; otherwise fail-closed |
 | `document_artifact_delete` | Immediately revokes a caller-owned source ArtifactRef, deletes its immutable bytes, and revokes all parser-option cache bindings for that source | Cloudflare Worker edge; deletion and expiry cleanup are credential/owner scoped and retryable |
@@ -325,7 +326,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 42 tools | All 42 tools |
+| MCP tools | All 43 tools | All 43 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:

@@ -60,6 +60,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `web_extract` | 抽取具名欄位為結構化 JSON | Deterministic selector 與 bounded pattern engines，可設定單次 output cap；不暗中呼叫 LLM |
 | `web_extract_schema` | 用 provider model 對單一 URL 依 caller-provided bounded schema 抽取結構化欄位 | 明確 opt-in 的 provider-backed extraction；拒絕 remote `$ref` 與 unbounded nesting |
 | `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
+| `document_ocr` | 用 OCR 從掃描 PDF 與圖片中抽取文字 | OCR.space API（免費 25,000 次/月）；支援 PDF、PNG、JPEG、GIF、TIFF、BMP、WebP；未設定 `OCR_SPACE_API_KEY` 時 fail-closed |
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
 | `document_artifact_delete` | 立即撤銷 caller-owned source ArtifactRef、刪除 immutable bytes，並撤銷該 source 的所有 parser-option cache bindings | Cloudflare Worker edge；delete 與 expiry cleanup 都綁定 owner/credential 且可重試 |
