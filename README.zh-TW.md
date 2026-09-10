@@ -58,10 +58,19 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `web_news` | 搜尋 news-specific provider index | 並行 fan-out 或 fallback 到 Brave News、Serper News、SerpApi Google News |
 | `web_images` | 搜尋 image-specific provider index | 並行 fan-out 或 fallback 到 Brave Images、Serper Images、SerpApi Google Images |
 | `web_extract` | 抽取具名欄位為結構化 JSON | Deterministic selector 與 bounded pattern engines，可設定單次 output cap；不暗中呼叫 LLM |
+| `web_extract_schema` | 用 provider model 對單一 URL 依 caller-provided bounded schema 抽取結構化欄位 | 明確 opt-in 的 provider-backed extraction；拒絕 remote `$ref` 與 unbounded nesting |
 | `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
 | `document_artifact_delete` | 立即撤銷 caller-owned source ArtifactRef、刪除 immutable bytes，並撤銷該 source 的所有 parser-option cache bindings | Cloudflare Worker edge；delete 與 expiry cleanup 都綁定 owner/credential 且可重試 |
+| `document_result_read` / `document_result_delete` | 讀取或撤銷 durable self-hosted document result 的 `refId` | Self-hosted Node，需設定 `DOCUMENT_ARTIFACT_STATE_PATH`；bounded base64 chunks，綁定 ownership 與 credential |
+| `document_job_create` / `status` / `cancel` | 建立、讀取或取消 async document job | Cloudflare edge，需 async/output edge flags、internal signing、Reducto credential、D1 與 R2 全部就緒；其餘情況 fail-closed |
+| `document_policy` | 讀取 provider-neutral 的 document/artifact policy：cache、upload、artifact、corpus 預設值與 hard cap | 唯讀 policy 查詢；modern protocol 模式可設定 interactive TTL |
+| `corpus_create` / `corpus_delete` | 建立或刪除含 retention cap 的 operator-owned corpus | Self-hosted durable SQLite runtime，需設定 `CORPUS_STATE_PATH` |
+| `corpus_enroll` / `corpus_update` / `corpus_remove` | 在 corpus 中 enroll、更新或移除 source，含 ACL、retention 與 provenance | Self-hosted durable SQLite runtime；removal 立即撤銷存取與 cache binding |
+| `corpus_status` | 讀取 corpus manifest 真相、enrollment 統計、backend 健康與刪除狀態 | Self-hosted durable SQLite runtime |
+| `corpus_search` | 搜尋 operator-owned corpus，結果帶 boundary 與 freshness provenance | Self-hosted durable SQLite runtime；結果不會被標為公開 web search |
+| `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | 建立、讀取、分頁取得或取消 durable provider-neutral crawl job | Durable job 含 page/byte/output budget、expiry、Groundlane-owned job ID；不外露 provider job ID |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
