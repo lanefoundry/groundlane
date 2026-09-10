@@ -63,6 +63,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `document_ocr` | Extracts text from scanned PDFs and images using OCR | OCR.space API (free 25k requests/month); supports PDF, PNG, JPEG, GIF, TIFF, BMP, WebP; fail-closed when `OCR_SPACE_API_KEY` is not configured |
 | `document_transcribe` | Transcribes audio to text with word-level timestamps | Cloudflare Workers AI Whisper (free 10k Neurons/day); supports MP3, WAV, WebM, OGG, FLAC, M4A; reuses `CF_BROWSER_ACCOUNT_ID` and `CF_BROWSER_API_TOKEN` |
 | `document_convert` | Converts legacy Office files to modern formats | CloudConvert API (free 25 conversions/day); `.doc`→`.docx`, `.xls`→`.xlsx`, `.ppt`→`.pptx`; output can be fed to `document_parse` |
+| `document_table_extract` | Extracts tables from PDFs using spatial heuristics | Deterministic, no LLM or external API; pdf.js-based coordinate analysis; works best on regular grid-aligned tables |
 | `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; verified source ArtifactRef on the fully configured Cloudflare edge profile |
 | `document_upload_create` / `document_upload_complete` | Creates a credential-bound single-PUT handoff, then verifies and finalizes a source ArtifactRef | Cloudflare Worker edge only when D1, R2, R2 S3 presigning credentials, and internal signing are configured; otherwise fail-closed |
 | `document_artifact_delete` | Immediately revokes a caller-owned source ArtifactRef, deletes its immutable bytes, and revokes all parser-option cache bindings for that source | Cloudflare Worker edge; deletion and expiry cleanup are credential/owner scoped and retryable |
@@ -78,6 +79,8 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 | `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane provider-dispatch guardrails, exposed tools, keyless availability, and next checks |
 | `search_budget_status` | Inspects Groundlane's local provider attempt guardrails | Instance-local daily/monthly counters with limit, used, remaining, exhausted, and reset metadata; not provider billing truth |
+| `paper_search` | Searches academic papers on Semantic Scholar | Free API (1k req/s unauthenticated); returns title, abstract, authors, year, venue, citations, TL;DR, DOI, ArXiv ID, and open access PDF link |
+| `paper_lookup` | Looks up a specific paper by ID, DOI, or ArXiv ID | Free API; returns full metadata with references and citations lists |
 | `error_log` | Operator-only: queries the Groundlane error log | Cloudflare Analytics Engine query filtered by tool, code, hintCode, or time range; returns up to `limit` most recent matching events newest first |
 
 Fetch/extract/parse results report retrieval provenance such as `engine`, `backend`, `finalUrl`, `bytes`, and `truncated` when they fetch a URL. Automatic search defaults to batches of at most two complementary providers, canonical-URL deduplication, and RRF while retaining selected/attempted/succeeded provider provenance; if a federated batch has no successful provider, Groundlane tries the next eligible batch within the same deadline. Non-explicit `web_search` fallback treats a single provider rejection, timeout, quota error, 5xx, or malformed response as a warning and continues to the next eligible provider; an explicit `provider` preserves that provider's error instead of silently switching sources. Provider-backed tools such as `web_answer`, `web_research`, `web_content`, `web_map`, `web_crawl`, `web_news`, and `web_images` default to parallel fan-out and return each provider result separately instead of synthesizing them. Pinning a provider stays single-source. `web_fetch`, `web_extract`, and URL-backed `parse` work without a search-provider key.
@@ -328,7 +331,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 45 tools | All 45 tools |
+| MCP tools | All 48 tools | All 48 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:

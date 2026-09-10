@@ -79,9 +79,11 @@ import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
 import { createDocumentConvertModule } from "./tools/document-convert.js";
+import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
+import { createPaperSearchModule } from "./tools/paper-search.js";
 import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
@@ -241,6 +243,16 @@ export function createLiteGroundlaneServices(
     }),
     createDocumentConvertModule({
       provider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentTableExtractModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createPaperSearchModule({
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

@@ -44,9 +44,11 @@ import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
 import { createDocumentConvertModule } from "../../src/tools/document-convert.js";
+import { createDocumentTableExtractModule } from "../../src/tools/document-table-extract.js";
 import { createDocumentOcrModule } from "../../src/tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "../../src/tools/document-transcribe.js";
 import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
+import { createPaperSearchModule } from "../../src/tools/paper-search.js";
 import { createDocumentUploadModule } from "../../src/tools/document-upload.js";
 import { createDocumentParseModule } from "../../src/tools/document-parse.js";
 import { createWebExtractSchemaModule } from "../../src/tools/web-extract-schema.js";
@@ -413,6 +415,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
     }),
+    createDocumentTableExtractModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createDocumentTranscribeModule({
       limiter,
       requestTimeoutMs: 5_000,
@@ -431,6 +438,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     }),
     createCorpusToolsModule({
       store: new CorpusStore(new InMemoryCorpusBackend()),
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createPaperSearchModule({
       limiter,
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
@@ -471,9 +483,12 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "document_ocr",
         "document_parse",
         "document_policy",
+        "document_table_extract",
         "document_transcribe",
         "document_upload_complete",
         "document_upload_create",
+        "paper_lookup",
+        "paper_search",
         "parse",
         "provider_balance",
         "provider_capabilities",

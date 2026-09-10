@@ -63,6 +63,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `document_ocr` | 用 OCR 從掃描 PDF 與圖片中抽取文字 | OCR.space API（免費 25,000 次/月）；支援 PDF、PNG、JPEG、GIF、TIFF、BMP、WebP；未設定 `OCR_SPACE_API_KEY` 時 fail-closed |
 | `document_transcribe` | 將音訊轉錄為帶字級時間戳的文字 | Cloudflare Workers AI Whisper（免費 10,000 Neurons/天）；支援 MP3、WAV、WebM、OGG、FLAC、M4A；共用 `CF_BROWSER_ACCOUNT_ID` 與 `CF_BROWSER_API_TOKEN` |
 | `document_convert` | 將 Legacy Office 檔案轉為現代格式 | CloudConvert API（免費 25 次/天）；`.doc`→`.docx`、`.xls`→`.xlsx`、`.ppt`→`.pptx`；輸出可接 `document_parse` |
+| `document_table_extract` | 用空間啟發式從 PDF 中抽取表格 | Deterministic，不需 LLM 或外部 API；pdf.js 座標分析；規則表格效果最佳 |
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
 | `document_artifact_delete` | 立即撤銷 caller-owned source ArtifactRef、刪除 immutable bytes，並撤銷該 source 的所有 parser-option cache bindings | Cloudflare Worker edge；delete 與 expiry cleanup 都綁定 owner/credential 且可重試 |
@@ -78,6 +79,8 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
 | `search_budget_status` | 檢查 Groundlane 本機 provider attempt guardrail | process 內 daily/monthly counters，包含 limit、used、remaining、exhausted 與 reset metadata；不是 provider 帳務真相 |
+| `paper_search` | 搜尋 Semantic Scholar 學術論文 | 免費 API（未驗證 1k req/s）；回傳標題、摘要、作者、年份、venue、引用數、TL;DR、DOI、ArXiv ID、open access PDF 連結 |
+| `paper_lookup` | 用 ID、DOI 或 ArXiv ID 查詢特定論文 | 免費 API；回傳完整 metadata 含 references 與 citations 清單 |
 | `error_log` | Operator-only：查詢 Groundlane error log | Cloudflare Analytics Engine 查詢，可依 tool、code、hintCode 或時間範圍過濾；回傳最多 `limit` 筆最近的 matching events，由新到舊 |
 
 Fetch/extract/parse 在抓 URL 時會回報 `engine`、`backend`、`finalUrl`、`bytes`、`truncated` 等 retrieval provenance。自動搜尋預設每批最多選兩個互補 provider，經 canonical URL 去重與 RRF 融合後仍保留 selected/attempted/succeeded provider provenance；若某批 federated provider 全失敗，Groundlane 會在同一個 deadline 內嘗試下一批 eligible providers。非明確指定 provider 的 `web_search` fallback 會把單一 provider rejection、timeout、quota error、5xx 或 malformed response 視為 warning，並繼續嘗試下一個 eligible provider；明確指定 `provider` 時則保留該 provider 的錯誤，不會靜默切換來源。`web_answer`、`web_research`、`web_content`、`web_map`、`web_crawl`、`web_news` 與 `web_images` 預設並行 fan-out，並分別回傳各 provider 的結果，不做隱藏合成。明確指定 provider 時維持單一來源。沒有 search provider key 時，`web_fetch`、`web_extract` 與 URL-backed `parse` 仍可運作。
