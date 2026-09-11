@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+:root {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --bg: #f5f6f8;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ebedf2;
+  --text-heading: #1a1d23;
+  --text-body: #3d424d;
+  --text-muted: #6b7280;
+  --accent: #3b5ccc;
+  --accent-hover: #2d4ab3;
+  --accent-soft: rgba(59, 92, 204, 0.1);
+  --win-a: #2563eb;
+  --win-b: #7c3aed;
+  --tie-color: #6b7280;
+  --both-bad: #dc2626;
+  --positive: #059669;
+  --positive-soft: rgba(5, 150, 105, 0.1);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.1);
+  --border: #e2e5ea;
+  --shadow: 0 1px 3px rgba(26, 29, 35, 0.06), 0 1px 2px rgba(26, 29, 35, 0.04);
+  --shadow-lg: 0 4px 12px rgba(26, 29, 35, 0.08), 0 2px 4px rgba(26, 29, 35, 0.04);
+
+  --background: var(--bg);
+  --foreground: var(--text-body);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-body);
+  --popover: var(--bg-surface);
+  --popover-foreground: var(--text-body);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-heading);
+  --muted: var(--bg-elevated);
+  --muted-foreground: var(--text-muted);
+  --destructive: var(--both-bad);
+  --destructive-foreground: #ffffff;
+  --border: #e2e5ea;
+  --input: #e2e5ea;
+  --ring: var(--accent);
+  --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #111318;
+    --bg-surface: #1a1d24;
+    --bg-elevated: #252830;
+    --text-heading: #e8eaef;
+    --text-body: #b0b5c0;
+    --text-muted: #6b7280;
+    --accent: #6b8cff;
+    --accent-hover: #8ba3ff;
+    --accent-soft: rgba(107, 140, 255, 0.12);
+    --win-a: #60a5fa;
+    --win-b: #a78bfa;
+    --border: #2d3140;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+    --background: var(--bg);
+    --foreground: var(--text-body);
+    --card: var(--bg-surface);
+    --card-foreground: var(--text-body);
+    --popover: var(--bg-surface);
+    --popover-foreground: var(--text-body);
+    --primary: var(--accent);
+    --primary-foreground: #111318;
+    --secondary: var(--bg-elevated);
+    --secondary-foreground: var(--text-heading);
+    --muted: var(--bg-elevated);
+    --muted-foreground: var(--text-muted);
+    --border: #2d3140;
+    --input: #2d3140;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #111318;
+  --bg-surface: #1a1d24;
+  --bg-elevated: #252830;
+  --text-heading: #e8eaef;
+  --text-body: #b0b5c0;
+  --text-muted: #6b7280;
+  --accent: #6b8cff;
+  --accent-hover: #8ba3ff;
+  --accent-soft: rgba(107, 140, 255, 0.12);
+  --win-a: #60a5fa;
+  --win-b: #a78bfa;
+  --border: #2d3140;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  --background: var(--bg);
+  --foreground: var(--text-body);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-body);
+  --popover: var(--bg-surface);
+  --popover-foreground: var(--text-body);
+  --primary: var(--accent);
+  --primary-foreground: #111318;
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-heading);
+  --muted: var(--bg-elevated);
+  --muted-foreground: var(--text-muted);
+  --border: #2d3140;
+  --input: #2d3140;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--text-heading);
+}
+
+code, pre, kbd {
+  font-family: var(--font-mono);
+}
