@@ -48,9 +48,11 @@ const SEARCH_FIELDS = [
 
 export class SemanticScholarProvider {
   readonly providerId = "semantic-scholar";
+  private readonly apiKey: string | undefined;
   private readonly timeoutMs: number;
 
-  constructor(options?: { timeoutMs?: number }) {
+  constructor(options?: { apiKey?: string | undefined; timeoutMs?: number | undefined }) {
+    this.apiKey = options?.apiKey;
     this.timeoutMs = options?.timeoutMs ?? 15_000;
   }
 
@@ -95,7 +97,10 @@ export class SemanticScholarProvider {
     let response: Response;
     try {
       response = await fetch(url, {
-        headers: { "user-agent": "Groundlane/0.1.0" },
+        headers: {
+          "user-agent": "Groundlane/0.1.0",
+          ...(this.apiKey === undefined ? {} : { "x-api-key": this.apiKey }),
+        },
         signal: AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]),
       });
     } catch {

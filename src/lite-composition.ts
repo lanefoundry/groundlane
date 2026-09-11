@@ -300,6 +300,7 @@ export function createLiteGroundlaneServices(
       maxOutputChars: config.maxOutputChars,
     }),
     createPaperSearchModule({
+      apiKey: config.semanticScholarApiKey,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

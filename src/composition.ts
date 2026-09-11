@@ -517,6 +517,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxOutputChars: config.maxOutputChars,
     }),
     createPaperSearchModule({
+      apiKey: config.semanticScholarApiKey,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

@@ -75,6 +75,7 @@ const searchDataSchema = z.object({
 const lookupDataSchema = paperSchema;
 
 export interface PaperSearchModuleOptions {
+  apiKey?: string | undefined;
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
   maxOutputChars: number;
@@ -83,7 +84,7 @@ export interface PaperSearchModuleOptions {
 export function createPaperSearchModule(
   options: PaperSearchModuleOptions,
 ): McpModule {
-  const provider = new SemanticScholarProvider({ timeoutMs: options.requestTimeoutMs });
+  const provider = new SemanticScholarProvider({ apiKey: options.apiKey, timeoutMs: options.requestTimeoutMs });
 
   return {
     name: "paper_search",
