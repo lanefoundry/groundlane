@@ -56,7 +56,7 @@ void test("body-bound internal bridge preserves ArtifactRef identity without exp
   const metadata = encodeArtifactParseBridgeMetadata({
     id: 7,
     deadlineAt: clock.now() + 30_000,
-    input: { output: "text", maxPages: 5, cacheMode: "bypass" },
+    input: { output: "text", effort: "fast", maxPages: 5, cacheMode: "bypass" },
     source: {
       refId: "art_opaque",
       contentHash: digest,

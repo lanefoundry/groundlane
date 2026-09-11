@@ -10,6 +10,7 @@ import {
   resolveDocumentParserProfile,
   type ParsedDocumentContent,
 } from "../adapters/document/bounded-document-parser.js";
+import type { OcrSpaceProvider } from "../adapters/document/ocr-space.js";
 import {
   buildCanonicalEnvelopeFromAdapter,
   projectCanonicalDocument,
@@ -61,6 +62,8 @@ const corpusSourceSchema = z.object({
 export const documentParseInputSchema = z.object({
   source: z.discriminatedUnion("kind", [inlineSourceSchema, urlSourceSchema, artifactSourceSchema, corpusSourceSchema]),
   output: z.enum(["markdown", "structured", "text", "all"]).default("markdown"),
+  effort: z.enum(["fast", "standard", "deep"]).default("fast")
+    .describe("Parsing quality-cost tradeoff. 'fast': deterministic local parser (anydoc WASM, zero cost). 'standard': same as fast, but auto-upgrades to OCR for scanned PDFs/images when OCR is configured. 'deep': reserved for future VLM/Reducto high-accuracy parsing. Default: fast."),
   maxBytes: z.number().int().min(1_024).max(MAX_DOCUMENT_BYTES).optional(),
   maxPages: z.number().int().min(1).max(500).default(100),
   maxOutputChars: z.number().int().min(1_000).max(500_000).optional(),
@@ -92,6 +95,7 @@ const documentDataSchema = z.object({
     expiresAt: z.number().int().positive(),
     encoding: z.literal("json"),
   }).strict().optional(),
+  effortUsed: z.enum(["fast", "standard", "deep"]).optional(),
   mediaType: z.string(),
   bytes: z.number().int(),
   cached: z.boolean(),
@@ -132,6 +136,7 @@ export interface DocumentParseModuleOptions {
     cacheBindingIdentity: unknown; expiresAt?: number;
   }> };
   outputRuntime?: Pick<DurableDocumentOutputRuntime, "save" | "read" | "delete">;
+  ocrProvider?: OcrSpaceProvider | undefined;
   requestTimeoutMs: number;
   maxResponseBytes: number;
   maxOutputChars: number;
@@ -201,6 +206,35 @@ function filenameFromUrl(url: string): string {
   const name = new URL(url).pathname.split("/").filter(Boolean).pop();
   if (name === undefined || name.length === 0) return "document";
   try { return decodeURIComponent(name).slice(0, 255); } catch { return name.slice(0, 255); }
+}
+
+const OCR_ELIGIBLE_MIMES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/tiff",
+  "image/bmp",
+  "image/webp",
+]);
+
+async function isScannedPdf(bytes: Uint8Array, signal: AbortSignal): Promise<boolean> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const document = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
+    const scanLimit = Math.min(document.numPages, 5);
+    let scannedCount = 0;
+    for (let i = 1; i <= scanLimit; i += 1) {
+      signal.throwIfAborted();
+      const page = await document.getPage(i);
+      const content = await page.getTextContent();
+      const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ").trim();
+      if (text.length < 5) scannedCount += 1;
+    }
+    return scannedCount > scanLimit / 2;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeFetchedMime(mimeType: string, filename: string): string {
@@ -325,6 +359,29 @@ export async function parseResolvedDocument(
           };
     }
   }
+  let effortUsed: "fast" | "standard" | "deep" = "fast";
+  const baseMime = mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+
+  if (input.effort === "standard" && options.ocrProvider !== undefined && OCR_ELIGIBLE_MIMES.has(baseMime)) {
+    const isImage = baseMime.startsWith("image/");
+    const scanned = isImage || await isScannedPdf(bytes, operationSignal);
+    if (scanned) {
+      const ocrResult = await options.ocrProvider.ocr(bytes, baseMime, filename, operationSignal);
+      if (ocrResult.text.trim().length > 0) {
+        parsed = {
+          blocks: [{ type: "text", blockId: "ocr-1", content: ocrResult.text }],
+          metadata: parsed.metadata,
+          warnings: [...parsed.warnings, `OCR upgrade: effort=standard detected scanned content, used ${ocrResult.engine}`],
+          capabilities: { ...parsed.capabilities, ocr: "available" },
+          mediaType: parsed.mediaType,
+        };
+        effortUsed = "standard";
+      }
+    }
+  } else if (input.effort === "deep") {
+    effortUsed = "deep";
+  }
+
   const provisional = buildCanonicalEnvelopeFromAdapter({
     documentId: "document-pending-binding",
     sourceIdentity,
@@ -332,7 +389,7 @@ export async function parseResolvedDocument(
     readingOrder: parsed.blocks.map((block) => block.blockId),
     status: parsed.blocks.length === 0 ? "partial" : "success",
     capabilityStates: parsed.capabilities,
-    provenance: { engine: "groundlane", model: "none", version: DOCUMENT_ENGINE_VERSION, cost: 0, confidence: 1 },
+    provenance: { engine: "groundlane", model: effortUsed === "standard" ? "ocr-space" : "none", version: DOCUMENT_ENGINE_VERSION, cost: effortUsed === "standard" ? null : 0, confidence: effortUsed === "standard" ? null : 1 },
     warnings: parsed.warnings,
     metadata: [
       ...parsed.metadata,
@@ -360,11 +417,12 @@ export async function parseResolvedDocument(
           byteSize: artifact.byteSize, expiresAt: artifact.expiresAt, encoding: "json",
         },
         mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata,
+        ...(effortUsed !== "fast" ? { effortUsed } : {}),
       };
     }
     throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document projection exceeds the configured output limit", false, undefined, hint("document.output_limit", "Request a narrower projection or use artifact output after configuring durable storage."));
   }
-  return { envelope, projection, mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata };
+  return { envelope, projection, mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata, ...(effortUsed !== "fast" ? { effortUsed } : {}) };
 }
 
 export async function runResolvedDocumentParse(
