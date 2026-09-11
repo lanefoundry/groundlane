@@ -2,10 +2,18 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { parseBoundedDocument } from "../adapters/document/bounded-document-parser.js";
+import type { DocumentBlock } from "../core/canonical-document.js";
 import {
   CorpusStore,
   type CallerPrincipal,
 } from "../core/corpus-runtime.js";
+import {
+  blockText,
+  chunkTextAtLevel,
+  extractFieldsFromBlocks,
+  attachFieldsToChunks,
+  type Chunk,
+} from "./document-chunk.js";
 import {
   DurableCorpusRuntime,
   type DurableCorpusCaller,
@@ -90,6 +98,16 @@ export const corpusRetrievalTestInputSchema = z.object({
   query: z.string().trim().min(1).max(500),
   expectedSourceIds: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
   maxResults: z.number().int().min(1).max(50).default(10),
+  timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
+});
+
+export const corpusChunkInspectInputSchema = z.object({
+  corpusId: corpusIdSchema,
+  sourceId: z.string().trim().min(1).max(160),
+  chunkSizes: z.array(z.number().int().min(16).max(32_768)).min(1).max(5).default([2048, 512, 128]),
+  overlap: z.number().int().min(0).max(512).default(32),
+  maxChunks: z.number().int().min(1).max(200).default(20),
+  fieldAware: z.boolean().default(true),
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
@@ -551,6 +569,102 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
             return structuredToolResult({ ok: true, data });
           } catch (error) {
             return toolError(error, { tool: "corpus_source_inspect" });
+          }
+        },
+      );
+
+      server.registerTool(
+        "corpus_chunk_inspect",
+        {
+          description:
+            "Inspect how a corpus source will be chunked for RAG ingestion. Reads the source, parses it into blocks, splits into hierarchical chunks at the requested sizes, and returns chunk previews with token counts, block refs, and field labels. Read-only, no LLM generation. Requires durable corpus storage.",
+          inputSchema: corpusChunkInspectInputSchema,
+          outputSchema: resultEnvelopeSchema(z.object({
+            corpusId: z.string(),
+            sourceId: z.string(),
+            totalChunks: z.number().int(),
+            levels: z.number().int(),
+            chunks: z.array(z.object({
+              chunkId: z.string(),
+              parentChunkId: z.string().nullable(),
+              level: z.number().int(),
+              preview: z.string(),
+              tokenCount: z.number().int(),
+              blockRefs: z.array(z.string()),
+              fields: z.array(z.string()).optional(),
+            })),
+          })),
+          annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async (input, ctx) => {
+          try {
+            const source = await run("corpus_chunk_inspect", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.readSource(input.corpusId, input.sourceId, durableCaller);
+              }
+              throw new Error("corpus_chunk_inspect requires durable corpus storage (set CORPUS_STATE_PATH)");
+            });
+
+            const parsed = await parseBoundedDocument({
+              bytes: source.bytes,
+              declaredMime: source.mimeType,
+              filename: source.filename,
+              signal: ctx.mcpReq.signal,
+            });
+
+            const segments = parsed.blocks
+              .map((block) => ({ text: blockText(block as DocumentBlock), blockId: block.blockId }))
+              .filter((s) => s.text.trim().length > 0);
+
+            const sizes = [...input.chunkSizes].sort((a, b) => b - a);
+            const idCounter = { value: 0 };
+            const allChunks: Chunk[] = [];
+
+            const level0 = chunkTextAtLevel(segments, sizes[0] ?? 2048, input.overlap, 0, null, idCounter);
+            allChunks.push(...level0);
+
+            let parentChunks = level0;
+            for (let levelIdx = 1; levelIdx < sizes.length; levelIdx += 1) {
+              ctx.mcpReq.signal.throwIfAborted();
+              const levelSize = sizes[levelIdx]!;
+              const childChunks: Chunk[] = [];
+              for (const parent of parentChunks) {
+                const parentSegments = [{ text: parent.text, blockId: parent.blockRefs[0] ?? parent.chunkId }];
+                childChunks.push(...chunkTextAtLevel(parentSegments, levelSize, input.overlap, levelIdx, parent.chunkId, idCounter));
+              }
+              allChunks.push(...childChunks);
+              parentChunks = childChunks;
+            }
+
+            if (input.fieldAware) {
+              const blockFields = extractFieldsFromBlocks(parsed.blocks as DocumentBlock[], parsed.metadata);
+              if (blockFields.size > 0) {
+                attachFieldsToChunks(allChunks, blockFields);
+              }
+            }
+
+            const limited = allChunks.slice(0, input.maxChunks);
+            const chunks = limited.map((c) => ({
+              chunkId: c.chunkId,
+              parentChunkId: c.parentChunkId,
+              level: c.level,
+              preview: c.text.slice(0, 200),
+              tokenCount: c.tokenCount,
+              blockRefs: c.blockRefs,
+              ...(c.fields !== undefined && c.fields.length > 0 ? { fields: c.fields } : {}),
+            }));
+
+            const data = {
+              corpusId: input.corpusId,
+              sourceId: input.sourceId,
+              totalChunks: allChunks.length,
+              levels: sizes.length,
+              chunks,
+            };
+            assertWithinOutputLimit(data, options.maxOutputChars, "corpus_chunk_inspect");
+            return structuredToolResult({ ok: true, data });
+          } catch (error) {
+            return toolError(error, { tool: "corpus_chunk_inspect" });
           }
         },
       );

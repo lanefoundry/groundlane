@@ -42,6 +42,8 @@ try {
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [
+    "audit_log",
+    "corpus_chunk_inspect",
     "corpus_create",
     "corpus_delete",
     "corpus_enroll",
@@ -81,6 +83,7 @@ try {
     "provider_capabilities",
     "provider_quota",
     "search_budget_status",
+    "tool_policy",
     "web_answer",
     "web_content",
     "web_crawl",

@@ -1,4 +1,6 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
+import type { AuditLogSink } from "../core/audit-log.js";
+import { hashInput } from "../core/audit-log.js";
 import type { AuthenticatedPrincipal } from "../worker/auth.js";
 import { enforceStandardSchemaPolicy } from "./schema-policy.js";
 
@@ -23,6 +25,11 @@ export interface McpModule {
 
 export class McpRegistry {
   readonly #modules = new Map<string, McpModule>();
+  readonly #auditLog: AuditLogSink | undefined;
+
+  constructor(auditLog?: AuditLogSink) {
+    this.#auditLog = auditLog;
+  }
 
   add(module: McpModule): this {
     if (this.#modules.has(module.name)) {
@@ -79,7 +86,36 @@ export class McpRegistry {
         if (config.outputSchema !== undefined) {
           enforceStandardSchemaPolicy(config.outputSchema, "output");
         }
-        return Reflect.apply(originalRegisterTool, server, [name, config, callback]);
+        const auditSink = this.#auditLog;
+        const wrappedCallback = auditSink !== undefined && name !== "audit_log"
+          ? (async (...args: Parameters<typeof callback>) => {
+              const start = Date.now();
+              try {
+                const result = await (callback as Function).apply(undefined, args);
+                const sc = result as { structuredContent?: { ok?: boolean } } | undefined;
+                const status: "ok" | "error" = sc?.structuredContent?.ok === false ? "error" : "ok";
+                auditSink.append({
+                  timestamp: new Date(start).toISOString(),
+                  tool: name,
+                  inputHash: hashInput(args[0]),
+                  durationMs: Date.now() - start,
+                  status,
+                });
+                return result;
+              } catch (error) {
+                auditSink.append({
+                  timestamp: new Date(start).toISOString(),
+                  tool: name,
+                  inputHash: hashInput(args[0]),
+                  durationMs: Date.now() - start,
+                  status: "error",
+                  errorCode: error instanceof Error ? error.constructor.name : "unknown",
+                });
+                throw error;
+              }
+            }) as typeof callback
+          : callback;
+        return Reflect.apply(originalRegisterTool, server, [name, config, wrappedCallback]);
       };
       try {
         await module.register(server);
@@ -96,8 +132,9 @@ export type McpRegistryFactory = (
 
 export function createMcpRegistry(
   modules: readonly McpModule[] = [],
+  auditLog?: AuditLogSink,
 ): McpRegistry {
-  const registry = new McpRegistry();
+  const registry = new McpRegistry(auditLog);
   for (const module of modules) {
     registry.add(module);
   }

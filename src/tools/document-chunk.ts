@@ -76,7 +76,7 @@ export interface DocumentChunkModuleOptions {
   maxOutputChars: number;
 }
 
-interface Chunk {
+export interface Chunk {
   chunkId: string;
   parentChunkId: string | null;
   level: number;
@@ -142,7 +142,7 @@ export function attachFieldsToChunks(
   }
 }
 
-function blockText(block: DocumentBlock): string {
+export function blockText(block: DocumentBlock): string {
   if (block.type === "text") return block.content;
   if (block.type === "table") return block.cells.map((c) => c.content).join(" | ");
   if (block.type === "formula") return block.expression;
@@ -150,7 +150,7 @@ function blockText(block: DocumentBlock): string {
   return "";
 }
 
-function chunkTextAtLevel(
+export function chunkTextAtLevel(
   segments: { text: string; blockId: string }[],
   maxTokens: number,
   overlapTokens: number,

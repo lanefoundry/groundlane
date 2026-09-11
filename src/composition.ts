@@ -31,7 +31,9 @@ import { ResearchRouter } from "./core/research-router.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
+import { InMemoryAuditLog } from "./core/audit-log.js";
 import { createMcpRegistry } from "./mcp/registry.js";
+import { createAuditLogModule } from "./tools/audit-log.js";
 import { CrawlJobManager } from "./core/crawl-jobs.js";
 import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
 import {
@@ -78,6 +80,7 @@ import { createDocumentSmartParseModule } from "./tools/document-smart-parse.js"
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import { createPaperSearchModule } from "./tools/paper-search.js";
+import { createToolPolicyModule } from "./tools/tool-policy.js";
 import { getErrorLogSink } from "./tools/common.js";
 import { NoopErrorSink } from "./core/error-log.js";
 import { DurableDocumentCacheRepository } from "./core/durable-document-cache.js";
@@ -124,6 +127,7 @@ export {
 };
 
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {
+  const auditLog = new InMemoryAuditLog();
   const artifactRetention = createArtifactRetentionPolicy({
     uploadMaxTtlSeconds: config.documentUploadMaxTtlSeconds,
     artifactMaxTtlSeconds: config.documentArtifactMaxTtlSeconds,
@@ -324,6 +328,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey });
   const modules = [
     createProviderCapabilitiesModule(),
+    createToolPolicyModule(),
     createProviderBalanceModule({
       registry: providerBalanceRegistry,
       limiter,
@@ -532,6 +537,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       const requestDocumentOutput = documentOutputForContext(context);
       return createMcpRegistry([
         ...modules,
+        createAuditLogModule({ auditLog }),
         createDocumentPolicyModule({
           limiter,
           requestTimeoutMs: config.requestTimeoutMs,
@@ -621,7 +627,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
             credentialBinding: context.credentialBinding,
           },
         }),
-      ]);
+      ], auditLog);
     },
     async close(): Promise<void> {
       if (documentOutputSweep !== undefined) clearInterval(documentOutputSweep);

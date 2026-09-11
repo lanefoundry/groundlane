@@ -73,6 +73,9 @@ import { createWebMapModule } from "../../src/tools/web-map.js";
 import { createWebNewsModule } from "../../src/tools/web-news.js";
 import { createWebResearchModule } from "../../src/tools/web-research.js";
 import { createWebSearchModule } from "../../src/tools/web-search.js";
+import { createToolPolicyModule } from "../../src/tools/tool-policy.js";
+import { createAuditLogModule } from "../../src/tools/audit-log.js";
+import { InMemoryAuditLog } from "../../src/core/audit-log.js";
 
 const html = `<!doctype html><html><head><title>Groundlane</title><meta name="description" content="Trusted web access"><meta name="author" content="Groundlane Team"></head><body><main><h1>Hello</h1><p>Groundlane provides readable web content for AI agents.</p><a href="/docs">Docs</a></main></body></html>`;
 
@@ -310,7 +313,9 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     checkers: [],
   });
   const modules = [
+    createAuditLogModule({ auditLog: new InMemoryAuditLog() }),
     createProviderCapabilitiesModule(),
+    createToolPolicyModule(),
     createProviderBalanceModule({
       registry: balanceRegistry,
       limiter,
@@ -503,6 +508,8 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
       [
+        "audit_log",
+        "corpus_chunk_inspect",
         "corpus_create",
         "corpus_delete",
         "corpus_enroll",
@@ -538,6 +545,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "provider_capabilities",
         "provider_quota",
         "search_budget_status",
+        "tool_policy",
         "web_answer",
         "web_content",
         "web_crawl",
