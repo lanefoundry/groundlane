@@ -56,6 +56,7 @@ const environmentSchema = z.object({
   SERPER_API_KEY: optionalSecret,
   YOU_API_KEY: optionalSecret,
   SEARXNG_BASE_URL: optionalSecret,
+  CRAWL4AI_BASE_URL: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
   BROWSER_BACKEND: z.enum(["disabled", "local", "browserless", "cf-rendering", "hyperbrowser"]).default("disabled"),
   HYPERBROWSER_API_KEY: optionalSecret,
@@ -137,6 +138,7 @@ export interface GroundlaneConfig {
   documentCacheMaxTtlSeconds: number;
   ocrSpaceApiKey?: string;
   cloudConvertApiKey?: string;
+  crawl4aiBaseUrl?: string;
 }
 
 const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
@@ -305,5 +307,8 @@ export function parseConfig(
     ...(parsed.CLOUDCONVERT_API_KEY === undefined
       ? {}
       : { cloudConvertApiKey: parsed.CLOUDCONVERT_API_KEY }),
+    ...(parsed.CRAWL4AI_BASE_URL === undefined
+      ? {}
+      : { crawl4aiBaseUrl: parsed.CRAWL4AI_BASE_URL }),
   };
 }

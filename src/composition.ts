@@ -105,6 +105,7 @@ import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
 import { createDocumentArchiveExtractModule } from "./tools/document-archive-extract.js";
 import { createDocumentChunkModule } from "./tools/document-chunk.js";
+import { createDocumentCompareModule } from "./tools/document-compare.js";
 import { createDocumentConvertModule } from "./tools/document-convert.js";
 import { createDocumentEmailExtractModule } from "./tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
@@ -496,6 +497,11 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxOutputChars: config.maxOutputChars,
     }),
     createDocumentChunkModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentCompareModule({
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

@@ -108,6 +108,14 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
     balanceSupport: "api",
     notes: ["web_content uses Firecrawl /scrape. Latest search production smoke was rejected by upstream.", "Balance uses Firecrawl /v2/team/credit-usage and reports remaining credits."],
   },
+  crawl4ai: {
+    provider: "crawl4ai",
+    vendorFeatures: ["Web Crawl", "Markdown", "Structured Extraction", "Self-hosted", "Docker"],
+    groundlaneTools: ["web_content", ...diagnosticsTools],
+    filterSupport: "none",
+    balanceSupport: "not_implemented",
+    notes: ["Operator-hosted Crawl4AI Docker instance. No API key required.", "Set CRAWL4AI_BASE_URL to the instance origin (e.g. http://localhost:11235)."],
+  },
   searxng: {
     provider: "searxng",
     vendorFeatures: ["Meta-search", "JSON API", "Self-hosted"],

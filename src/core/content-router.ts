@@ -17,6 +17,7 @@ export const CONTENT_PROVIDER_IDS = [
   "firecrawl",
   "tinyfish",
   "keenable",
+  "crawl4ai",
 ] as const satisfies readonly ContentProviderId[];
 
 interface ContentOutcome {

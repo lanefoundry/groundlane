@@ -99,10 +99,9 @@ export type AnswerStrategy = "fallback" | "parallel";
 export type ResearchProviderId = Extract<KnownSearchProviderId, "linkup" | "parallel" | "you">;
 export type ResearchStrategy = "fallback" | "parallel";
 export type ResearchEffort = "lite" | "standard" | "deep";
-export type ContentProviderId = Extract<
-  KnownSearchProviderId,
-  "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "tinyfish" | "you"
->;
+export type ContentProviderId =
+  | Extract<KnownSearchProviderId, "exa" | "firecrawl" | "keenable" | "linkup" | "tavily" | "tinyfish" | "you">
+  | "crawl4ai";
 export type ContentStrategy = "fallback" | "parallel";
 export type MapProviderId = Extract<KnownSearchProviderId, "firecrawl" | "tavily">;
 export type MapStrategy = "fallback" | "parallel";

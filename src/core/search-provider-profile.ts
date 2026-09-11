@@ -23,6 +23,7 @@ const PROVIDER_FAMILIES: Readonly<Partial<Record<SearchProviderId, SearchProvide
   serper: "serp",
   you: "general-web",
   searxng: "general-web",
+  crawl4ai: "extraction-backed",
 };
 
 export function searchProviderFamily(provider: SearchProviderId): SearchProviderFamily {
@@ -43,6 +44,7 @@ const PROVIDER_WEIGHTS: Readonly<Partial<Record<SearchProviderId, number>>> = {
   serper: 0.7,
   you: 0.7,
   searxng: 0.8,
+  crawl4ai: 0.7,
 };
 
 export function searchProviderWeight(provider: SearchProviderId): number {

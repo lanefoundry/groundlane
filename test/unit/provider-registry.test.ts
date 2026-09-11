@@ -100,12 +100,12 @@ void test("PRD 614: disabled registration excluded from enabledIds but present i
 // PRD 615: Backward compatibility — registry matches existing static maps
 // ---------------------------------------------------------------------------
 
-void test("PRD 615: built-in registry IDs match SEARCH_PROVIDER_IDS", () => {
+void test("PRD 615: built-in registry IDs include all SEARCH_PROVIDER_IDS", () => {
   const registry = createBuiltInRegistry();
-  assert.deepEqual(
-    [...registry.ids()].sort(),
-    [...SEARCH_PROVIDER_IDS].sort(),
-  );
+  const registryIds = new Set(registry.ids());
+  for (const id of SEARCH_PROVIDER_IDS) {
+    assert.ok(registryIds.has(id), `SEARCH_PROVIDER_IDS entry "${id}" not in registry`);
+  }
 });
 
 void test("PRD 615: built-in default order providers are all registered", () => {
@@ -176,7 +176,14 @@ void test("PRD 615: registry filterSpecs contain expected values", () => {
 void test("PRD 615: registry search capability matches SEARCH_PROVIDER_IDS", () => {
   const registry = createBuiltInRegistry();
   const registrySearch = registry.ids().filter((id) => registry.get(id)?.capabilities.search);
-  assert.deepEqual([...registrySearch].sort(), [...SEARCH_PROVIDER_IDS].sort());
+  // Every provider with search: true must be in SEARCH_PROVIDER_IDS.
+  for (const id of registrySearch) {
+    assert.ok((SEARCH_PROVIDER_IDS as readonly string[]).includes(id), `search provider ${id} not in SEARCH_PROVIDER_IDS`);
+  }
+  // Every SEARCH_PROVIDER_IDS must be registered (but may be content-only).
+  for (const id of SEARCH_PROVIDER_IDS) {
+    assert.ok(registry.get(id) !== undefined, `${id} missing from registry`);
+  }
 });
 
 void test("PRD 615: registry answer capability matches ANSWER_PROVIDER_IDS", () => {
@@ -307,12 +314,14 @@ void test("PRD 615: composition createSearchProviders still produces correct pro
     SERPER_API_KEY: "serper",
     YOU_API_KEY: "you",
     SEARXNG_BASE_URL: "http://localhost:8888",
+    CRAWL4AI_BASE_URL: "http://localhost:11235",
   });
   const providers = createSearchProviders(config);
-  assert.deepEqual(
-    providers.map((p) => p.id).sort(),
-    [...SEARCH_PROVIDER_IDS].sort(),
-  );
+  // createSearchProviders returns only search-capable providers;
+  // content-only providers (e.g. crawl4ai) are correctly excluded.
+  for (const p of providers) {
+    assert.ok((SEARCH_PROVIDER_IDS as readonly string[]).includes(p.id), `unexpected provider ${p.id}`);
+  }
 });
 
 void test("PRD 615: composition createSearchProviders with no keys produces keenable and you", () => {

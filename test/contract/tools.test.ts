@@ -45,6 +45,7 @@ import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
 import { createDocumentArchiveExtractModule } from "../../src/tools/document-archive-extract.js";
 import { createDocumentChunkModule } from "../../src/tools/document-chunk.js";
+import { createDocumentCompareModule } from "../../src/tools/document-compare.js";
 import { createDocumentConvertModule } from "../../src/tools/document-convert.js";
 import { createDocumentEmailExtractModule } from "../../src/tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "../../src/tools/document-table-extract.js";
@@ -420,6 +421,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
     }),
+    createDocumentCompareModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createDocumentConvertModule({
       limiter,
       requestTimeoutMs: 5_000,
@@ -511,6 +517,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "document_archive_extract",
         "document_artifact_delete",
         "document_chunk",
+        "document_compare",
         "document_convert",
         "document_email_extract",
         "document_ocr",

@@ -1,5 +1,6 @@
 import { LinkupAnswerProvider } from "./adapters/answer/linkup.js";
 import { YouAnswerProvider } from "./adapters/answer/you.js";
+import { Crawl4AIContentProvider } from "./adapters/content/crawl4ai.js";
 import { ExaContentProvider } from "./adapters/content/exa.js";
 import { FirecrawlContentProvider } from "./adapters/content/firecrawl.js";
 import { KeenableContentProvider } from "./adapters/content/keenable.js";
@@ -160,7 +161,11 @@ export function createResearchProviders(config: GroundlaneConfig): ResearchProvi
 }
 
 export function createContentProviders(config: GroundlaneConfig): ContentProvider[] {
-  return buildProviders("content", CONTENT_ADAPTERS, config);
+  const providers = buildProviders("content", CONTENT_ADAPTERS, config);
+  if (config.crawl4aiBaseUrl !== undefined) {
+    providers.push(new Crawl4AIContentProvider({ baseUrl: config.crawl4aiBaseUrl }));
+  }
+  return providers;
 }
 
 export function createMapProviders(config: GroundlaneConfig): MapProvider[] {

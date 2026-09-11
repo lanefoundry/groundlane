@@ -22,7 +22,6 @@ import { structuredToolResult } from "../mcp/results.js";
 import { resultEnvelopeSchema, toolError, withConcurrency } from "./common.js";
 
 const MAX_INPUT_BYTES = 25 * 1024 * 1024;
-const SCANNED_PDF_TEXT_THRESHOLD = 20;
 
 const OCR_IMAGE_MIMES = new Set([
   "image/png",
@@ -73,6 +72,13 @@ const documentSmartParseInputSchema = z.object({
     .describe("Output projection for parsed content. Default: markdown."),
 });
 
+const scanDetectionSchema = z.object({
+  scannedPages: z.array(z.number().int().positive()),
+  textPages: z.array(z.number().int().positive()),
+  totalPages: z.number().int().nonnegative(),
+  verdict: z.enum(["text", "scanned", "mixed"]),
+}).optional();
+
 const smartParseDataSchema = z.object({
   routedTo: z.string(),
   routeReason: z.string(),
@@ -80,6 +86,8 @@ const smartParseDataSchema = z.object({
   engine: z.string(),
   inputBytes: z.number().int().nonnegative(),
   mimeType: z.string(),
+  scanDetection: scanDetectionSchema,
+  hint: z.string().optional(),
 });
 
 export interface DocumentSmartParseModuleOptions {
@@ -128,7 +136,10 @@ export function createDocumentSmartParseModule(
                 withinDeadline(
                   async (signal) => {
                     const route = await detectRoute(bytes, baseMime, extension, signal, options);
-                    return executeRoute(route, bytes, baseMime, input.filename, input.projection, signal, options);
+                    const result = await executeRoute(route, bytes, baseMime, input.filename, input.projection, signal, options);
+                    if (route.scanDetection !== undefined) result.scanDetection = route.scanDetection;
+                    if (route.hint !== undefined) result.hint = route.hint;
+                    return result;
                   },
                   deadline,
                   context.mcpReq.signal,
@@ -149,6 +160,8 @@ export function createDocumentSmartParseModule(
                 engine: result.engine,
                 inputBytes: bytes.byteLength,
                 mimeType: baseMime,
+                ...(result.scanDetection !== undefined ? { scanDetection: result.scanDetection } : {}),
+                ...(result.hint !== undefined ? { hint: result.hint } : {}),
               },
             });
           } catch (error) {
@@ -160,9 +173,18 @@ export function createDocumentSmartParseModule(
   };
 }
 
+interface ScanDetection {
+  scannedPages: number[];
+  textPages: number[];
+  totalPages: number;
+  verdict: "text" | "scanned" | "mixed";
+}
+
 interface RouteDecision {
   routedTo: RoutedTo;
   routeReason: string;
+  scanDetection?: ScanDetection;
+  hint?: string;
 }
 
 interface RouteResult {
@@ -170,6 +192,8 @@ interface RouteResult {
   routeReason: string;
   content: string;
   engine: string;
+  scanDetection?: ScanDetection;
+  hint?: string;
 }
 
 async function detectRoute(
@@ -214,38 +238,98 @@ async function detectRoute(
   }
 
   if (baseMime === "application/pdf" || extension === "pdf") {
-    const textContent = await extractPdfText(bytes, signal);
-    if (textContent.length < SCANNED_PDF_TEXT_THRESHOLD) {
-      if (options.ocrProvider === undefined) {
-        return { routedTo: "document_parse", routeReason: "Scanned PDF detected (minimal text) but OCR not configured; falling back to document_parse" };
-      }
-      return { routedTo: "document_ocr", routeReason: `Scanned PDF detected (only ${String(textContent.length)} characters of extractable text)` };
+    const analysis = await analyzePdfPages(bytes, signal);
+    const detection = buildScanDetection(analysis);
+
+    if (detection.verdict === "text") {
+      return {
+        routedTo: "document_parse",
+        routeReason: `PDF with extractable text on all ${String(detection.totalPages)} page${detection.totalPages === 1 ? "" : "s"}`,
+        scanDetection: detection,
+      };
     }
-    return { routedTo: "document_parse", routeReason: "Text-based PDF detected" };
+
+    if (detection.verdict === "scanned") {
+      if (options.ocrProvider === undefined) {
+        return {
+          routedTo: "document_parse",
+          routeReason: `Scanned PDF detected (no extractable text on any of ${String(detection.totalPages)} page${detection.totalPages === 1 ? "" : "s"}) but OCR not configured; falling back to document_parse`,
+          scanDetection: detection,
+        };
+      }
+      return {
+        routedTo: "document_ocr",
+        routeReason: `Scanned PDF: no extractable text on any of ${String(detection.totalPages)} page${detection.totalPages === 1 ? "" : "s"}`,
+        scanDetection: detection,
+      };
+    }
+
+    // Mixed: some pages have text, some are scanned
+    const scannedList = detection.scannedPages.join(", ");
+    const textList = detection.textPages.join(", ");
+    return {
+      routedTo: "document_parse",
+      routeReason: `Mixed PDF: page${detection.textPages.length === 1 ? "" : "s"} ${textList} have text, page${detection.scannedPages.length === 1 ? "" : "s"} ${scannedList} appear scanned`,
+      scanDetection: detection,
+      hint: options.ocrProvider !== undefined
+        ? `Scanned page${detection.scannedPages.length === 1 ? "" : "s"} ${scannedList} may contain additional text. Run document_ocr on those pages for full extraction.`
+        : `Scanned page${detection.scannedPages.length === 1 ? "" : "s"} ${scannedList} may contain additional text. Configure OCR_SPACE_API_KEY and use document_ocr for those pages.`,
+    };
   }
 
   return { routedTo: "document_parse", routeReason: "Standard document format" };
 }
 
-async function extractPdfText(bytes: Uint8Array, signal: AbortSignal): Promise<string> {
+const PAGE_SCANNED_CHAR_THRESHOLD = 5;
+
+interface PdfPageAnalysis {
+  pageNumber: number;
+  charCount: number;
+}
+
+interface PdfAnalysisResult {
+  pages: PdfPageAnalysis[];
+  totalPages: number;
+}
+
+async function analyzePdfPages(bytes: Uint8Array, signal: AbortSignal): Promise<PdfAnalysisResult> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const document = await pdfjs.getDocument({ data: bytes, useSystemFonts: true }).promise;
-    const maxPages = Math.min(document.numPages, 5);
-    let text = "";
-    for (let i = 1; i <= maxPages; i += 1) {
+    const totalPages = document.numPages;
+    const scanLimit = Math.min(totalPages, 10);
+    const pages: PdfPageAnalysis[] = [];
+    for (let i = 1; i <= scanLimit; i += 1) {
       signal.throwIfAborted();
       const page = await document.getPage(i);
       const content = await page.getTextContent();
-      text += content.items
+      const text = content.items
         .map((item) => ("str" in item ? item.str : ""))
-        .join(" ");
+        .join(" ")
+        .trim();
+      pages.push({ pageNumber: i, charCount: text.length });
     }
-    return text.trim();
+    return { pages, totalPages };
   } catch {
     signal.throwIfAborted();
-    return "";
+    return { pages: [], totalPages: 0 };
   }
+}
+
+function buildScanDetection(analysis: PdfAnalysisResult): ScanDetection {
+  const scannedPages: number[] = [];
+  const textPages: number[] = [];
+  for (const page of analysis.pages) {
+    if (page.charCount < PAGE_SCANNED_CHAR_THRESHOLD) {
+      scannedPages.push(page.pageNumber);
+    } else {
+      textPages.push(page.pageNumber);
+    }
+  }
+  const verdict: "text" | "scanned" | "mixed" =
+    scannedPages.length === 0 ? "text" :
+    textPages.length === 0 ? "scanned" : "mixed";
+  return { scannedPages, textPages, totalPages: analysis.totalPages, verdict };
 }
 
 async function executeRoute(

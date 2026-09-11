@@ -28,13 +28,17 @@ void test("catalog, public schema, config, and composition expose the same provi
     SERPER_API_KEY: "serper",
     YOU_API_KEY: "you",
     SEARXNG_BASE_URL: "http://localhost:8888",
+    CRAWL4AI_BASE_URL: "http://localhost:11235",
   });
 
+  // searchProviderOrder includes all known IDs from SEARCH_PROVIDER_IDS.
   assert.deepEqual(config.searchProviderOrder, SEARCH_PROVIDER_IDS);
-  assert.deepEqual(
-    createSearchProviders(config).map((provider) => provider.id).sort(),
-    [...SEARCH_PROVIDER_IDS].sort(),
-  );
+  // createSearchProviders only returns providers with a search adapter;
+  // content-only providers (e.g. crawl4ai) are excluded.
+  const searchProviders = createSearchProviders(config).map((provider) => provider.id).sort();
+  for (const id of searchProviders) {
+    assert.ok((SEARCH_PROVIDER_IDS as readonly string[]).includes(id), `search provider ${id} not in SEARCH_PROVIDER_IDS`);
+  }
   for (const provider of SEARCH_PROVIDER_IDS) {
     assert.equal(
       webSearchInputSchema.safeParse({ query: "q", provider }).success,

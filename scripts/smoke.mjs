@@ -56,6 +56,7 @@ try {
     "document_archive_extract",
     "document_artifact_delete",
     "document_chunk",
+    "document_compare",
     "document_convert",
     "document_email_extract",
     "document_job_cancel",

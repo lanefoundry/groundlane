@@ -353,6 +353,25 @@ export function createBuiltInRegistry(): ProviderRegistry {
     notes: ["Operator-hosted SearXNG instance. No API key required, no rate limits beyond what the operator configures.", "Set SEARXNG_BASE_URL to the instance origin (e.g. http://localhost:8888)."],
   });
 
+  registry.register({
+    id: "crawl4ai",
+    protocol: "built-in",
+    enabled: true,
+    backend: "http-compatible",
+    ownership: "operator-hosted",
+    capabilities: { content: true },
+    family: "extraction-backed",
+    weight: 0.7,
+    filterSpec: { mode: "none", timeRange: false },
+    defaultMonthlyBudget: 10000,
+    envKeyName: "CRAWL4AI_BASE_URL",
+    vendorFeatures: ["Web Crawl", "Markdown", "Structured Extraction", "Self-hosted", "Docker"],
+    groundlaneTools: ["web_content", ...diagnosticsTools],
+    filterSupport: "none",
+    balanceSupport: "not_implemented",
+    notes: ["Operator-hosted Crawl4AI Docker instance. No API key required.", "Set CRAWL4AI_BASE_URL to the instance origin (e.g. http://localhost:11235)."],
+  });
+
   return registry;
 }
 
