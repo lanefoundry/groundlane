@@ -108,7 +108,7 @@ export function createDocumentEmailExtractModule(
                 withinDeadline(
                   async (signal) => {
                     const source = new TextDecoder().decode(bytes);
-                    const { headers, body } = splitHeaders(source);
+                    const { headers } = splitHeaders(source);
                     const headerMap: Record<string, string> = {};
                     for (const key of ["subject", "from", "to", "cc", "date", "message-id", "content-type"]) {
                       const val = headers.get(key);

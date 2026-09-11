@@ -21,7 +21,6 @@ import { ConcurrencyLimiter } from "./core/limits.js";
 import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
 import { ProviderBalanceRegistry } from "./core/provider-balance.js";
 import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
-import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
 import { AnswerRouter } from "./core/answer-router.js";
 import { ContentRouter } from "./core/content-router.js";
 import { CrawlRouter } from "./core/crawl-router.js";
@@ -35,7 +34,7 @@ import { CrawlJobManager } from "./core/crawl-jobs.js";
 import { NoopErrorSink } from "./core/error-log.js";
 import { createArtifactRetentionPolicy } from "./core/artifact-retention-policy.js";
 import { documentCacheBindingIdentity } from "./core/document-cache-contract.js";
-import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
+import { createMcpRegistry } from "./mcp/registry.js";
 import type { McpRequestContext } from "./mcp/registry.js";
 import type { GroundlaneConfig } from "./config.js";
 import type { BrowserBackend } from "./core/contracts.js";
@@ -58,7 +57,6 @@ import { createCorpusToolsModule } from "./tools/corpus-tools.js";
 import { createDocumentPolicyModule } from "./tools/document-policy.js";
 import {
   createDocumentParseModule,
-  isParsedDocumentContent,
   runResolvedDocumentParse,
 } from "./tools/document-parse.js";
 import { createDocumentUploadModule } from "./tools/document-upload.js";
@@ -165,8 +163,9 @@ export function createLiteGroundlaneServices(
   const corpusBlobStore = new R2ImmutableBlobStore(bindings.r2);
   const corpusIndex = new D1CorpusDerivedIndex(bindings.d1, "corpus-index-v1");
 
-  const corpusForContext = (context?: McpRequestContext) =>
-    new DurableCorpusRuntime({
+  const corpusForContext = (context?: McpRequestContext) => {
+    void context;
+    return new DurableCorpusRuntime({
       repository: new DurableCorpusRepository(corpusRecordStore),
       artifacts: new ImmutableBlobCorpusSourceArtifacts(corpusBlobStore),
       index: corpusIndex,
@@ -184,6 +183,7 @@ export function createLiteGroundlaneServices(
         },
       },
     });
+  };
 
   const asyncLinkup = config.providerKeys.linkup === undefined
     ? undefined
@@ -329,7 +329,7 @@ export function createLiteGroundlaneServices(
         },
       }, signal);
     },
-    registryFactory: async (context) => {
+    registryFactory: (context) => {
       if (context === undefined) {
         throw new Error("Authenticated MCP request context is required");
       }

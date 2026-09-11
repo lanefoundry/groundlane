@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   extractTablesFromPdf,
+  type ExtractedTable,
 } from "../../src/adapters/document/pdf-table-extractor.js";
 
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -70,7 +71,7 @@ void test("table extract: returns correct result shape", async () => {
   const result = await extractTablesFromPdf(pdf, AbortSignal.timeout(10_000));
   assert.equal(typeof result.engine, "string");
   assert.ok(Array.isArray(result.tables));
-  for (const table of result.tables) {
+  for (const table of result.tables as readonly ExtractedTable[]) {
     assert.equal(typeof table.pageNumber, "number");
     assert.ok(Array.isArray(table.rows));
     assert.equal(typeof table.rowCount, "number");

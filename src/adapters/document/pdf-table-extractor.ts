@@ -60,11 +60,11 @@ export async function extractTablesFromPdf(
       .map((item) => {
         const tx = item.transform;
         return {
-          str: (item.str as string).trim(),
-          x: tx[4] ?? 0,
-          y: viewport.height - (tx[5] ?? 0),
-          width: item.width as number,
-          height: Math.abs(tx[3] ?? 12),
+          str: item.str.trim(),
+          x: (tx[4] as number | undefined) ?? 0,
+          y: viewport.height - ((tx[5] as number | undefined) ?? 0),
+          width: item.width,
+          height: Math.abs((tx[3] as number | undefined) ?? 12),
         };
       })
       .filter((item) => item.str !== "");

@@ -60,7 +60,7 @@ void test("smart_parse routes text file to document_parse", async () => {
 
 void test("smart_parse routes image to document_ocr when provider available", async () => {
   const fakeOcr = {
-    ocr: async () => ({ text: "OCR result", pages: [], engine: "mock-ocr" }),
+    ocr: () => Promise.resolve({ text: "OCR result", pages: [], engine: "mock-ocr" }),
   };
   const handler = await setupHandler({ ocrProvider: fakeOcr });
   const result = await handler(
@@ -85,7 +85,7 @@ void test("smart_parse falls back to document_parse for image when OCR not confi
 
 void test("smart_parse routes audio to document_transcribe when provider available", async () => {
   const fakeWhisper = {
-    transcribe: async () => ({
+    transcribe: () => Promise.resolve({
       text: "Transcribed audio",
       segments: [],
       engine: "mock-whisper",
@@ -116,7 +116,7 @@ void test("smart_parse routes EML to document_email_extract", async () => {
 
 void test("smart_parse routes .doc to document_convert when local converter available", async () => {
   const fakeConverter = {
-    convert: async (_bytes: Uint8Array, filename: string) => ({
+    convert: (_bytes: Uint8Array, filename: string) => Promise.resolve({
       markdown: `# Converted from ${filename}`,
       detectedFormat: "doc",
       engine: "mock-anydoc",

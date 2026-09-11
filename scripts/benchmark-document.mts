@@ -9,6 +9,7 @@ import {
   DOCUMENT_ENGINE_VERSION,
   parseBoundedDocument,
 } from "../src/adapters/document/bounded-document-parser.js";
+import type { DocumentBlock } from "../src/core/canonical-document.js";
 
 const expectedSchema = z.object({
   requiredText: z.array(z.string()).default([]),
@@ -39,10 +40,10 @@ function guessMime(filename: string): string {
   return mimeMap[ext] ?? "application/octet-stream";
 }
 
-function blockText(block: { type: string; content?: string; cells?: Array<{ content: string }>; expression?: string; altText?: string }): string {
-  if (block.type === "text") return block.content ?? "";
-  if (block.type === "table") return (block.cells ?? []).map((c) => c.content).join(" ");
-  if (block.type === "formula") return block.expression ?? "";
+function blockText(block: DocumentBlock): string {
+  if (block.type === "text") return block.content;
+  if (block.type === "table") return block.cells.map((c) => c.content).join(" ");
+  if (block.type === "formula") return block.expression;
   if (block.type === "asset") return block.altText ?? "";
   return "";
 }
@@ -116,10 +117,10 @@ for (const fixtureName of fixtureNames) {
     const elapsed = performance.now() - start;
     durations.push(elapsed);
 
-    const fullText = parsed.blocks.map((b) => blockText(b as any)).join("\n");
+    const fullText = parsed.blocks.map((b) => blockText(b)).join("\n");
     const tableCells = parsed.blocks
-      .filter((b) => b.type === "table")
-      .reduce((sum, b) => sum + ((b as any).cells?.length ?? 0), 0);
+      .filter((b): b is DocumentBlock & { type: "table"; cells: readonly { content: string }[] } => b.type === "table")
+      .reduce((sum, b) => sum + b.cells.length, 0);
 
     let requiredFound = 0;
     for (const req of expected.requiredText) {

@@ -110,8 +110,8 @@ export class CloudConvertProvider {
       });
       if (jobRes.status === 429) throw failure("RATE_LIMITED", "CloudConvert rate limit exceeded");
       if (!jobRes.ok) throw failure("UPSTREAM_ERROR", `CloudConvert job creation returned HTTP ${jobRes.status}`);
-      const parsed = await jobRes.json() as Record<string, unknown>;
-      job = (parsed as Record<string, unknown>).data as Record<string, unknown>;
+      const parsed: Record<string, unknown> = await jobRes.json();
+      job = parsed.data as Record<string, unknown>;
     } catch (error) {
       signal.throwIfAborted();
       if (error instanceof GroundlaneError) throw error;
@@ -162,7 +162,7 @@ export class CloudConvertProvider {
           signal: combined,
         });
         if (!statusRes.ok) throw failure("UPSTREAM_ERROR", "CloudConvert status check failed");
-        const parsed = await statusRes.json() as Record<string, unknown>;
+        const parsed: Record<string, unknown> = await statusRes.json();
         status = parsed.data as Record<string, unknown>;
       } catch (error) {
         signal.throwIfAborted();

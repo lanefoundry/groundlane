@@ -11,6 +11,7 @@ import {
   type ParsedDocumentContent,
 } from "../adapters/document/bounded-document-parser.js";
 import type { DoclingServeProvider } from "../adapters/document/docling-serve.js";
+import type { MineruCloudProvider } from "../adapters/document/mineru-cloud.js";
 import type { OcrSpaceProvider } from "../adapters/document/ocr-space.js";
 import {
   buildCanonicalEnvelopeFromAdapter,
@@ -139,6 +140,7 @@ export interface DocumentParseModuleOptions {
   outputRuntime?: Pick<DurableDocumentOutputRuntime, "save" | "read" | "delete">;
   ocrProvider?: OcrSpaceProvider | undefined;
   vlmProvider?: DoclingServeProvider | undefined;
+  mineruProvider?: MineruCloudProvider | undefined;
   requestTimeoutMs: number;
   maxResponseBytes: number;
   maxOutputChars: number;
@@ -362,6 +364,7 @@ export async function parseResolvedDocument(
     }
   }
   let effortUsed: "fast" | "standard" | "deep" = "fast";
+  let deepModel = "none";
   const baseMime = mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 
   if (input.effort === "standard" && options.ocrProvider !== undefined && OCR_ELIGIBLE_MIMES.has(baseMime)) {
@@ -391,6 +394,20 @@ export async function parseResolvedDocument(
         mediaType: parsed.mediaType,
       };
       effortUsed = "deep";
+      deepModel = "docling-vlm";
+    }
+  } else if (input.effort === "deep" && options.mineruProvider !== undefined) {
+    const mineruResult = await options.mineruProvider.parse(bytes, baseMime, filename, operationSignal);
+    if (mineruResult.blocks.length > 0) {
+      parsed = {
+        blocks: mineruResult.blocks,
+        metadata: [...mineruResult.metadata, ...parsed.metadata],
+        warnings: [...parsed.warnings, `MinerU upgrade: effort=deep used ${mineruResult.engine}`],
+        capabilities: { ...parsed.capabilities, vlm: "available" },
+        mediaType: parsed.mediaType,
+      };
+      effortUsed = "deep";
+      deepModel = "mineru-v3";
     }
   } else if (input.effort === "deep") {
     effortUsed = "deep";
@@ -405,7 +422,7 @@ export async function parseResolvedDocument(
     capabilityStates: parsed.capabilities,
     provenance: {
       engine: "groundlane",
-      model: effortUsed === "standard" ? "ocr-space" : effortUsed === "deep" ? "docling-vlm" : "none",
+      model: effortUsed === "standard" ? "ocr-space" : effortUsed === "deep" ? deepModel : "none",
       version: DOCUMENT_ENGINE_VERSION,
       cost: effortUsed !== "fast" ? null : 0,
       confidence: effortUsed !== "fast" ? null : 1,
