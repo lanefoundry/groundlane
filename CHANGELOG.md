@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added `document_compare` tool for structured block-level diffing of two
+  documents (deterministic, no LLM or external API).
+- Added `document_ocr` (OCR.space), `document_transcribe` (Workers AI Whisper),
+  `document_convert` (anydoc WASM with optional CloudConvert fallback),
+  `document_smart_parse` (auto-detect and route), `document_chunk` (hierarchical
+  RAG chunking), `document_toc` (heading extraction), `document_archive_extract`
+  (ZIP), `document_email_extract` (EML with recursive attachments),
+  `document_table_extract` (spatial PDF table extraction), and
+  `paper_search`/`paper_lookup` (Semantic Scholar).
+- Added Hyperbrowser browser adapter, Crawl4AI content adapter, and SearXNG
+  search adapter (all self-hosted/optional).
+- Tool count is now 54 (was 53).
 - Modern MCP requests with coherent routing headers but SEP-2575 `_meta`
   missing `_meta`/`protocolVersion`/`clientCapabilities` now fail with
   `-32602 Invalid params` (HTTP 400) instead of `-32020`; header/body

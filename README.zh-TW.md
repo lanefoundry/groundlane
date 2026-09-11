@@ -69,6 +69,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `document_transcribe` | 將音訊轉錄為帶字級時間戳的文字 | Cloudflare Workers AI Whisper（免費 10,000 Neurons/天）；支援 MP3、WAV、WebM、OGG、FLAC、M4A；共用 `CF_BROWSER_ACCOUNT_ID` 與 `CF_BROWSER_API_TOKEN` |
 | `document_convert` | 將文件檔案轉為 Markdown 或現代 Office 格式 | 預設：anydoc WASM（14 種格式，零成本，不需 API key）；可選 CloudConvert fallback 產出 `.docx`/`.xlsx`/`.pptx` 二進位 |
 | `document_table_extract` | 用空間啟發式從 PDF 中抽取表格 | Deterministic，不需 LLM 或外部 API；pdf.js 座標分析；規則表格效果最佳 |
+| `document_compare` | 比較兩份文件並回傳結構化 diff | Deterministic，不需 LLM 或外部 API；兩份文件各自走 `document_parse`，再產生 block 層級的新增、刪除與變更 |
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
 | `document_artifact_delete` | 立即撤銷 caller-owned source ArtifactRef、刪除 immutable bytes，並撤銷該 source 的所有 parser-option cache bindings | Cloudflare Worker edge；delete 與 expiry cleanup 都綁定 owner/credential 且可重試 |
@@ -313,7 +314,30 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | --- | --- | --- |
 | Local Node | 開發與評估 | [快速開始](#快速開始) |
 | Docker | 獨立 Node／Chromium container | `docker build -t groundlane .`，再執行 `docker run --rm -p 8080:8080 --env-file .env groundlane` |
-| Cloudflare Worker + Container | 預期的 production topology | [部署到 Cloudflare](#部署到-cloudflare) |
+| **Cloudflare Worker Lite** | **零成本 production（$0）** | `wrangler deploy -c wrangler.lite.jsonc` |
+| Cloudflare Worker + Container | 完整模式含 Playwright browser | `wrangler deploy` |
+
+### Lite vs Full 模式
+
+Groundlane 支援兩種 Cloudflare 部署模式：
+
+| | Lite（純 Worker） | Full（Worker + Container） |
+| --- | --- | --- |
+| 設定檔 | `wrangler.lite.jsonc` | `wrangler.jsonc` |
+| 入口 | `src/worker/lite-index.ts` | `src/worker/index.ts` |
+| 資料層 | D1 + R2 | node:sqlite（Container 內） |
+| HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` + DNS filtering |
+| Browser | 停用（CF Browser Rendering ready） | Playwright + Chromium |
+| MCP 工具 | 全部 54 個 | 全部 54 個 |
+| 成本 | **$0**（Workers 免費額度） | ~$1.5–3/月（container memory + disk） |
+
+部署 lite 模式：
+
+```bash
+wrangler d1 migrations apply groundlane-managed-tokens -c wrangler.lite.jsonc --remote
+wrangler secret bulk .cloudflare-secrets.env -c wrangler.lite.jsonc
+wrangler deploy -c wrangler.lite.jsonc
+```
 
 ## 支援的 adapters
 
@@ -403,7 +427,7 @@ Worker / Node HTTP edge       authentication, request identity
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
                               web_news | web_images | web_fetch | web_extract | parse
                               document_smart_parse | document_parse | document_ocr | document_convert
-                              document_table_extract | document_chunk | document_toc
+                              document_table_extract | document_chunk | document_toc | document_compare
                               document_archive_extract | document_email_extract | document_transcribe
                               paper_search | paper_lookup
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities | error_log
