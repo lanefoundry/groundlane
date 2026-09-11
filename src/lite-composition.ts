@@ -1,5 +1,6 @@
 import { DisabledBrowserBackend } from "./adapters/browser/disabled.js";
 import { CfBrowserRenderingBackend } from "./adapters/browser/cf-browser-rendering.js";
+import { HyperbrowserBackend } from "./adapters/browser/hyperbrowser.js";
 import { WorkersFetcher } from "./adapters/http/workers-fetcher.js";
 import { D1CorpusDerivedIndex } from "./adapters/state/d1-corpus-index.js";
 import { D1DurableRecordStore } from "./worker/d1-durable-store.js";
@@ -93,6 +94,7 @@ import {
   createAsyncResearchModule,
   createLinkupResearchTaskProvider,
 } from "./tools/async-research.js";
+import { AnydocLocalConverter } from "./adapters/document/anydoc-local.js";
 import { CloudConvertProvider } from "./adapters/document/cloudconvert.js";
 import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
 import { WorkersAiWhisperProvider } from "./adapters/document/workers-ai-whisper.js";
@@ -126,7 +128,9 @@ export function createLiteGroundlaneServices(
             ? { dailyBudgetMs: config.cfBrowserDailyBudgetMs }
             : {}),
         })
-      : new DisabledBrowserBackend();
+      : config.browserBackend === "hyperbrowser" && config.hyperbrowserApiKey !== undefined
+        ? new HyperbrowserBackend({ apiKey: config.hyperbrowserApiKey })
+        : new DisabledBrowserBackend();
 
   const backendBudget = new CompositeSearchBudget([
     new MinuteRateLimiter({ jina: config.jinaReaderRpm }),
@@ -247,6 +251,7 @@ export function createLiteGroundlaneServices(
       maxOutputChars: config.maxOutputChars,
     }),
     createDocumentConvertModule({
+      localConverter: new AnydocLocalConverter(),
       provider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
@@ -257,6 +262,7 @@ export function createLiteGroundlaneServices(
       transcribeProvider: config.cfBrowserAccountId === undefined || config.cfBrowserApiToken === undefined
         ? undefined
         : new WorkersAiWhisperProvider({ accountId: config.cfBrowserAccountId, apiToken: config.cfBrowserApiToken }),
+      localConverter: new AnydocLocalConverter(),
       convertProvider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,

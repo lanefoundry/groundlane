@@ -14,6 +14,9 @@ importers:
       '@cloudflare/workers-oauth-provider':
         specifier: ^0.10.3
         version: 0.10.3
+      '@firecrawl/anydoc-wasm':
+        specifier: ^0.2.4
+        version: 0.2.4
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
@@ -667,6 +670,9 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@firecrawl/anydoc-wasm@0.2.4':
+    resolution: {integrity: sha512-ZqrTXBrwi1Ct4kB5R72KQC9fOxwq4W08bZh6T+o84Mork3xCKLpH8TRe+KM3vJ+XqRVlV1dxHvQp0cnkO2r5TQ==}
 
   '@hono/node-server@1.19.17':
     resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
@@ -2877,6 +2883,8 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@firecrawl/anydoc-wasm@0.2.4': {}
 
   '@hono/node-server@1.19.17(hono@4.13.3)':
     dependencies:

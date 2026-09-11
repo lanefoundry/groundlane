@@ -57,7 +57,8 @@ const environmentSchema = z.object({
   YOU_API_KEY: optionalSecret,
   SEARXNG_BASE_URL: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
-  BROWSER_BACKEND: z.enum(["disabled", "local", "browserless", "cf-rendering"]).default("disabled"),
+  BROWSER_BACKEND: z.enum(["disabled", "local", "browserless", "cf-rendering", "hyperbrowser"]).default("disabled"),
+  HYPERBROWSER_API_KEY: optionalSecret,
   CF_BROWSER_ACCOUNT_ID: optionalSecret,
   CF_BROWSER_API_TOKEN: optionalSecret,
   CF_BROWSER_DAILY_BUDGET_MS: positiveInt(0, 3_600_000).optional(),
@@ -105,7 +106,8 @@ export interface GroundlaneConfig {
   searchDailyRequestBudgets: Partial<Record<SearchProviderId, number>>;
   providerKeys: Partial<Record<SearchProviderId, string>>;
   readerBackend: "disabled" | "jina";
-  browserBackend: "disabled" | "local" | "browserless" | "cf-rendering";
+  browserBackend: "disabled" | "local" | "browserless" | "cf-rendering" | "hyperbrowser";
+  hyperbrowserApiKey?: string;
   browserlessToken?: string;
   browserlessRegion: "sfo" | "lon" | "ams";
   cfBrowserAccountId?: string;
@@ -223,6 +225,9 @@ export function parseConfig(
       throw new Error("CF_BROWSER_API_TOKEN is required when BROWSER_BACKEND=cf-rendering");
     }
   }
+  if (parsed.BROWSER_BACKEND === "hyperbrowser" && parsed.HYPERBROWSER_API_KEY === undefined) {
+    throw new Error("HYPERBROWSER_API_KEY is required when BROWSER_BACKEND=hyperbrowser");
+  }
   if (parsed.DOCUMENT_CACHE_DEFAULT_TTL_SECONDS > parsed.DOCUMENT_CACHE_MAX_TTL_SECONDS) {
     throw new Error("DOCUMENT_CACHE_DEFAULT_TTL_SECONDS must not exceed DOCUMENT_CACHE_MAX_TTL_SECONDS");
   }
@@ -249,6 +254,9 @@ export function parseConfig(
     ...(parsed.BROWSERLESS_TOKEN === undefined
       ? {}
       : { browserlessToken: parsed.BROWSERLESS_TOKEN }),
+    ...(parsed.HYPERBROWSER_API_KEY === undefined
+      ? {}
+      : { hyperbrowserApiKey: parsed.HYPERBROWSER_API_KEY }),
     browserlessRegion: parsed.BROWSERLESS_REGION,
     ...(parsed.CF_BROWSER_ACCOUNT_ID === undefined
       ? {}

@@ -6,6 +6,7 @@ import {
   parseBoundedDocument,
   resolveDocumentParserProfile,
 } from "../adapters/document/bounded-document-parser.js";
+import type { AnydocLocalConverter } from "../adapters/document/anydoc-local.js";
 import { resolveConversion } from "../adapters/document/cloudconvert.js";
 import type { CloudConvertProvider } from "../adapters/document/cloudconvert.js";
 import type { OcrSpaceProvider } from "../adapters/document/ocr-space.js";
@@ -84,6 +85,7 @@ const smartParseDataSchema = z.object({
 export interface DocumentSmartParseModuleOptions {
   ocrProvider?: OcrSpaceProvider | undefined;
   transcribeProvider?: WorkersAiWhisperProvider | undefined;
+  localConverter?: AnydocLocalConverter | undefined;
   convertProvider?: CloudConvertProvider | undefined;
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
@@ -193,6 +195,9 @@ async function detectRoute(
   }
 
   if (LEGACY_OFFICE_MIMES.has(baseMime) || LEGACY_OFFICE_EXTENSIONS.has(extension)) {
+    if (options.localConverter !== undefined) {
+      return { routedTo: "document_convert", routeReason: "Legacy Office format detected — using local anydoc WASM converter" };
+    }
     if (resolveConversion(baseMime, `file.${extension}`) !== undefined) {
       if (options.convertProvider === undefined) {
         return { routedTo: "document_parse", routeReason: "Legacy Office detected but conversion not configured; falling back to document_parse (may fail)" };
@@ -265,6 +270,10 @@ async function executeRoute(
   }
 
   if (routedTo === "document_convert") {
+    if (options.localConverter !== undefined) {
+      const result = await options.localConverter.convert(bytes, filename);
+      return { routedTo, routeReason, content: result.markdown, engine: result.engine };
+    }
     const converted = await options.convertProvider!.convert(bytes, baseMime, filename, signal);
     const parsed = await parseBoundedDocument({
       bytes: converted.bytes,

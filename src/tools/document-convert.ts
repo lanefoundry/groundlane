@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { CloudConvertProvider } from "../adapters/document/cloudconvert.js";
 import { resolveConversion } from "../adapters/document/cloudconvert.js";
+import type { AnydocLocalConverter } from "../adapters/document/anydoc-local.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
 import { structuredToolResult } from "../mcp/results.js";
@@ -21,25 +22,30 @@ const documentConvertInputSchema = z.object({
     .trim()
     .min(1)
     .max(200)
-    .describe("MIME type: application/msword, application/vnd.ms-excel, or application/vnd.ms-powerpoint."),
+    .describe("MIME type of the source file."),
   filename: z
     .string()
     .trim()
     .min(1)
     .max(255)
-    .describe("Original filename with extension (.doc, .xls, or .ppt)."),
+    .describe("Original filename with extension (.doc, .xls, .ppt, or any format anydoc supports)."),
+  outputFormat: z
+    .enum(["markdown", "modern-office"])
+    .default("markdown")
+    .describe("Output format: 'markdown' returns converted Markdown text (default, uses local anydoc WASM, zero cost); 'modern-office' returns a .docx/.xlsx/.pptx file as base64 (uses CloudConvert API)."),
 });
 
 const convertDataSchema = z.object({
-  dataBase64: z.string(),
+  content: z.string(),
+  outputFormat: z.string(),
   outputMimeType: z.string(),
   outputFilename: z.string(),
   engine: z.string(),
   inputBytes: z.number().int().nonnegative(),
-  outputBytes: z.number().int().nonnegative(),
 });
 
 export interface DocumentConvertModuleOptions {
+  localConverter?: AnydocLocalConverter | undefined;
   provider?: CloudConvertProvider | undefined;
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
@@ -56,27 +62,11 @@ export function createDocumentConvertModule(
         "document_convert",
         {
           description:
-            "Convert legacy Office files (.doc, .xls, .ppt) to modern formats (.docx, .xlsx, .pptx) using CloudConvert. Returns the converted file as base64. The converted output can then be fed to document_parse for text extraction. Free tier: 25 conversions/day. Requires CLOUDCONVERT_API_KEY.",
+            "Convert document files to Markdown or modern Office formats. Default output is Markdown using the built-in anydoc WASM engine (zero cost, no API key). Supports .doc, .xls, .ppt, .docx, .xlsx, .pptx, .odt, .ods, .odp, .rtf, .epub, .csv, .pdf. Use outputFormat 'modern-office' to get .docx/.xlsx/.pptx output via CloudConvert (requires CLOUDCONVERT_API_KEY). Scanned PDFs that need OCR are rejected with a diagnostic — use document_ocr instead.",
           inputSchema: documentConvertInputSchema,
           outputSchema: resultEnvelopeSchema(convertDataSchema),
         },
         async (input, context) => {
-          if (options.provider === undefined) {
-            return toolError(
-              new Error("document_convert is not configured: set CLOUDCONVERT_API_KEY"),
-              { tool: "document_convert" },
-            );
-          }
-
-          const baseMime = input.mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
-          const conversion = resolveConversion(baseMime, input.filename);
-          if (conversion === undefined) {
-            return toolError(
-              new Error("Unsupported format for conversion. Supported: .doc → .docx, .xls → .xlsx, .ppt → .pptx."),
-              { tool: "document_convert" },
-            );
-          }
-
           let bytes: Uint8Array;
           try {
             const binary = atob(input.dataBase64);
@@ -93,6 +83,62 @@ export function createDocumentConvertModule(
           }
 
           const deadline = new Deadline(Math.max(options.requestTimeoutMs, 60_000));
+
+          // Markdown output: use local anydoc WASM (free, fast)
+          if (input.outputFormat === "markdown") {
+            if (options.localConverter === undefined) {
+              return toolError(
+                new Error("Local document converter (anydoc WASM) is not available"),
+                { tool: "document_convert" },
+              );
+            }
+
+            try {
+              const result = await withConcurrency(
+                options.limiter,
+                deadline,
+                context.mcpReq.signal,
+                () => options.localConverter!.convert(bytes, input.filename),
+              );
+
+              let content = result.markdown;
+              if (content.length > options.maxOutputChars) {
+                content = content.slice(0, options.maxOutputChars);
+              }
+
+              const baseName = input.filename.replace(/\.[^.]+$/u, "");
+              return structuredToolResult({
+                ok: true,
+                data: {
+                  content,
+                  outputFormat: "markdown",
+                  outputMimeType: "text/markdown",
+                  outputFilename: `${baseName}.md`,
+                  engine: result.engine,
+                  inputBytes: bytes.byteLength,
+                },
+              });
+            } catch (error) {
+              return toolError(error, { tool: "document_convert" });
+            }
+          }
+
+          // Modern Office output: use CloudConvert API
+          if (options.provider === undefined) {
+            return toolError(
+              new Error("document_convert modern-office output requires CLOUDCONVERT_API_KEY"),
+              { tool: "document_convert" },
+            );
+          }
+
+          const baseMime = input.mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+          const conversion = resolveConversion(baseMime, input.filename);
+          if (conversion === undefined) {
+            return toolError(
+              new Error("Unsupported format for modern-office conversion. Supported: .doc → .docx, .xls → .xlsx, .ppt → .pptx."),
+              { tool: "document_convert" },
+            );
+          }
 
           try {
             const result = await withConcurrency(
@@ -118,12 +164,12 @@ export function createDocumentConvertModule(
             return structuredToolResult({
               ok: true,
               data: {
-                dataBase64: outputBase64,
+                content: outputBase64,
+                outputFormat: "modern-office",
                 outputMimeType: result.outputMimeType,
                 outputFilename: result.outputFilename,
                 engine: result.engine,
                 inputBytes: bytes.byteLength,
-                outputBytes: result.bytes.byteLength,
               },
             });
           } catch (error) {

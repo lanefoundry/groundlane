@@ -19,6 +19,7 @@ import { TavilyCrawlProvider } from "./adapters/crawl/tavily.js";
 import { TinyFishContentProvider } from "./adapters/content/tinyfish.js";
 import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
+import { HyperbrowserBackend } from "./adapters/browser/hyperbrowser.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
 import { FirecrawlBalanceChecker } from "./adapters/balance/firecrawl.js";
 import { SerpApiBalanceChecker } from "./adapters/balance/serpapi.js";
@@ -126,6 +127,7 @@ import {
   RemoteDocumentCacheRuntime,
 } from "./container/remote-document-cache.js";
 import { systemUtcClock } from "./worker/managed-tokens.js";
+import { AnydocLocalConverter } from "./adapters/document/anydoc-local.js";
 import { CloudConvertProvider } from "./adapters/document/cloudconvert.js";
 import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
 import { WorkersAiWhisperProvider } from "./adapters/document/workers-ai-whisper.js";
@@ -169,7 +171,11 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
             token: config.browserlessToken ?? "",
             region: config.browserlessRegion,
           })
-        : new DisabledBrowserBackend();
+        : config.browserBackend === "hyperbrowser"
+          ? new HyperbrowserBackend({
+              apiKey: config.hyperbrowserApiKey ?? "",
+            })
+          : new DisabledBrowserBackend();
   const reader =
     config.readerBackend === "jina" ? new JinaReaderBackend() : undefined;
   const backendBudgetTrackers: import("./core/search-budget.js").SearchBudgetTracker[] = [
@@ -344,6 +350,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const whisperProvider = config.cfBrowserAccountId === undefined || config.cfBrowserApiToken === undefined
     ? undefined
     : new WorkersAiWhisperProvider({ accountId: config.cfBrowserAccountId, apiToken: config.cfBrowserApiToken });
+  const anydocLocalConverter = new AnydocLocalConverter();
   const cloudConvertProvider = config.cloudConvertApiKey === undefined
     ? undefined
     : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey });
@@ -463,6 +470,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxOutputChars: config.maxOutputChars,
     }),
     createDocumentConvertModule({
+      localConverter: anydocLocalConverter,
       provider: cloudConvertProvider,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
@@ -471,6 +479,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     createDocumentSmartParseModule({
       ocrProvider,
       transcribeProvider: whisperProvider,
+      localConverter: anydocLocalConverter,
       convertProvider: cloudConvertProvider,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
