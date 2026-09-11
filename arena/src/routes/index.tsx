@@ -27,7 +27,7 @@ function HomePage() {
       </a>
 
       <section className="grid w-full max-w-4xl gap-6 sm:grid-cols-3">
-        <StatCard label="Providers" value="8" />
+        <StatCard label="Providers" value="13" />
         <StatCard label="Votes Cast" value="0" />
         <StatCard label="Search Fixtures" value="20" />
       </section>

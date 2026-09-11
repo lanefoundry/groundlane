@@ -8,4 +8,9 @@ INSERT INTO providers (id, display_name, estimated_cost_per_call_usd, pricing_mo
   ('serpapi',   'SerpApi',       0.010, 'per_request',  '100 free searches/month',                     1726099200000),
   ('linkup',    'Linkup',        0.005, 'per_credit',   'Free tier available',                         1726099200000),
   ('you',       'You.com',       NULL,  'free',         'Keyless daily MCP profile available',          1726099200000),
-  ('firecrawl', 'Firecrawl',     0.010, 'per_credit',   '500 free credits',                            1726099200000);
+  ('firecrawl', 'Firecrawl',     0.010, 'per_credit',   '500 free credits',                            1726099200000),
+  ('tinyfish',  'TinyFish',      0.005, 'per_request',  'Free tier available',                         1726099200000),
+  ('parallel',  'Parallel',      0.008, 'per_request',  'Free tier available',                         1726099200000),
+  ('searchapi', 'SearchAPI',     0.005, 'per_request',  'Finite-trial SERP provider, 100 free searches', 1726099200000),
+  ('browserbase','Browserbase',  0.010, 'per_request',  'Browser-first, search as secondary capability', 1726099200000),
+  ('keenable',  'Keenable',      0.005, 'per_request',  'Free tier available',                         1726099200000);
