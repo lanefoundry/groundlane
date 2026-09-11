@@ -6,6 +6,7 @@ import {
   parseBoundedDocument,
   resolveDocumentParserProfile,
 } from "../adapters/document/bounded-document-parser.js";
+import { GroundlaneError } from "../core/errors.js";
 import type { AnydocLocalConverter } from "../adapters/document/anydoc-local.js";
 import { resolveConversion } from "../adapters/document/cloudconvert.js";
 import type { CloudConvertProvider } from "../adapters/document/cloudconvert.js";
@@ -213,7 +214,7 @@ async function detectRoute(
 
   if (isSupportedAudioMime(baseMime) || ["mp3", "wav", "ogg", "flac", "m4a", "webm"].includes(extension) && baseMime.startsWith("audio/")) {
     if (options.transcribeProvider === undefined) {
-      return { routedTo: "document_parse", routeReason: "Audio detected but transcription not configured; falling back to document_parse" };
+      return { routedTo: "document_transcribe", routeReason: "Audio detected but document_transcribe not configured (set CF_BROWSER_ACCOUNT_ID and CF_BROWSER_API_TOKEN)" };
     }
     return { routedTo: "document_transcribe", routeReason: "Audio file detected" };
   }
@@ -232,7 +233,7 @@ async function detectRoute(
 
   if (OCR_IMAGE_MIMES.has(baseMime) || ["png", "jpg", "jpeg", "gif", "tif", "tiff", "bmp", "webp"].includes(extension)) {
     if (options.ocrProvider === undefined) {
-      return { routedTo: "document_parse", routeReason: "Image detected but OCR not configured; falling back to document_parse (may fail)" };
+      return { routedTo: "document_ocr", routeReason: "Image detected but document_ocr not configured (set OCR_SPACE_API_KEY)" };
     }
     return { routedTo: "document_ocr", routeReason: "Image file detected" };
   }
@@ -344,12 +345,18 @@ async function executeRoute(
   const { routedTo, routeReason } = route;
 
   if (routedTo === "document_ocr") {
-    const result = await options.ocrProvider!.ocr(bytes, baseMime, filename, signal);
+    if (options.ocrProvider === undefined) {
+      throw new GroundlaneError("INVALID_INPUT", "document_smart_parse", "Image/scanned PDF detected but document_ocr is not configured. Set OCR_SPACE_API_KEY to enable OCR.");
+    }
+    const result = await options.ocrProvider.ocr(bytes, baseMime, filename, signal);
     return { routedTo, routeReason, content: result.text, engine: result.engine };
   }
 
   if (routedTo === "document_transcribe") {
-    const result = await options.transcribeProvider!.transcribe(bytes, signal);
+    if (options.transcribeProvider === undefined) {
+      throw new GroundlaneError("INVALID_INPUT", "document_smart_parse", "Audio detected but document_transcribe is not configured. Set CF_BROWSER_ACCOUNT_ID and CF_BROWSER_API_TOKEN to enable transcription.");
+    }
+    const result = await options.transcribeProvider.transcribe(bytes, signal);
     return { routedTo, routeReason, content: result.text, engine: result.engine };
   }
 
