@@ -46,6 +46,7 @@ try {
     "corpus_delete",
     "corpus_enroll",
     "corpus_remove",
+    "corpus_retrieval_test",
     "corpus_search",
     "corpus_status",
     "corpus_update",

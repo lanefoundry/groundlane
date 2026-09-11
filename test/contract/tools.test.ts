@@ -507,6 +507,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "corpus_delete",
         "corpus_enroll",
         "corpus_remove",
+        "corpus_retrieval_test",
         "corpus_search",
         "corpus_status",
         "corpus_update",
