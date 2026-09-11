@@ -255,21 +255,21 @@ response 加 `effort_used` 欄位，讓 agent 知道實際走了哪條路徑
 
 按「投入大小 × 使用者價值 × 與現有架構的契合度」排序：
 
-| 優先級 | 項目 | 大小 | 理由 |
-|---|---|---|---|
-| **P1** | 2.1 document_chunk field-aware | small | 直接解決 RAG attribute conflation，改動小，價值大 |
-| **P1** | 1.1 effort 參數 | medium | 把已有的三條路徑（anydoc / OCR / Reducto）統一成一個旋鈕，使用者體驗大幅改善 |
-| **P2** | 4.1 Document benchmark CLI | medium | 讓 README 有數據說話，吸引貢獻者 |
-| **P2** | 3.2 Browser stealth 等級 | small | 改動小，直接提升 web_fetch 成功率 |
-| **P2** | 1.3 smart_parse confidence | small | 1.1 做完後自然延伸 |
-| **P3** | 1.2 VLM adapter | medium | 需要選定 backend 和處理延遲問題 |
-| **P3** | 2.2 corpus_retrieval_test | small | corpus 使用者少時價值有限 |
-| **P3** | 3.1 selector healing | medium | 有用但風險需要控制 |
-| **P4** | 2.3 corpus rank fusion | medium | 等 corpus 有更多使用者再做 |
-| **P4** | 4.2 Search benchmark | medium | 需要 API key 和 ground truth |
-| **P5** | 1.5 影片轉錄 | large | Worker-only 不支援，使用場景窄 |
-| **P5** | 3.3 web_interact | large | 攻擊面大，使用者需求不明確 |
-| **P5** | 1.4 JATS/XBRL 導出 | large | 除非有明確企業需求 |
+| 優先級 | 項目 | 大小 | 狀態 | 理由 |
+|---|---|---|---|---|
+| **P1** | 2.1 document_chunk field-aware | small | ✅ Done | 直接解決 RAG attribute conflation，改動小，價值大 |
+| **P1** | 1.1 effort 參數 | medium | ✅ Done | 把已有的三條路徑（anydoc / OCR / Reducto）統一成一個旋鈕，使用者體驗大幅改善 |
+| **P2** | 4.1 Document benchmark CLI | medium | ✅ Done | 讓 README 有數據說話，吸引貢獻者 |
+| **P2** | 3.2 Browser stealth 等級 | ~~small~~ medium | ⏭ Skipped | 需要 FetchPipeline 多 backend 架構改動，不是 small |
+| **P2** | 1.3 smart_parse confidence | small | ✅ Done | 1.1 做完後自然延伸 |
+| **P3** | 1.2 VLM adapter | medium | ✅ Done | Docling-serve adapter + effort=deep wiring |
+| **P3** | 2.2 corpus_retrieval_test | small | ✅ Done | corpus 使用者少時價值有限 |
+| **P3** | 3.1 selector healing | medium | ✅ Done | 有用但風險需要控制 |
+| **P4** | 2.3 corpus rank fusion | medium | 🔲 Backlog | 等 corpus 有更多使用者再做 |
+| **P4** | 4.2 Search benchmark | medium | ✅ Done | Framework + 5-query corpus，需 provider key 才能實跑 |
+| **P5** | 1.5 影片轉錄 | large | 🔲 Backlog | Worker-only 不支援，使用場景窄 |
+| **P5** | 3.3 web_interact | large | 🔲 Backlog | 攻擊面大，使用者需求不明確 |
+| **P5** | 1.4 JATS/XBRL 導出 | large | 🔲 Backlog | 除非有明確企業需求 |
 
 ---
 

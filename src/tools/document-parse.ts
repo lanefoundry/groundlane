@@ -10,6 +10,7 @@ import {
   resolveDocumentParserProfile,
   type ParsedDocumentContent,
 } from "../adapters/document/bounded-document-parser.js";
+import type { DoclingServeProvider } from "../adapters/document/docling-serve.js";
 import type { OcrSpaceProvider } from "../adapters/document/ocr-space.js";
 import {
   buildCanonicalEnvelopeFromAdapter,
@@ -137,6 +138,7 @@ export interface DocumentParseModuleOptions {
   }> };
   outputRuntime?: Pick<DurableDocumentOutputRuntime, "save" | "read" | "delete">;
   ocrProvider?: OcrSpaceProvider | undefined;
+  vlmProvider?: DoclingServeProvider | undefined;
   requestTimeoutMs: number;
   maxResponseBytes: number;
   maxOutputChars: number;
@@ -378,6 +380,18 @@ export async function parseResolvedDocument(
         effortUsed = "standard";
       }
     }
+  } else if (input.effort === "deep" && options.vlmProvider !== undefined) {
+    const vlmResult = await options.vlmProvider.parse(bytes, baseMime, filename, operationSignal);
+    if (vlmResult.blocks.length > 0) {
+      parsed = {
+        blocks: vlmResult.blocks,
+        metadata: [...vlmResult.metadata, ...parsed.metadata],
+        warnings: [...parsed.warnings, `VLM upgrade: effort=deep used ${vlmResult.engine}`],
+        capabilities: { ...parsed.capabilities, vlm: "available" },
+        mediaType: parsed.mediaType,
+      };
+      effortUsed = "deep";
+    }
   } else if (input.effort === "deep") {
     effortUsed = "deep";
   }
@@ -389,7 +403,13 @@ export async function parseResolvedDocument(
     readingOrder: parsed.blocks.map((block) => block.blockId),
     status: parsed.blocks.length === 0 ? "partial" : "success",
     capabilityStates: parsed.capabilities,
-    provenance: { engine: "groundlane", model: effortUsed === "standard" ? "ocr-space" : "none", version: DOCUMENT_ENGINE_VERSION, cost: effortUsed === "standard" ? null : 0, confidence: effortUsed === "standard" ? null : 1 },
+    provenance: {
+      engine: "groundlane",
+      model: effortUsed === "standard" ? "ocr-space" : effortUsed === "deep" ? "docling-vlm" : "none",
+      version: DOCUMENT_ENGINE_VERSION,
+      cost: effortUsed !== "fast" ? null : 0,
+      confidence: effortUsed !== "fast" ? null : 1,
+    },
     warnings: parsed.warnings,
     metadata: [
       ...parsed.metadata,
