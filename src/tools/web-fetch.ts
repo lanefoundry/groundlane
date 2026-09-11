@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
+import { scanForCredentials } from "../core/credential-scan.js";
 import type { FetchPipeline } from "../core/fetch-pipeline.js";
 import { Deadline, type ConcurrencyLimiter } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
@@ -114,7 +115,12 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
                 ? {}
                 : { blockedSubrequests: result.raw.blockedSubrequests }),
               durationMs: Math.round(performance.now() - started),
-              warnings: result.warnings,
+              warnings: (() => {
+                const warnings = [...result.warnings];
+                const scan = scanForCredentials(result.content);
+                if (scan.found) warnings.push(scan.warning);
+                return warnings;
+              })(),
               ...(result.fallbackReason === undefined
                 ? {}
                 : { fallbackReason: result.fallbackReason }),

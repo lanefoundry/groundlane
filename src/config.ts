@@ -83,6 +83,7 @@ const environmentSchema = z.object({
   OCR_SPACE_API_KEY: optionalSecret,
   CLOUDCONVERT_API_KEY: optionalSecret,
   SEMANTIC_SCHOLAR_API_KEY: optionalSecret,
+  MINERU_API_KEY: optionalSecret,
   DOCUMENT_CACHE_EDGE_ENABLED: booleanFlag,
   DOCUMENT_OUTPUT_EDGE_ENABLED: booleanFlag,
   GROUNDLANE_INTERNAL_SIGNING_SECRET: optionalSecret,
@@ -140,6 +141,7 @@ export interface GroundlaneConfig {
   ocrSpaceApiKey?: string;
   cloudConvertApiKey?: string;
   semanticScholarApiKey?: string;
+  mineruApiKey?: string;
   crawl4aiBaseUrl?: string;
 }
 
@@ -312,6 +314,9 @@ export function parseConfig(
     ...(parsed.SEMANTIC_SCHOLAR_API_KEY === undefined
       ? {}
       : { semanticScholarApiKey: parsed.SEMANTIC_SCHOLAR_API_KEY }),
+    ...(parsed.MINERU_API_KEY === undefined
+      ? {}
+      : { mineruApiKey: parsed.MINERU_API_KEY }),
     ...(parsed.CRAWL4AI_BASE_URL === undefined
       ? {}
       : { crawl4aiBaseUrl: parsed.CRAWL4AI_BASE_URL }),

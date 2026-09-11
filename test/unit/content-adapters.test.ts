@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { Crawl4AIContentProvider } from "../../src/adapters/content/crawl4ai.js";
 import { ExaContentProvider } from "../../src/adapters/content/exa.js";
 import { FirecrawlContentProvider } from "../../src/adapters/content/firecrawl.js";
 import { KeenableContentProvider } from "../../src/adapters/content/keenable.js";
@@ -266,4 +267,77 @@ void test("TinyFish content maps Fetch API and live cache bypass", async () => {
   assert.equal(result.title, "Example");
   assert.equal(result.content, "TinyFish markdown");
   assert.doesNotMatch(JSON.stringify(result), /tinyfish-secret/u);
+});
+
+void test("Crawl4AI content maps /crawl endpoint", async () => {
+  let requestedUrl = "";
+  let body: unknown;
+  const provider = new Crawl4AIContentProvider({
+    baseUrl: "http://localhost:11235",
+    fetch: (url, init) => {
+      requestedUrl = url;
+      body = parseBody(init.body);
+      return Promise.resolve(
+        Response.json({
+          success: true,
+          results: [
+            {
+              url: "https://example.com",
+              title: "Example",
+              markdown: "Crawl4AI markdown",
+              success: true,
+            },
+          ],
+        }),
+      );
+    },
+    validateUrl: () => Promise.resolve(),
+  });
+  const result = await provider.fetchContent(
+    { url: "https://example.com", maxContentChars: 100 },
+    signal,
+  );
+
+  assert.equal(requestedUrl, "http://localhost:11235/crawl");
+  assert.deepEqual(body, {
+    urls: ["https://example.com"],
+    crawler_config: {
+      type: "CrawlerRunConfig",
+      params: { stream: false, cache_mode: "bypass" },
+    },
+  });
+  assert.equal(result.provider, "crawl4ai");
+  assert.equal(result.content, "Crawl4AI markdown");
+  assert.equal(result.title, "Example");
+  assert.equal(result.finalUrl, "https://example.com");
+});
+
+void test("Crawl4AI content rejects failed crawl", async () => {
+  const provider = new Crawl4AIContentProvider({
+    baseUrl: "http://localhost:11235",
+    fetch: () =>
+      Promise.resolve(
+        Response.json({ success: false, results: [] }),
+      ),
+    validateUrl: () => Promise.resolve(),
+  });
+  await assert.rejects(
+    () => provider.fetchContent({ url: "https://example.com", maxContentChars: 100 }, signal),
+    { message: /crawl failed/iu },
+  );
+});
+
+void test("Crawl4AI content rejects empty results", async () => {
+  const provider = new Crawl4AIContentProvider({
+    baseUrl: "http://localhost:11235",
+    fetch: () =>
+      Promise.resolve(
+        Response.json({ success: true, results: [] }),
+      ),
+    validateUrl: () => Promise.resolve(),
+  });
+  await assert.rejects(
+    () => provider.fetchContent({ url: "https://example.com", maxContentChars: 100 }, signal),
+    { message: /no results/iu },
+  );
 });

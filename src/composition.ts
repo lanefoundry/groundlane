@@ -130,6 +130,7 @@ import {
 import { systemUtcClock } from "./worker/managed-tokens.js";
 import { AnydocLocalConverter } from "./adapters/document/anydoc-local.js";
 import { CloudConvertProvider } from "./adapters/document/cloudconvert.js";
+import { MineruCloudProvider } from "./adapters/document/mineru-cloud.js";
 import { OcrSpaceProvider } from "./adapters/document/ocr-space.js";
 import { WorkersAiWhisperProvider } from "./adapters/document/workers-ai-whisper.js";
 import {
@@ -351,6 +352,9 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
   const whisperProvider = config.cfBrowserAccountId === undefined || config.cfBrowserApiToken === undefined
     ? undefined
     : new WorkersAiWhisperProvider({ accountId: config.cfBrowserAccountId, apiToken: config.cfBrowserApiToken });
+  const mineruProvider = config.mineruApiKey === undefined
+    ? undefined
+    : new MineruCloudProvider({ apiKey: config.mineruApiKey });
   const anydocLocalConverter = new AnydocLocalConverter();
   const cloudConvertProvider = config.cloudConvertApiKey === undefined
     ? undefined
@@ -610,6 +614,7 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
                   operatorMaxTtlSeconds: config.documentCacheMaxTtlSeconds,
                 },
               }),
+          ...(mineruProvider === undefined ? {} : { mineruProvider }),
         }),
         createDocumentUploadModule({
           caller: {
