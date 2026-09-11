@@ -81,6 +81,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `corpus_status` | Reads corpus manifest truth, enrollment counts, backend health, and deletion state | Self-hosted durable SQLite runtime |
 | `corpus_search` | Searches an operator-owned corpus with boundary and freshness provenance | Self-hosted durable SQLite runtime; results are never labeled as public web search |
 | `corpus_retrieval_test` | Tests retrieval quality for a corpus query against expected source IDs | Wraps `corpus_search`; reports recall, rank, and missed sources — no LLM, read-only |
+| `corpus_source_inspect` | Inspects a corpus source by parsing it into document blocks with previews and field labels | Requires durable corpus storage; read-only, no LLM — useful for QA before RAG indexing |
 | `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | Creates, reads, pages, or cancels a durable provider-neutral crawl job | Durable job with page/byte/output budgets, expiry, and Groundlane-owned job ID; provider IDs are never exposed |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
@@ -338,7 +339,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 55 tools | All 55 tools |
+| MCP tools | All 56 tools | All 56 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:

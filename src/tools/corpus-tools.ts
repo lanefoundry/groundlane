@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
+import { parseBoundedDocument } from "../adapters/document/bounded-document-parser.js";
 import {
   CorpusStore,
   type CallerPrincipal,
@@ -74,6 +75,13 @@ export const corpusSearchInputSchema = z.object({
   corpusId: corpusIdSchema,
   query: z.string().trim().min(1).max(500),
   maxResults: z.number().int().min(1).max(50).default(10),
+  timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
+});
+
+export const corpusSourceInspectInputSchema = z.object({
+  corpusId: corpusIdSchema,
+  sourceId: z.string().trim().min(1).max(160),
+  maxBlocks: z.number().int().min(1).max(200).default(50),
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
@@ -468,6 +476,81 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
             return structuredToolResult({ ok: true, data });
           } catch (error) {
             return toolError(error, { tool: "corpus_retrieval_test" });
+          }
+        },
+      );
+
+      server.registerTool(
+        "corpus_source_inspect",
+        {
+          description:
+            "Inspect a corpus source by parsing it into document blocks. Returns block types, text previews, table headers, and metadata — useful for verifying what the RAG pipeline will index before going live. Read-only, no LLM generation.",
+          inputSchema: corpusSourceInspectInputSchema,
+          outputSchema: resultEnvelopeSchema(z.object({
+            corpusId: z.string(),
+            sourceId: z.string(),
+            blockCount: z.number().int(),
+            blocks: z.array(z.object({
+              blockId: z.string(),
+              type: z.string(),
+              preview: z.string(),
+              tokenEstimate: z.number().int(),
+              fields: z.array(z.string()).optional(),
+            })),
+            metadata: z.array(z.object({ key: z.string(), value: z.string() })),
+          })),
+          annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async (input, ctx) => {
+          try {
+            const source = await run("corpus_source_inspect", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.readSource(input.corpusId, input.sourceId, durableCaller);
+              }
+              throw new Error("corpus_source_inspect requires durable corpus storage (set CORPUS_STATE_PATH)");
+            });
+
+            const parsed = await parseBoundedDocument({
+              bytes: source.bytes,
+              declaredMime: source.mimeType,
+              filename: source.filename,
+              signal: ctx.mcpReq.signal,
+            });
+
+            const blocks = parsed.blocks.slice(0, input.maxBlocks).map((block) => {
+              let preview = "";
+              const fields: string[] = [];
+              if (block.type === "text") {
+                preview = block.content.slice(0, 200);
+              } else if (block.type === "table") {
+                const headers = block.cells.filter((c) => c.row === 0).sort((a, b) => a.col - b.col);
+                fields.push(...headers.map((c) => c.content.trim()).filter((s) => s.length > 0));
+                preview = `${String(Math.max(0, ...block.cells.map((c) => c.row)) + 1)} rows × ${String(Math.max(0, ...block.cells.map((c) => c.col)) + 1)} cols`;
+              } else if (block.type === "formula") {
+                preview = block.expression.slice(0, 200);
+              } else if (block.type === "asset") {
+                preview = block.altText ?? block.assetRef;
+              }
+              return {
+                blockId: block.blockId,
+                type: block.type,
+                preview,
+                tokenEstimate: Math.ceil(preview.length / 4),
+                ...(fields.length > 0 ? { fields } : {}),
+              };
+            });
+
+            const data = {
+              corpusId: input.corpusId,
+              sourceId: input.sourceId,
+              blockCount: parsed.blocks.length,
+              blocks,
+              metadata: [...parsed.metadata],
+            };
+            assertWithinOutputLimit(data, options.maxOutputChars, "corpus_source_inspect");
+            return structuredToolResult({ ok: true, data });
+          } catch (error) {
+            return toolError(error, { tool: "corpus_source_inspect" });
           }
         },
       );
