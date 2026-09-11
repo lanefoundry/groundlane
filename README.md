@@ -30,12 +30,12 @@ Self-hosted document results: set `DOCUMENT_ARTIFACT_STATE_PATH` to retain overs
 
 Client evidence: `pnpm mcp:clients --client Claude` (or `Codex` / `Cursor`) probes local executable versions and isolation flags without running a model. See `--help` for explicit live capture. A captured transcript requires per-scenario review; successful process exit does not mark Tasks, reconnect, or upload compatibility as passed.
 
-Groundlane is an open-source remote MCP server and trusted content access layer for AI agents. Today it provides one controlled interface for Web search, retrieval, deterministic extraction, URL/raw-HTML parsing, and a first bounded synchronous `document_parse` slice. The document tool accepts inline bytes or policy-checked public URLs and returns one canonical envelope with Markdown, structured, text, or all projection. A fully configured Cloudflare Worker can also create direct-to-R2 upload handoffs, finalize verified source `ArtifactRef`s, process them through a signed Worker-to-Container bridge, and keep the processing cache in D1/R2 through a separate private two-phase bridge. These paths have deterministic tests but no controlled production or target-client proof yet. Self-hosted Node deployments can opt into a durable SQLite processing cache and durable corpus runtime. Async document execution, OCR, model-assisted parsing, and a Cloudflare corpus backend remain roadmap work. The operator-owned corpus control plane keeps portable corpus identity, source enrollment, access, freshness, deletion, and citation contracts separate from its rebuildable SQLite index.
+Groundlane is an open-source remote MCP server and trusted content access layer for AI agents. Today it provides one controlled interface for Web search, retrieval, deterministic extraction, URL/raw-HTML parsing, and a first bounded synchronous `document_parse` slice. The document tool accepts inline bytes or policy-checked public URLs and returns one canonical envelope with Markdown, structured, text, or all projection. A fully configured Cloudflare Worker can also create direct-to-R2 upload handoffs, finalize verified source `ArtifactRef`s, process them through a signed Worker-to-Container bridge, and keep the processing cache in D1/R2 through a separate private two-phase bridge. These paths have deterministic tests but no controlled production or target-client proof yet. Self-hosted Node deployments can opt into a durable SQLite processing cache and durable corpus runtime. OCR is available through `document_ocr` (OCR.space), audio transcription through `document_transcribe` (Workers AI Whisper), and legacy Office conversion through `document_convert` (anydoc WASM, zero cost). `document_smart_parse` auto-detects file type and routes to the correct tool. Async document execution, model-assisted parsing, and a Cloudflare corpus backend remain roadmap work. The operator-owned corpus control plane keeps portable corpus identity, source enrollment, access, freshness, deletion, and citation contracts separate from its rebuildable SQLite index.
 
 > [!IMPORTANT]
 > Groundlane is an early preview (`0.1.0`). Tool contracts and deployment behavior may change. The target OSS V1 Stable Release is an operator-hosted open-source product; Managed Groundlane Cloud is a later roadmap item, not an available service. Groundlane is not a CAPTCHA solver or a universal anti-bot bypass.
 
-OSS V1 Stable is planned as a Web + document release rather than a Web-only release. The current `document_parse` implementation has deterministic local profiles for text-based PDF; DOCX, XLSX, and PPTX; CSV, TXT, Markdown, JSON, XML, and HTML; and bounded ODF, RTF, EPUB, and EML. These profiles still require the remaining security corpus and live client/release gates before V1 can be declared stable. OCR, legacy Office conversion, complex layout/table/formula/figure recovery, scholarly extraction, and audio transcription remain experimental roadmap candidates. The existing `parse` tool remains the backward-compatible URL/raw-HTML parser.
+OSS V1 Stable is planned as a Web + document release rather than a Web-only release. The current `document_parse` implementation has deterministic local profiles for text-based PDF; DOCX, XLSX, and PPTX; CSV, TXT, Markdown, JSON, XML, and HTML; and bounded ODF, RTF, EPUB, and EML. These profiles still require the remaining security corpus and live client/release gates before V1 can be declared stable. OCR is implemented via `document_ocr`, legacy Office conversion via `document_convert` (anydoc WASM, zero cost), audio transcription via `document_transcribe`, and table extraction via `document_table_extract`. Complex layout/formula/figure recovery and scholarly full-text extraction remain experimental roadmap candidates. The existing `parse` tool remains the backward-compatible URL/raw-HTML parser.
 
 The document roadmap uses configurable, bounded retention rather than silent permanent storage. Working defaults are a 15-minute upload intent, a one-hour staging cleanup window, a 24-hour transient artifact, and a 24-hour ownership-scoped processing cache. Callers may adjust upload, artifact, and cache expiry within operator-advertised bounds; out-of-range requests are rejected instead of silently clamped. The staging cleanup window is operator-controlled. Operators may change defaults/maxima or disable caching through an observable document policy. Explicit corpus enrollment uses its own retention policy and defaults to retention until removal; expiry extension is always explicit.
 
@@ -48,7 +48,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | Tool | What it does | Current execution paths |
 | --- | --- | --- |
 | `web_fetch` | Reads a public URL as Markdown, text, or HTML | Bounded HTTP, local readable normalization, and eligible optional Jina/browser fallbacks |
-| `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across thirteen providers |
+| `web_search` | Searches the public web with normalized results | Bounded auto fusion with next-batch retry, explicit single-provider, fallback, or deep routing across fourteen providers |
 | `web_answer` | Retrieves grounded answers from answer-capable providers | Parallel fan-out or fallback across You.com Answer and Linkup sourced answers, with provider attribution and citations |
 | `web_research` | Retrieves provider-attributed research reports | Parallel fan-out or fallback across Linkup Research, You.com Research, and Parallel Responses, with citations |
 | `web_research_start` / `status` / `result` / `cancel` | Starts and reconnects to durable Linkup research | Explicit compatibility tools over the same durable runtime as MCP Tasks; no global list and no provider task ID exposure |
@@ -67,7 +67,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `document_email_extract` | Parses EML with recursive attachment extraction | Deterministic; returns headers, body text, and each attachment parsed through the same engine as `document_parse` |
 | `document_ocr` | Extracts text from scanned PDFs and images using OCR | OCR.space API (free 25k requests/month); supports PDF, PNG, JPEG, GIF, TIFF, BMP, WebP; fail-closed when `OCR_SPACE_API_KEY` is not configured |
 | `document_transcribe` | Transcribes audio to text with word-level timestamps | Cloudflare Workers AI Whisper (free 10k Neurons/day); supports MP3, WAV, WebM, OGG, FLAC, M4A; reuses `CF_BROWSER_ACCOUNT_ID` and `CF_BROWSER_API_TOKEN` |
-| `document_convert` | Converts legacy Office files to modern formats | CloudConvert API (free 25 conversions/day); `.doc`→`.docx`, `.xls`→`.xlsx`, `.ppt`→`.pptx`; output can be fed to `document_parse` |
+| `document_convert` | Converts document files to Markdown or modern Office formats | Default: anydoc WASM (14 formats, zero cost, no API key); optional CloudConvert fallback for `.docx`/`.xlsx`/`.pptx` binary output |
 | `document_table_extract` | Extracts tables from PDFs using spatial heuristics | Deterministic, no LLM or external API; pdf.js-based coordinate analysis; works best on regular grid-aligned tables |
 | `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; verified source ArtifactRef on the fully configured Cloudflare edge profile |
 | `document_upload_create` / `document_upload_complete` | Creates a credential-bound single-PUT handoff, then verifies and finalizes a source ArtifactRef | Cloudflare Worker edge only when D1, R2, R2 S3 presigning credentials, and internal signing are configured; otherwise fail-closed |
@@ -362,7 +362,7 @@ wrangler deploy -c wrangler.lite.jsonc
 | Account balance | Linkup, You.com, Firecrawl, SerpApi |
 | Quota diagnostics | Provider quota summary and local provider budget status |
 | Hosted Reader fallback | Jina Reader (opt-in) |
-| Browser rendering | Local Playwright, Browserless, or CF Browser Rendering API (opt-in) |
+| Browser rendering | Local Playwright, Browserless, Hyperbrowser, or CF Browser Rendering API (opt-in) |
 | Cloudflare runtime | Worker-only lite mode or Worker + Container full mode; CF Browser Rendering, AI Search, AI Gateway, Agents, and Workflows are documented future adapter surfaces |
 
 ### Provider capabilities, pricing, and free allowances
@@ -417,11 +417,16 @@ Worker / Node HTTP edge       authentication, request identity
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
                               web_news | web_images | web_fetch | web_extract | parse
+                              document_smart_parse | document_parse | document_ocr | document_convert
+                              document_table_extract | document_chunk | document_toc
+                              document_archive_extract | document_email_extract | document_transcribe
+                              paper_search | paper_lookup
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities | error_log
     |
-    +-- provider router       replaceable search adapters
+    +-- provider router       replaceable search adapters (14 providers incl. self-hosted SearXNG)
     +-- safe HTTP + Reader    bounded retrieval and readable content
-    `-- browser backend       isolated local or hosted rendering
+    +-- browser backend       local Playwright, Browserless, Hyperbrowser, or CF Browser Rendering
+    `-- document engine       bounded parser, anydoc WASM, OCR.space, Workers AI Whisper
 ```
 
 Core policies do not depend on a search provider or browser runtime. Groundlane Reader uses Mozilla Readability with a local fallback for selector-free Markdown/text; raw HTML and explicit selectors retain deterministic DOM semantics. See [Architecture](docs/architecture.md) and the reproducible [Reader benchmark](docs/research/reader-benchmark.md).

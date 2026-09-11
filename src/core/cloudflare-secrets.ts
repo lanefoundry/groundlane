@@ -1,4 +1,4 @@
-export type CloudflareSecretGroup = "authentication" | "search" | "browser" | "storage";
+export type CloudflareSecretGroup = "authentication" | "search" | "browser" | "document" | "storage";
 
 export interface CloudflareSecretDefinition {
   name: string;
@@ -68,6 +68,9 @@ export const CLOUDFLARE_SECRET_DEFINITIONS = [
     group: "browser",
     required: false,
   },
+  { name: "HYPERBROWSER_API_KEY", label: "Hyperbrowser", group: "browser", required: false },
+  { name: "OCR_SPACE_API_KEY", label: "OCR.space", group: "document", required: false },
+  { name: "CLOUDCONVERT_API_KEY", label: "CloudConvert", group: "document", required: false },
   {
     name: "R2_ACCESS_KEY_ID",
     label: "R2 S3 presigned-upload access key ID",

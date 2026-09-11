@@ -30,12 +30,12 @@ Self-hosted 文件結果：設定 `DOCUMENT_ARTIFACT_STATE_PATH` 後，超限的
 
 Client 證據：`pnpm mcp:clients --client Claude`（也可指定 `Codex`／`Cursor`）只探測本機版本與設定隔離 flags，不會執行模型。真正執行的參數請看 `--help`。取得 transcript 後仍需逐項審閱；程序成功退出不會自動把 Tasks、reconnect 或 upload compatibility 標為通過。
 
-Groundlane 是開源的遠端 MCP server，也是 AI agent 的可信內容存取層。目前透過同一套受控介面提供 Web 搜尋、內容取得、確定性結構化抽取、URL/raw HTML parsing，以及第一個有界、同步的 `document_parse`。Document tool 接受 inline bytes 或經 policy 檢查的公開 URL，輸出 canonical envelope 與 Markdown、structured、text 或 all projection。Cloudflare Worker 在 D1、R2、R2 S3 presigning credential 與 internal signing secret 都配置完成時，也能建立直傳 R2 的 upload handoff、finalize verified source `ArtifactRef`，再經 body-bound Worker-to-Container bridge 交給同一個 parser；processing cache 則走另一條私有的兩階段 bridge，把 metadata 與 immutable payload 留在 D1/R2。這些路徑已有 deterministic tests，尚無 controlled production 或 target-client 證據。Self-hosted Node 部署可選擇啟用 durable SQLite processing cache 與 durable corpus runtime；async document execution、OCR、model-assisted parsing 與 Cloudflare corpus backend 仍是後續工作。Groundlane 也提供 operator-owned corpus control plane，並讓 operator 掌握 authentication 與資源限制。
+Groundlane 是開源的遠端 MCP server，也是 AI agent 的可信內容存取層。目前透過同一套受控介面提供 Web 搜尋、內容取得、確定性結構化抽取、URL/raw HTML parsing，以及第一個有界、同步的 `document_parse`。Document tool 接受 inline bytes 或經 policy 檢查的公開 URL，輸出 canonical envelope 與 Markdown、structured、text 或 all projection。Cloudflare Worker 在 D1、R2、R2 S3 presigning credential 與 internal signing secret 都配置完成時，也能建立直傳 R2 的 upload handoff、finalize verified source `ArtifactRef`，再經 body-bound Worker-to-Container bridge 交給同一個 parser；processing cache 則走另一條私有的兩階段 bridge，把 metadata 與 immutable payload 留在 D1/R2。這些路徑已有 deterministic tests，尚無 controlled production 或 target-client 證據。Self-hosted Node 部署可選擇啟用 durable SQLite processing cache 與 durable corpus runtime；OCR 已透過 `document_ocr`（OCR.space）提供，音訊轉錄透過 `document_transcribe`（Workers AI Whisper），legacy Office 轉檔透過 `document_convert`（anydoc WASM，零成本）。`document_smart_parse` 可自動偵測檔案類型並路由到正確工具。Async document execution、model-assisted parsing 與 Cloudflare corpus backend 仍是後續工作。Groundlane 也提供 operator-owned corpus control plane，並讓 operator 掌握 authentication 與資源限制。
 
 > [!IMPORTANT]
 > Groundlane 目前是早期預覽版（`0.1.0`），工具契約與部署行為仍可能調整。目標中的 OSS V1 Stable Release 是 operator-hosted open-source product；Managed Groundlane Cloud 已列入後續 roadmap，但目前還不是可用服務。Groundlane 不是 CAPTCHA solver，也不保證繞過所有反爬機制。
 
-OSS V1 Stable 規劃為 Web + document release。目前 `document_parse` 已有 text-based PDF、DOCX/XLSX/PPTX、CSV/TXT/Markdown/JSON/XML/HTML，以及 bounded ODF/RTF/EPUB/EML 的本機 deterministic profiles；仍需補齊安全 corpus 與 live client/release gates，才能稱為 V1 stable。OCR、legacy Office、複雜版面／公式／圖表還原、scholarly extraction 與 audio transcription 仍是 experimental roadmap candidates。既有 `parse` 維持 URL/raw HTML 相容介面。
+OSS V1 Stable 規劃為 Web + document release。目前 `document_parse` 已有 text-based PDF、DOCX/XLSX/PPTX、CSV/TXT/Markdown/JSON/XML/HTML，以及 bounded ODF/RTF/EPUB/EML 的本機 deterministic profiles；仍需補齊安全 corpus 與 live client/release gates，才能稱為 V1 stable。OCR 已實作於 `document_ocr`，legacy Office 轉檔已實作於 `document_convert`（anydoc WASM，零成本），音訊轉錄已實作於 `document_transcribe`，表格抽取已實作於 `document_table_extract`。複雜版面／公式／圖表還原與 scholarly full-text extraction 仍是 experimental roadmap candidates。既有 `parse` 維持 URL/raw HTML 相容介面。
 
 Document roadmap 採可配置且有界的 retention，不會默默永久保存。Working defaults 是 upload intent 15 分鐘、staging cleanup window 一小時、transient artifact 24 小時，以及 ownership-scoped processing cache 24 小時。Caller 可在 operator 公告範圍內調整 upload、artifact 與 cache expiry；超界 request 直接拒絕，不會靜默 clamp。Staging cleanup window 只由 operator 控制。Operator 可透過可觀測的 document policy 調整 defaults/maxima 或關閉 cache。明確 corpus enrollment 使用自己的 retention policy，預設保存到移除；延長 expiry 必須 explicit。
 
@@ -48,7 +48,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | 工具 | 功能 | 目前執行路徑 |
 | --- | --- | --- |
 | `web_fetch` | 將公開 URL 讀成 Markdown、text 或 HTML | bounded HTTP、本機正文正規化，以及符合條件時選用的 Jina/browser fallback |
-| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十三個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
+| `web_search` | 搜尋公開 Web 並回傳正規化結果 | 十四個 provider 的有界自動融合、失敗時下一批 retry、明確單一來源、fallback 或 deep routing |
 | `web_answer` | 從支援 answer 的 provider 取得 grounded answer | 並行 fan-out 或 fallback 到 You.com Answer 與 Linkup sourced answer，保留 provider attribution 與 citations |
 | `web_research` | 從支援 research 的 provider 取得研究報告 | 並行 fan-out 或 fallback 到 Linkup Research、You.com Research 與 Parallel Responses，保留 citations |
 | `web_research_start` / `status` / `result` / `cancel` | 建立並接續 durable Linkup research | 與 MCP Tasks 共用 durable runtime 的明確相容工具；不提供全域 list，也不外露 provider task ID |
@@ -67,7 +67,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `document_email_extract` | 解析 EML 並遞迴抽取附件 | Deterministic；回傳 headers、body、每個附件走 `document_parse` 同一引擎解析 |
 | `document_ocr` | 用 OCR 從掃描 PDF 與圖片中抽取文字 | OCR.space API（免費 25,000 次/月）；支援 PDF、PNG、JPEG、GIF、TIFF、BMP、WebP；未設定 `OCR_SPACE_API_KEY` 時 fail-closed |
 | `document_transcribe` | 將音訊轉錄為帶字級時間戳的文字 | Cloudflare Workers AI Whisper（免費 10,000 Neurons/天）；支援 MP3、WAV、WebM、OGG、FLAC、M4A；共用 `CF_BROWSER_ACCOUNT_ID` 與 `CF_BROWSER_API_TOKEN` |
-| `document_convert` | 將 Legacy Office 檔案轉為現代格式 | CloudConvert API（免費 25 次/天）；`.doc`→`.docx`、`.xls`→`.xlsx`、`.ppt`→`.pptx`；輸出可接 `document_parse` |
+| `document_convert` | 將文件檔案轉為 Markdown 或現代 Office 格式 | 預設：anydoc WASM（14 種格式，零成本，不需 API key）；可選 CloudConvert fallback 產出 `.docx`/`.xlsx`/`.pptx` 二進位 |
 | `document_table_extract` | 用空間啟發式從 PDF 中抽取表格 | Deterministic，不需 LLM 或外部 API；pdf.js 座標分析；規則表格效果最佳 |
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
@@ -330,7 +330,7 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | Account balance | Linkup、You.com、Firecrawl、SerpApi |
 | Quota diagnostics | Provider quota summary 與本機 provider budget status |
 | Hosted Reader fallback | Jina Reader（opt-in） |
-| Browser rendering | Local Playwright 或 Browserless（opt-in） |
+| Browser rendering | Local Playwright、Browserless、Hyperbrowser 或 CF Browser Rendering API（opt-in） |
 | Cloudflare runtime | 目前支援 Worker + Container deployment；Browser Run、AI Search、AI Gateway、Agents 與 Workflows 是已查到的未來 adapter surface |
 
 ### Provider 功能、收費與免費額度
@@ -385,11 +385,16 @@ Worker / Node HTTP edge       authentication, request identity
     v
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
                               web_news | web_images | web_fetch | web_extract | parse
+                              document_smart_parse | document_parse | document_ocr | document_convert
+                              document_table_extract | document_chunk | document_toc
+                              document_archive_extract | document_email_extract | document_transcribe
+                              paper_search | paper_lookup
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities | error_log
     |
-    +-- provider router       可替換的 search adapters
+    +-- provider router       可替換的 search adapters（14 個 provider，含自架 SearXNG）
     +-- safe HTTP + Reader    有界的內容取得與正文清理
-    `-- browser backend       隔離的 local 或 hosted rendering
+    +-- browser backend       local Playwright、Browserless、Hyperbrowser 或 CF Browser Rendering
+    `-- document engine       bounded parser、anydoc WASM、OCR.space、Workers AI Whisper
 ```
 
 核心政策不依賴特定 search provider 或 browser runtime。未指定 selector 的 Markdown/text 會由 Mozilla Readability 與本機 fallback 清理；raw HTML 與明確 selector 則維持 deterministic DOM semantics。詳見[架構文件](docs/architecture.md)與可重跑的 [Reader benchmark](docs/research/reader-benchmark.md)。
