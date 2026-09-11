@@ -60,6 +60,8 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `web_extract` | Extracts named fields into structured JSON | Deterministic selector and bounded pattern engines with per-call output caps; no implicit LLM step |
 | `web_extract_schema` | Extracts structured fields from a URL against a caller-provided bounded schema using a provider model | Explicit opt-in provider-backed extraction; remote `$ref` and unbounded nesting are rejected |
 | `parse` | Parses a URL or raw HTML into reusable structures | Local document, metadata, link, media, and table parsers; URL inputs use the bounded fetch pipeline |
+| `document_archive_extract` | Extracts and parses files from a ZIP archive | Deterministic, no LLM or external API; each supported file inside parsed through the same engine as `document_parse` |
+| `document_email_extract` | Parses EML with recursive attachment extraction | Deterministic; returns headers, body text, and each attachment parsed through the same engine as `document_parse` |
 | `document_ocr` | Extracts text from scanned PDFs and images using OCR | OCR.space API (free 25k requests/month); supports PDF, PNG, JPEG, GIF, TIFF, BMP, WebP; fail-closed when `OCR_SPACE_API_KEY` is not configured |
 | `document_transcribe` | Transcribes audio to text with word-level timestamps | Cloudflare Workers AI Whisper (free 10k Neurons/day); supports MP3, WAV, WebM, OGG, FLAC, M4A; reuses `CF_BROWSER_ACCOUNT_ID` and `CF_BROWSER_API_TOKEN` |
 | `document_convert` | Converts legacy Office files to modern formats | CloudConvert API (free 25 conversions/day); `.doc`→`.docx`, `.xls`→`.xlsx`, `.ppt`→`.pptx`; output can be fed to `document_parse` |
@@ -331,7 +333,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 48 tools | All 48 tools |
+| MCP tools | All 50 tools | All 50 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:

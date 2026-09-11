@@ -43,7 +43,9 @@ import { createMcpRegistry } from "../../src/mcp/registry.js";
 import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
+import { createDocumentArchiveExtractModule } from "../../src/tools/document-archive-extract.js";
 import { createDocumentConvertModule } from "../../src/tools/document-convert.js";
+import { createDocumentEmailExtractModule } from "../../src/tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "../../src/tools/document-table-extract.js";
 import { createDocumentOcrModule } from "../../src/tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "../../src/tools/document-transcribe.js";
@@ -405,7 +407,17 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       limiter,
       requestTimeoutMs: 5_000,
     }),
+    createDocumentArchiveExtractModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createDocumentConvertModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createDocumentEmailExtractModule({
       limiter,
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
@@ -478,8 +490,10 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "crawl_create",
         "crawl_result",
         "crawl_status",
+        "document_archive_extract",
         "document_artifact_delete",
         "document_convert",
+        "document_email_extract",
         "document_ocr",
         "document_parse",
         "document_policy",

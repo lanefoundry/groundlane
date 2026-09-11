@@ -78,7 +78,9 @@ import { createWebMapModule } from "./tools/web-map.js";
 import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
+import { createDocumentArchiveExtractModule } from "./tools/document-archive-extract.js";
 import { createDocumentConvertModule } from "./tools/document-convert.js";
+import { createDocumentEmailExtractModule } from "./tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
@@ -248,6 +250,16 @@ export function createLiteGroundlaneServices(
       maxOutputChars: config.maxOutputChars,
     }),
     createDocumentTableExtractModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentArchiveExtractModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentEmailExtractModule({
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,
