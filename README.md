@@ -396,8 +396,8 @@ The tools below use external services that are separate from the search provider
 | [CloudConvert](https://cloudconvert.com/api/v2) | `document_convert` (modern-office output only) | `CLOUDCONVERT_API_KEY` | 25 conversions/day (permanent) | No |
 | [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) | `paper_search` / `paper_lookup` | `SEMANTIC_SCHOLAR_API_KEY` | 100 req/s with key; ~1 req/min without | No |
 | [Hyperbrowser](https://app.hyperbrowser.ai/) | `web_fetch` (browser render) | `HYPERBROWSER_API_KEY` | 1,000 credits once (not renewable) | No |
-| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | Open source, self-hosted | N/A |
-| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | Open source, self-hosted, unlimited | N/A |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | Open source; run `docker run -p 11235:11235 unclecode/crawl4ai` then set URL | N/A |
+| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | Open source; run `docker run -p 8888:8080 searxng/searxng` then set URL; unlimited searches | N/A |
 | anydoc (built-in) | `document_convert` (markdown output) | — | Built-in WASM, zero cost | N/A |
 
 `document_parse`, `document_table_extract`, `document_archive_extract`, `document_email_extract`, `document_chunk`, `document_toc`, `document_compare`, and `document_smart_parse` are fully built-in and require no external credentials.

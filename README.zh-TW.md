@@ -364,8 +364,8 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | [CloudConvert](https://cloudconvert.com/api/v2) | `document_convert`（modern-office 輸出） | `CLOUDCONVERT_API_KEY` | 25 次/天（永久） | 否 |
 | [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) | `paper_search` / `paper_lookup` | `SEMANTIC_SCHOLAR_API_KEY` | 有 key 100 req/s；無 key ~1 req/min | 否 |
 | [Hyperbrowser](https://app.hyperbrowser.ai/) | `web_fetch`（browser render） | `HYPERBROWSER_API_KEY` | 1,000 credits（一次性） | 否 |
-| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | 開源自架 | 不適用 |
-| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | 開源自架，無限量 | 不適用 |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | 開源；執行 `docker run -p 11235:11235 unclecode/crawl4ai` 後填入地址 | 不適用 |
+| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | 開源；執行 `docker run -p 8888:8080 searxng/searxng` 後填入地址；無限搜尋 | 不適用 |
 | anydoc（內建） | `document_convert`（markdown 輸出） | — | 內建 WASM，零成本 | 不適用 |
 
 `document_parse`、`document_table_extract`、`document_archive_extract`、`document_email_extract`、`document_chunk`、`document_toc`、`document_compare` 與 `document_smart_parse` 完全內建，不需要外部憑證。
