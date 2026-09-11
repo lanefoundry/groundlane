@@ -420,7 +420,6 @@ async function executeRoute(
   }
 
   if (routedTo === "document_email_extract") {
-    const source = new TextDecoder().decode(bytes);
     const parsed = await parseBoundedDocument({ bytes, declaredMime: "message/rfc822", filename, signal });
     const content = projectParsed(parsed, projection);
     return { routedTo, routeReason, content, engine: "groundlane-bounded-document-v3" };

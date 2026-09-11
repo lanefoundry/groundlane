@@ -94,7 +94,6 @@ export class MineruCloudProvider {
     }
 
     const dataBase64 = bufferToBase64(source);
-    const ext = filename.split(".").pop()?.toLowerCase() ?? "pdf";
 
     let taskResponse: Response;
     try {

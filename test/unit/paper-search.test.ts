@@ -62,11 +62,11 @@ void test("paper search: handles mock search response", async () => {
   };
 
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify(mockResponse), {
+  globalThis.fetch = () =>
+    Promise.resolve(new Response(JSON.stringify(mockResponse), {
       status: 200,
       headers: { "content-type": "application/json" },
-    });
+    }));
 
   try {
     const provider = new SemanticScholarProvider({ timeoutMs: 5_000 });
@@ -89,8 +89,8 @@ void test("paper search: handles mock search response", async () => {
 
 void test("paper search: handles 429 rate limit", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response("rate limited", { status: 429 });
+  globalThis.fetch = () =>
+    Promise.resolve(new Response("rate limited", { status: 429 }));
 
   try {
     const provider = new SemanticScholarProvider({ timeoutMs: 5_000 });
@@ -130,11 +130,11 @@ void test("paper lookup: handles mock paper response with references and citatio
   };
 
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify(mockPaper), {
+  globalThis.fetch = () =>
+    Promise.resolve(new Response(JSON.stringify(mockPaper), {
       status: 200,
       headers: { "content-type": "application/json" },
-    });
+    }));
 
   try {
     const provider = new SemanticScholarProvider({ timeoutMs: 5_000 });
@@ -143,11 +143,13 @@ void test("paper lookup: handles mock paper response with references and citatio
     assert.equal(result.title, "BERT");
     assert.equal(result.tldr, null);
     assert.ok(result.references !== null);
-    assert.equal(result.references!.length, 1);
-    assert.equal(result.references![0]?.title, "Attention Is All You Need");
+    if (result.references === null) return;
+    assert.equal(result.references.length, 1);
+    assert.equal(result.references[0]?.title, "Attention Is All You Need");
     assert.ok(result.citations !== null);
-    assert.equal(result.citations!.length, 1);
-    assert.equal(result.citations![0]?.title, "RoBERTa");
+    if (result.citations === null) return;
+    assert.equal(result.citations.length, 1);
+    assert.equal(result.citations[0]?.title, "RoBERTa");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -155,8 +157,8 @@ void test("paper lookup: handles mock paper response with references and citatio
 
 void test("paper lookup: handles 404 as INVALID_INPUT", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response("not found", { status: 404 });
+  globalThis.fetch = () =>
+    Promise.resolve(new Response("not found", { status: 404 }));
 
   try {
     const provider = new SemanticScholarProvider({ timeoutMs: 5_000 });

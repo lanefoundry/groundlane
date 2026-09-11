@@ -31,12 +31,13 @@ function envelope(result: unknown): { ok: boolean; data?: Record<string, unknown
 function fakeLocalConverter(): AnydocLocalConverter {
   return {
     providerId: "anydoc-local",
-    convert: async (_bytes: Uint8Array, filename: string) => ({
-      markdown: `# Converted from ${filename}`,
-      detectedFormat: "doc",
-      engine: "anydoc-wasm",
-    }),
-  } as AnydocLocalConverter;
+    convert: (_bytes: Uint8Array, filename: string) =>
+      Promise.resolve({
+        markdown: `# Converted from ${filename}`,
+        detectedFormat: "doc",
+        engine: "anydoc-wasm",
+      }),
+  };
 }
 
 async function setupHandler(options?: { localConverter?: AnydocLocalConverter }) {

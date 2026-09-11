@@ -11,6 +11,7 @@ export default tseslint.config(
       "worker-configuration.d.ts",
       "eslint.config.js",
       "test/support/*.mjs",
+      "arena/**",
     ],
   },
   {

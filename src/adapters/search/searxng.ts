@@ -41,6 +41,7 @@ export class SearXNGSearchProvider implements SearchProvider {
   }
 
   supports(_request: SearchRequest): boolean {
+    void _request;
     return true;
   }
 

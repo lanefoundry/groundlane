@@ -1,23 +1,4 @@
 import { DisabledBrowserBackend } from "./adapters/browser/disabled.js";
-import { LinkupAnswerProvider } from "./adapters/answer/linkup.js";
-import { YouAnswerProvider } from "./adapters/answer/you.js";
-import { ExaContentProvider } from "./adapters/content/exa.js";
-import { FirecrawlContentProvider } from "./adapters/content/firecrawl.js";
-import { FirecrawlCrawlProvider } from "./adapters/crawl/firecrawl.js";
-import { FirecrawlMapProvider } from "./adapters/map/firecrawl.js";
-import { KeenableContentProvider } from "./adapters/content/keenable.js";
-import { LinkupContentProvider } from "./adapters/content/linkup.js";
-import { BraveImagesProvider } from "./adapters/images/brave.js";
-import { SerperImagesProvider } from "./adapters/images/serper.js";
-import { SerpApiImagesProvider } from "./adapters/images/serpapi.js";
-import { BraveNewsProvider } from "./adapters/news/brave.js";
-import { SerperNewsProvider } from "./adapters/news/serper.js";
-import { SerpApiNewsProvider } from "./adapters/news/serpapi.js";
-import { TavilyMapProvider } from "./adapters/map/tavily.js";
-import { TavilyContentProvider } from "./adapters/content/tavily.js";
-import { TavilyCrawlProvider } from "./adapters/crawl/tavily.js";
-import { TinyFishContentProvider } from "./adapters/content/tinyfish.js";
-import { YouContentProvider } from "./adapters/content/you.js";
 import { BrowserlessBackend } from "./adapters/browser/browserless.js";
 import { HyperbrowserBackend } from "./adapters/browser/hyperbrowser.js";
 import { LinkupBalanceChecker } from "./adapters/balance/linkup.js";
@@ -25,8 +6,6 @@ import { FirecrawlBalanceChecker } from "./adapters/balance/firecrawl.js";
 import { SerpApiBalanceChecker } from "./adapters/balance/serpapi.js";
 import { YouBalanceChecker } from "./adapters/balance/you.js";
 import { LinkupResearchProvider } from "./adapters/research/linkup.js";
-import { ParallelResearchProvider } from "./adapters/research/parallel.js";
-import { YouResearchProvider } from "./adapters/research/you.js";
 import { LocalPlaywrightBrowserBackend } from "./adapters/browser/local-playwright.js";
 import { SafeHttpFetcher } from "./adapters/http/undici-fetcher.js";
 import { SqliteDurableRecordStore } from "./adapters/state/sqlite-durable-store.js";
@@ -36,21 +15,8 @@ import { DurableDocumentOutputRuntime } from "./core/durable-document-output.js"
 import { createDocumentResultModule } from "./tools/document-result.js";
 import { SqliteCorpusDerivedIndex } from "./adapters/state/sqlite-corpus-index.js";
 import { JinaReaderBackend } from "./adapters/reader/jina.js";
-import { BraveSearchProvider } from "./adapters/search/brave.js";
-import { BrowserbaseSearchProvider } from "./adapters/search/browserbase.js";
-import { ExaSearchProvider } from "./adapters/search/exa.js";
-import { FirecrawlSearchProvider } from "./adapters/search/firecrawl.js";
-import { KeenableSearchProvider } from "./adapters/search/keenable.js";
-import { LinkupSearchProvider } from "./adapters/search/linkup.js";
-import { ParallelSearchProvider } from "./adapters/search/parallel.js";
-import { SerperSearchProvider } from "./adapters/search/serper.js";
-import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
-import { SearchApiSearchProvider } from "./adapters/search/searchapi.js";
-import { TavilySearchProvider } from "./adapters/search/tavily.js";
-import { TinyFishSearchProvider } from "./adapters/search/tinyfish.js";
-import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
-import type { AnswerProvider, BrowserBackend, ContentProvider, CrawlProvider, ImagesProvider, MapProvider, NewsProvider, ResearchProvider, SearchProvider } from "./core/contracts.js";
+import type { BrowserBackend } from "./core/contracts.js";
 import { AnswerRouter } from "./core/answer-router.js";
 import { ContentRouter } from "./core/content-router.js";
 import { CrawlRouter } from "./core/crawl-router.js";
@@ -61,12 +27,11 @@ import { DynamicPenaltyHealthTracker } from "./core/provider-health.js";
 import { MapRouter } from "./core/map-router.js";
 import { NewsRouter } from "./core/news-router.js";
 import { ProviderBalanceRegistry } from "./core/provider-balance.js";
-import { builtInRegistry, type ProviderCapabilities } from "./core/provider-registry.js";
 import { ResearchRouter } from "./core/research-router.js";
 import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
-import { createMcpRegistry, type McpRegistryFactory } from "./mcp/registry.js";
+import { createMcpRegistry } from "./mcp/registry.js";
 import { CrawlJobManager } from "./core/crawl-jobs.js";
 import { CorpusStore, InMemoryCorpusBackend } from "./core/corpus-runtime.js";
 import {
@@ -82,8 +47,6 @@ import {
   createDocumentParseModule,
   isParsedDocumentContent,
   runResolvedDocumentParse,
-  type DocumentParseInput,
-  type ResolvedDocumentSource,
 } from "./tools/document-parse.js";
 import type { McpRequestContext } from "./mcp/registry.js";
 import { createDocumentUploadModule } from "./tools/document-upload.js";

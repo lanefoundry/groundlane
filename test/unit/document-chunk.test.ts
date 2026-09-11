@@ -199,11 +199,12 @@ void test("field-aware: CSV document produces table with header fields", async (
   assert.ok(result.blocks.length > 0, "CSV should produce blocks");
   const tableBlock = result.blocks.find((b) => b.type === "table");
   assert.ok(tableBlock, "CSV should produce a table block");
+  if (tableBlock === undefined) return;
 
   const { extractFieldsFromBlocks } = await import("../../src/tools/document-chunk.js");
   const fields = extractFieldsFromBlocks(result.blocks as DocumentBlock[], result.metadata);
-  assert.ok(fields.has(tableBlock!.blockId), "table block should have fields");
-  assert.deepEqual(fields.get(tableBlock!.blockId), ["Name", "Grade", "Type"]);
+  assert.ok(fields.has(tableBlock.blockId), "table block should have fields");
+  assert.deepEqual(fields.get(tableBlock.blockId), ["Name", "Grade", "Type"]);
 });
 
 void test("field-aware: empty table headers are filtered out", async () => {
