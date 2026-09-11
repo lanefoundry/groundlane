@@ -60,6 +60,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `web_extract` | 抽取具名欄位為結構化 JSON | Deterministic selector 與 bounded pattern engines，可設定單次 output cap；不暗中呼叫 LLM |
 | `web_extract_schema` | 用 provider model 對單一 URL 依 caller-provided bounded schema 抽取結構化欄位 | 明確 opt-in 的 provider-backed extraction；拒絕 remote `$ref` 與 unbounded nesting |
 | `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
+| `document_smart_parse` | 自動偵測檔案類型並路由到正確解析器 | Meta-tool：掃描 PDF→OCR、舊 Office→轉檔、ZIP→解壓、EML→郵件、音訊→轉錄、其餘→parse；不需 LLM；回報 `routedTo` 與 `routeReason` |
 | `document_archive_extract` | 解壓 ZIP 並逐檔解析 | Deterministic，不需 LLM 或外部 API；每個支援的檔案走 `document_parse` 同一引擎 |
 | `document_chunk` | 將解析後的 blocks 切成多層階層式 chunk 供 RAG 使用 | Deterministic，不需 LLM；可設定 token 層級（預設 2048→512→128）；每個 chunk 帶 parent-child 關係與 block 來源 |
 | `document_toc` | 從文件中抽取結構化目錄樹 | Deterministic 標題偵測：Markdown `#`、HTML `<h1>`–`<h6>`、全大寫、Title Case 啟發式 |

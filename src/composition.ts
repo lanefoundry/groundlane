@@ -109,6 +109,7 @@ import { createDocumentEmailExtractModule } from "./tools/document-email-extract
 import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
 import { createDocumentTocModule } from "./tools/document-toc.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
+import { createDocumentSmartParseModule } from "./tools/document-smart-parse.js";
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import { createPaperSearchModule } from "./tools/paper-search.js";
@@ -463,6 +464,14 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     }),
     createDocumentConvertModule({
       provider: cloudConvertProvider,
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentSmartParseModule({
+      ocrProvider,
+      transcribeProvider: whisperProvider,
+      convertProvider: cloudConvertProvider,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

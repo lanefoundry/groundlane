@@ -85,6 +85,7 @@ import { createDocumentEmailExtractModule } from "./tools/document-email-extract
 import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
 import { createDocumentTocModule } from "./tools/document-toc.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
+import { createDocumentSmartParseModule } from "./tools/document-smart-parse.js";
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
 import { createPaperSearchModule } from "./tools/paper-search.js";
@@ -247,6 +248,16 @@ export function createLiteGroundlaneServices(
     }),
     createDocumentConvertModule({
       provider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentSmartParseModule({
+      ocrProvider: config.ocrSpaceApiKey === undefined ? undefined : new OcrSpaceProvider({ apiKey: config.ocrSpaceApiKey }),
+      transcribeProvider: config.cfBrowserAccountId === undefined || config.cfBrowserApiToken === undefined
+        ? undefined
+        : new WorkersAiWhisperProvider({ accountId: config.cfBrowserAccountId, apiToken: config.cfBrowserApiToken }),
+      convertProvider: config.cloudConvertApiKey === undefined ? undefined : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey }),
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

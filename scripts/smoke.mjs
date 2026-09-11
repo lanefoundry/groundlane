@@ -64,6 +64,7 @@ try {
     "document_ocr",
     "document_parse",
     "document_policy",
+    "document_smart_parse",
     "document_table_extract",
     "document_toc",
     "document_transcribe",

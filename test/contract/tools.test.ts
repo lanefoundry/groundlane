@@ -50,6 +50,7 @@ import { createDocumentEmailExtractModule } from "../../src/tools/document-email
 import { createDocumentTableExtractModule } from "../../src/tools/document-table-extract.js";
 import { createDocumentTocModule } from "../../src/tools/document-toc.js";
 import { createDocumentOcrModule } from "../../src/tools/document-ocr.js";
+import { createDocumentSmartParseModule } from "../../src/tools/document-smart-parse.js";
 import { createDocumentTranscribeModule } from "../../src/tools/document-transcribe.js";
 import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
 import { createPaperSearchModule } from "../../src/tools/paper-search.js";
@@ -434,6 +435,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
     }),
+    createDocumentSmartParseModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createDocumentTableExtractModule({
       limiter,
       requestTimeoutMs: 5_000,
@@ -510,6 +516,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "document_ocr",
         "document_parse",
         "document_policy",
+        "document_smart_parse",
         "document_table_extract",
         "document_toc",
         "document_transcribe",

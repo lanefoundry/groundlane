@@ -8,6 +8,7 @@ Groundlane's auto-fusion routing uses providers as batched fallbacks, so free ti
 
 | Provider | Monthly free volume | Permanent? | Card required? |
 | --- | --- | --- | --- |
+| SearXNG (self-hosted) | **Unlimited** (operator-hosted) | Yes | No (self-host cost only) |
 | Keenable (keyed) | 100,000 requests | Yes | No (verified org) |
 | Keenable (keyless) | ~24,000 (1,000/hr shared per IP) | Yes | No |
 | You.com (keyless) | ~3,000 (100/day) | Yes | No |
@@ -26,14 +27,14 @@ Groundlane's auto-fusion routing uses providers as batched fallbacks, so free ti
 
 ### Theoretical maximum
 
-Stacking all permanent renewable tiers: **~130,000+ searches/month** before any paid usage. With auto-fusion sending two providers per batch, roughly 65,000 deduplicated search calls.
+With a self-hosted SearXNG instance, search volume is **unlimited** at zero API cost (only hosting cost). Without SearXNG, stacking all permanent renewable cloud tiers yields **~130,000+ searches/month** before any paid usage. With auto-fusion sending two providers per batch, roughly 65,000 deduplicated search calls.
 
 ### Recommended provider order
 
-Prioritize renewable no-card providers first, card-required renewable next, one-time trials last:
+Prioritize self-hosted first, then renewable no-card providers, card-required renewable, one-time trials last:
 
 ```
-keenable,you,browserbase,tavily,firecrawl,brave,serpapi,exa,linkup,parallel,serper,searchapi
+searxng,keenable,you,browserbase,tavily,firecrawl,brave,serpapi,exa,linkup,parallel,serper,searchapi
 ```
 
 ## Non-search tool free usage
@@ -46,9 +47,29 @@ keenable,you,browserbase,tavily,firecrawl,brave,serpapi,exa,linkup,parallel,serp
 | Crawl | Firecrawl + Tavily (shared credit pool) | ~500 pages |
 | Research | Linkup ($0.25–2.50/call from $20 pool) | 8–80 calls |
 
-## Document parsing
+## Document parsing and processing
 
-`document_parse` uses the built-in `groundlane-bounded-document-v3` engine for deterministic local parsing. No external API needed, no cost. Supported formats: PDF (text-based), DOCX, XLSX, PPTX, ODF, CSV, TXT, Markdown, JSON, XML, HTML, RTF, EPUB, EML.
+### Built-in tools (zero config, zero cost)
+
+All of these tools use the built-in `groundlane-bounded-document-v3` engine or pure JS heuristics. No external API needed, no cost, no API key.
+
+| Tool | What it does |
+| --- | --- |
+| `document_parse` | Deterministic parsing of PDF (text-based), DOCX, XLSX, PPTX, ODF, CSV, TXT, Markdown, JSON, XML, HTML, RTF, EPUB, EML |
+| `document_table_extract` | Extracts tables from PDFs using spatial heuristics (pdf.js coordinate analysis) |
+| `document_archive_extract` | Extracts ZIP contents and parses each supported file through the same engine as `document_parse` |
+| `document_email_extract` | Parses EML files with recursive MIME attachment extraction and per-attachment parsing |
+| `document_chunk` | Splits parsed blocks into hierarchical multi-level chunks (default 2048→512→128 tokens) for RAG ingestion |
+| `document_toc` | Extracts structured table-of-contents tree via Markdown `#`, HTML headings, ALL-CAPS, and Title Case heuristics |
+
+### Academic paper metadata (zero config, zero cost)
+
+| Tool | What it does |
+| --- | --- |
+| `paper_search` | Searches Semantic Scholar (free, 1k req/s unauthenticated) for academic papers with title, abstract, authors, citations, TL;DR, DOI, ArXiv ID, and open access PDF link |
+| `paper_lookup` | Looks up a specific paper by Semantic Scholar ID, DOI, or ArXiv ID with full references and citations |
+
+### External API tools (need API key, free tiers available)
 
 The limitations below require external services.
 
@@ -93,9 +114,16 @@ These formats are not supported by `document_parse`. Convert to modern formats f
 
 | Capability | Monthly free capacity | Cost |
 | --- | --- | --- |
-| Search | ~130,000 | $0 |
+| Search (with SearXNG) | Unlimited | $0 (hosting cost only) |
+| Search (cloud providers only) | ~130,000 | $0 |
 | Content / Fetch | ~30,000 | $0 |
 | Document parsing (built-in formats) | Unlimited | $0 |
+| Table extraction (PDF) | Unlimited | $0 |
+| Archive extraction (ZIP) | Unlimited | $0 |
+| Email + attachment extraction | Unlimited | $0 |
+| Hierarchical chunking (RAG) | Unlimited | $0 |
+| TOC extraction | Unlimited | $0 |
+| Academic paper search | Unlimited (1k req/s) | $0 |
 | OCR | 25,000 (OCR.space) | $0 |
 | Audio transcription | ~15–25 calls/day (Workers AI) | $0 |
 | Legacy Office conversion | ~750/month (CloudConvert) | $0 |
