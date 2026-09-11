@@ -271,6 +271,37 @@ response 加 `effort_used` 欄位，讓 agent 知道實際走了哪條路徑
 | **P5** | 3.3 web_interact | large | 🔲 Backlog | 攻擊面大，使用者需求不明確 |
 | **P5** | 1.4 JATS/XBRL 導出 | large | 🔲 Backlog | 除非有明確企業需求 |
 
+### 額外完成（PR #4, #5）
+
+| 項目 | 大小 | 狀態 | 來源 |
+|---|---|---|---|
+| corpus_source_inspect 工具 | small | ✅ Done | RAGFlow 文章 |
+| audit_log 工具 + InMemoryAuditLog | small | ✅ Done | mcp-guardrail 文章 |
+| MinerU cloud adapter (effort=deep fallback) | medium | ✅ Done | read4all 文章 |
+| web_fetch credential scan | medium | ✅ Done | CS329Z Week 8 + GTIG credential theft |
+| Crawl4AI content adapter tests | small | ✅ Done | AI 爬蟲全景圖 |
+| 92 個 pre-existing eslint errors 修復 | medium | ✅ Done | CI 紅燈 |
+
+---
+
+## 六、下一波機會（從第二輪文章掃描萃取）
+
+| 來源文章 | 機會 | 大小 |
+|---|---|---|
+| CS329Z Week 3 (MCP+tools) | `tool_policy` 內省工具：讓 agent 查詢可用工具的成本/延遲 | small |
+| CS329Z Week 4 (ReAct+MemGPT) | `web_session` stateful 多輪瀏覽：跨 tool call 保持 browser context | large |
+| CS329Z Week 6 (data flywheel) | `search_quality_log`：per-query 品質回饋，餵回 provider ranking | medium |
+| GTIG credential theft | rate-limit anomaly detection：偵測同一 credential 的異常高頻呼叫 | medium |
+| GraphRAG/LightRAG/HippoRAG | `corpus_graph_index` backend：knowledge-graph-aware multi-hop retrieval | large |
+| NobodyClimb RAG pipeline | `web_search` query rewriting：低相關結果時自動加 metadata constraint 重寫 | medium |
+| RAGFlow | `corpus_chunk_inspect`：讀取個別 chunk 和 metadata 做 QA | small |
+| Agentic RAG survey | lazy corpus ingestion：enroll 時不自動 chunk，query 時才決定策略 | medium |
+| mcp-guardrail | tool-call structured audit log：已有 InMemoryAuditLog，接下來做 auto-logging wrapper | small |
+| KRU | credential-scoped tool routing：不同 credential 路由到不同 provider 子集 | small |
+| ToolHive | document container isolation：在 sandbox 容器裡跑不信任的 document parsing | medium |
+| read4all | `document_parse` MinerU cloud adapter | ✅ Done |
+| AI scraping landscape (Crawl4AI) | Crawl4AI adapter for web_content | ✅ Done（adapter 已存在，補了 tests） |
+
 ---
 
 ## 附錄：文章對照表
@@ -283,9 +314,16 @@ response 加 `effort_used` 欄位，讓 agent 知道實際走了哪條路徑
 | 掃描 PDF 10 工具 benchmark | 4.1 Document benchmark |
 | RAG Attribute Conflation | 2.1 field-aware chunk |
 | RAG 多實體查詢 | 2.1 field-aware chunk |
-| RAGFlow 深入介紹 | 2.2 retrieval test |
-| NobodyClimb RAG Pipeline | 2.3 rank fusion |
-| AI 爬蟲工具全景圖 | 3.1 selector healing、3.3 web_interact |
+| RAGFlow 深入介紹 | 2.2 retrieval test、corpus_source_inspect、corpus_chunk_inspect |
+| NobodyClimb RAG Pipeline | 2.3 rank fusion、query rewriting |
+| AI 爬蟲工具全景圖 | 3.1 selector healing、3.3 web_interact、Crawl4AI adapter |
 | AI Agent 繞過 Cloudflare 反爬蟲 | 3.2 stealth 等級 |
 | Groundlane 系列篇 5（踩坑） | 3.1 selector healing、3.2 stealth |
 | Arena 設計文件 | 4.1、4.2 automated benchmark |
+| CS329Z 系列 | tool_policy、web_session、search_quality_log |
+| GraphRAG/LightRAG/HippoRAG | corpus_graph_index |
+| GTIG credential theft | credential scan、rate-limit anomaly detection |
+| mcp-guardrail / mcp-spend-guard | audit log、spend caps（已有） |
+| read4all | MinerU cloud adapter |
+| ToolHive | document container isolation |
+| KRU | credential-scoped routing |
