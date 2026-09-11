@@ -88,6 +88,7 @@ void test("edge cache configuration composes the Container remote two-phase runt
   const input = {
     source: { kind: "inline", dataBase64: Buffer.from(bytes).toString("base64"), mimeType: "text/plain", filename: "edge.txt" },
     output: "text",
+    effort: "fast",
     maxPages: 100,
     cacheMode: "use",
   } as const;

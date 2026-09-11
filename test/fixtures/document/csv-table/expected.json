@@ -1,0 +1,7 @@
+{
+  "requiredText": ["Beauty Mirror", "5.11b", "Dragon Cave", "Sport", "Dragon Scale", "5.10a", "Trad", "Sunset Arete", "5.9", "Morning Glory", "5.12a"],
+  "expectedBlocks": 1,
+  "expectedTableCells": 20,
+  "format": "csv",
+  "description": "CSV with 4 columns and 4 data rows — tests table header preservation and cell accuracy"
+}

@@ -69,6 +69,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `document_transcribe` | Transcribes audio to text with word-level timestamps | Cloudflare Workers AI Whisper (free 10k Neurons/day); supports MP3, WAV, WebM, OGG, FLAC, M4A; reuses `CF_BROWSER_ACCOUNT_ID` and `CF_BROWSER_API_TOKEN` |
 | `document_convert` | Converts document files to Markdown or modern Office formats | Default: anydoc WASM (14 formats, zero cost, no API key); optional CloudConvert fallback for `.docx`/`.xlsx`/`.pptx` binary output |
 | `document_table_extract` | Extracts tables from PDFs using spatial heuristics | Deterministic, no LLM or external API; pdf.js-based coordinate analysis; works best on regular grid-aligned tables |
+| `document_compare` | Compares two documents and returns a structured diff | Deterministic, no LLM or external API; parses both documents through `document_parse`, then produces block-level additions, deletions, and changes |
 | `document_parse` | Parses a bounded document into a canonical envelope and deterministic projection | Inline base64 or policy-checked public URL; optional self-hosted SQLite cache; verified source ArtifactRef on the fully configured Cloudflare edge profile |
 | `document_upload_create` / `document_upload_complete` | Creates a credential-bound single-PUT handoff, then verifies and finalizes a source ArtifactRef | Cloudflare Worker edge only when D1, R2, R2 S3 presigning credentials, and internal signing are configured; otherwise fail-closed |
 | `document_artifact_delete` | Immediately revokes a caller-owned source ArtifactRef, deletes its immutable bytes, and revokes all parser-option cache bindings for that source | Cloudflare Worker edge; deletion and expiry cleanup are credential/owner scoped and retryable |
@@ -79,6 +80,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `corpus_enroll` / `corpus_update` / `corpus_remove` | Enrolls, updates, or removes a source in a corpus with ACL, retention, and provenance | Self-hosted durable SQLite runtime; removal immediately revokes access and cache bindings |
 | `corpus_status` | Reads corpus manifest truth, enrollment counts, backend health, and deletion state | Self-hosted durable SQLite runtime |
 | `corpus_search` | Searches an operator-owned corpus with boundary and freshness provenance | Self-hosted durable SQLite runtime; results are never labeled as public web search |
+| `corpus_retrieval_test` | Tests retrieval quality for a corpus query against expected source IDs | Wraps `corpus_search`; reports recall, rank, and missed sources — no LLM, read-only |
 | `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | Creates, reads, pages, or cancels a durable provider-neutral crawl job | Durable job with page/byte/output budgets, expiry, and Groundlane-owned job ID; provider IDs are never exposed |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
@@ -336,7 +338,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 53 tools | All 53 tools |
+| MCP tools | All 55 tools | All 55 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:
@@ -435,7 +437,7 @@ Worker / Node HTTP edge       authentication, request identity
 tool registry                 web_search | web_answer | web_research | web_content | web_map | web_crawl
                               web_news | web_images | web_fetch | web_extract | parse
                               document_smart_parse | document_parse | document_ocr | document_convert
-                              document_table_extract | document_chunk | document_toc
+                              document_table_extract | document_chunk | document_toc | document_compare
                               document_archive_extract | document_email_extract | document_transcribe
                               paper_search | paper_lookup
                               diagnostics: provider_quota | provider_balance | search_budget_status | provider_capabilities | error_log

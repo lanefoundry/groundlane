@@ -1,0 +1,6 @@
+{
+  "requiredText": ["Groundlane Architecture", "open-source remote MCP server", "Deterministic extraction", "Provider-neutral tool contracts", "Bounded resource consumption", "web_fetch", "web_search", "document_parse"],
+  "expectedBlocks": 1,
+  "format": "markdown",
+  "description": "Markdown document with headings, list, and table — tests text preservation through the parser"
+}

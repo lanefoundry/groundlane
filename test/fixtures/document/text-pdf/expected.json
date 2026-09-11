@@ -1,0 +1,8 @@
+{
+  "requiredText": [
+    "Groundlane is a trusted web access layer for AI agents."
+  ],
+  "expectedBlocks": 1,
+  "format": "pdf",
+  "description": "Single-page text PDF with one line of extractable text"
+}

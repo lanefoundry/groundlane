@@ -45,6 +45,12 @@ const inputSchema = z.object({
   maxOutputChars: z.number().int().min(1_000).max(500_000).optional(),
 });
 
+const healedFieldSchema = z.object({
+  name: z.string(),
+  originalSelector: z.string(),
+  healedSelector: z.string(),
+});
+
 const extractDataSchema = z.object({
   requestedUrl: z.string(),
   finalUrl: z.string(),
@@ -52,6 +58,7 @@ const extractDataSchema = z.object({
   engine: z.enum(["http", "reader", "browser"]),
   backend: z.string(),
   missingFields: z.array(z.string()),
+  healedFields: z.array(healedFieldSchema).optional(),
   truncated: z.boolean(),
   bytes: z.number().int().nonnegative(),
   blockedSubrequests: z.number().int().nonnegative().optional(),
@@ -141,6 +148,9 @@ export function createWebExtractModule(options: WebExtractModuleOptions): McpMod
               engine: result.page.raw.engine,
               backend: result.page.raw.backend,
               missingFields: result.extracted.missingFields,
+              ...(result.extracted.healedFields !== undefined && result.extracted.healedFields.length > 0
+                ? { healedFields: result.extracted.healedFields }
+                : {}),
               truncated: result.page.truncated || result.extracted.truncated,
               bytes: result.page.bytes,
               ...(result.page.raw.blockedSubrequests === undefined

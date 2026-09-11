@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "description": "Search benchmark query corpus with ground truth. Each query has expected URLs and/or answer fragments for precision/recall scoring.",
+  "queries": [
+    {
+      "id": "factual-01",
+      "category": "factual",
+      "query": "Cloudflare Workers WASM size limit",
+      "expectedUrls": ["https://developers.cloudflare.com/workers/platform/limits/"],
+      "expectedFragments": ["module size"]
+    },
+    {
+      "id": "factual-02",
+      "category": "factual",
+      "query": "Node.js LTS release schedule",
+      "expectedUrls": ["https://nodejs.org/en/about/previous-releases"],
+      "expectedFragments": ["LTS"]
+    },
+    {
+      "id": "technical-01",
+      "category": "technical",
+      "query": "MCP Model Context Protocol specification streamable HTTP",
+      "expectedUrls": [],
+      "expectedFragments": ["streamable", "HTTP", "MCP"]
+    },
+    {
+      "id": "technical-02",
+      "category": "technical",
+      "query": "cheerio CSS selector jQuery subset",
+      "expectedUrls": ["https://cheerio.js.org/"],
+      "expectedFragments": ["selector", "cheerio"]
+    },
+    {
+      "id": "current-01",
+      "category": "current_events",
+      "query": "latest Claude model release 2026",
+      "expectedUrls": [],
+      "expectedFragments": ["Claude"]
+    }
+  ]
+}

@@ -3,7 +3,12 @@ import type { ExtractedValue, ExtractionField } from "./contracts.js";
 import { GroundlaneError, hint } from "./errors.js";
 
 export interface ExtractionLimits { maxFields: number; maxValuesPerField: number; maxOutputChars: number }
-export interface ExtractionResult { data: Record<string, ExtractedValue>; missingFields: string[]; truncated: boolean }
+export interface HealedField {
+  name: string;
+  originalSelector: string;
+  healedSelector: string;
+}
+export interface ExtractionResult { data: Record<string, ExtractedValue>; missingFields: string[]; truncated: boolean; healedFields?: HealedField[] }
 
 const maxPatternInputChars = 1_000_000;
 
@@ -112,12 +117,45 @@ function extractPatternValues(html: string, field: ExtractionField, limits: Extr
   return values;
 }
 
+function tryHealSelector(
+  $: ReturnType<typeof load>,
+  selector: string,
+): { healed: string; nodes: ReturnType<ReturnType<typeof load>> } | undefined {
+  const tagMatch = /^([a-zA-Z][a-zA-Z0-9]*)/u.exec(selector);
+  if (tagMatch) {
+    const tag = tagMatch[1]!;
+    const tagNodes = $(tag);
+    if (tagNodes.length > 0) return { healed: tag, nodes: tagNodes };
+  }
+
+  const classMatch = /\.([a-zA-Z0-9_-]+)/u.exec(selector);
+  if (classMatch) {
+    const partial = `[class*="${classMatch[1]!}"]`;
+    try {
+      const partialNodes = $(partial);
+      if (partialNodes.length > 0) return { healed: partial, nodes: partialNodes };
+    } catch { /* invalid selector, skip */ }
+  }
+
+  const attrMatch = /\[([a-zA-Z-]+)/u.exec(selector);
+  if (attrMatch) {
+    const attrSelector = `[${attrMatch[1]!}]`;
+    try {
+      const attrNodes = $(attrSelector);
+      if (attrNodes.length > 0) return { healed: attrSelector, nodes: attrNodes };
+    } catch { /* skip */ }
+  }
+
+  return undefined;
+}
+
 export function extractFields(html: string, fields: readonly ExtractionField[], limits: ExtractionLimits): ExtractionResult {
   if (fields.length === 0 || fields.length > limits.maxFields) throw new GroundlaneError("INVALID_INPUT", "extract", "Field count is outside the allowed range", false, undefined, hint("extract.invalid_field_count", "Provide at least one field and at most the configured maxFields (default 50). Split large requests into smaller extract calls."));
    const names = new Set<string>();
    const $ = load(html);
    const data: Record<string, ExtractedValue> = {};
    const missingFields: string[] = [];
+   const healedFields: HealedField[] = [];
    for (const field of fields) {
      validateFieldName(field.name, names);
      if (field.engine === "pattern") {
@@ -129,6 +167,15 @@ export function extractFields(html: string, fields: readonly ExtractionField[], 
      if (field.value === "attribute" && !field.attribute) throw new GroundlaneError("INVALID_INPUT", "extract", "Attribute fields require an attribute name", false, undefined, hint("extract.attribute_missing", "When value is 'attribute' the request must also include the attribute key (e.g. attribute: 'href'). For text/html values, drop the attribute field."));
      let nodes;
      try { nodes = $(field.selector); } catch { throw new GroundlaneError("INVALID_INPUT", "extract", `Invalid selector for field ${field.name}`, false, undefined, hint("extract.selector.invalid", "Verify the CSS selector syntax (cheerio's jQuery-like subset). Cheerio accepts the same selectors as jQuery; pseudo-classes like :has-text() are not supported — use web_extract's pattern engine instead.")); }
+
+    if (nodes.length === 0) {
+      const healed = tryHealSelector($, field.selector);
+      if (healed !== undefined) {
+        nodes = healed.nodes;
+        healedFields.push({ name: field.name, originalSelector: field.selector, healedSelector: healed.healed });
+      }
+    }
+
     const selected = nodes.toArray().slice(0, field.many ? limits.maxValuesPerField : 1);
     const values = selected.map((node) => {
       const element = $(node);
@@ -153,5 +200,5 @@ export function extractFields(html: string, fields: readonly ExtractionField[], 
       },
     );
   }
-  return { data, missingFields, truncated: false };
+  return { data, missingFields, truncated: false, ...(healedFields.length > 0 ? { healedFields } : {}) };
 }

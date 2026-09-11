@@ -77,6 +77,14 @@ export const corpusSearchInputSchema = z.object({
   timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
 });
 
+export const corpusRetrievalTestInputSchema = z.object({
+  corpusId: corpusIdSchema,
+  query: z.string().trim().min(1).max(500),
+  expectedSourceIds: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
+  maxResults: z.number().int().min(1).max(50).default(10),
+  timeoutMs: z.number().int().min(1_000).max(150_000).optional(),
+});
+
 const corpusViewSchema = z.object({
   corpusId: z.string(),
   displayName: z.string(),
@@ -401,6 +409,65 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
             return structuredToolResult({ ok: true, data });
           } catch (error) {
             return toolError(error, { tool: "corpus_delete" });
+          }
+        },
+      );
+
+      server.registerTool(
+        "corpus_retrieval_test",
+        {
+          description:
+            "Test retrieval quality for a corpus query. Given a query and a list of expected source IDs, runs corpus_search and reports which expected sources were found, at what rank and score. Use this to verify that a corpus returns the right sources before building a RAG pipeline. Read-only, no LLM generation.",
+          inputSchema: corpusRetrievalTestInputSchema,
+          outputSchema: resultEnvelopeSchema(z.object({
+            corpusId: z.string(),
+            query: z.string(),
+            expectedCount: z.number().int(),
+            foundCount: z.number().int(),
+            recall: z.number(),
+            hits: z.array(z.object({
+              sourceId: z.string(),
+              expected: z.boolean(),
+              rank: z.number().int(),
+              score: z.number(),
+            })),
+            missed: z.array(z.string()),
+          })),
+          annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async (input, ctx) => {
+          try {
+            const response = await run("corpus_retrieval_test", input.timeoutMs, ctx.mcpReq.signal, async () => {
+              if (durable !== undefined && durableCaller !== undefined) {
+                return await durable.searchCorpus(input.corpusId, input.query, durableCaller, input.maxResults);
+              }
+              if (store === undefined) throw new Error("corpus runtime is unavailable");
+              return store.searchCorpus(input.corpusId, input.query, MCP_CALLER, input.maxResults);
+            });
+
+            const expectedSet = new Set(input.expectedSourceIds);
+            const hits = response.results.map((hit, index) => ({
+              sourceId: hit.sourceId,
+              expected: expectedSet.has(hit.sourceId),
+              rank: index + 1,
+              score: hit.score,
+            }));
+            const foundIds = new Set(hits.filter((h) => h.expected).map((h) => h.sourceId));
+            const missed = input.expectedSourceIds.filter((id) => !foundIds.has(id));
+
+            const data = {
+              corpusId: response.corpusId,
+              query: response.query,
+              expectedCount: input.expectedSourceIds.length,
+              foundCount: foundIds.size,
+              recall: input.expectedSourceIds.length === 0 ? 1 : foundIds.size / input.expectedSourceIds.length,
+              hits,
+              missed,
+            };
+            assertWithinOutputLimit(data, options.maxOutputChars, "corpus_retrieval_test");
+            return structuredToolResult({ ok: true, data });
+          } catch (error) {
+            return toolError(error, { tool: "corpus_retrieval_test" });
           }
         },
       );

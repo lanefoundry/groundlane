@@ -45,6 +45,10 @@ const documentChunkInputSchema = z.object({
     .max(512)
     .default(32)
     .describe("Overlap in approximate tokens between adjacent chunks at the same level. Default: 32."),
+  fieldAware: z
+    .boolean()
+    .default(false)
+    .describe("When true, each chunk includes a `fields` array with field names extracted from table headers (row 0) and document metadata keys. Useful for RAG metadata pre-filtering to avoid attribute conflation in vector search."),
 });
 
 const chunkSchema = z.object({
@@ -54,6 +58,7 @@ const chunkSchema = z.object({
   text: z.string(),
   tokenCount: z.number().int().nonnegative(),
   blockRefs: z.array(z.string()),
+  fields: z.array(z.string()).optional(),
 });
 
 const chunkDataSchema = z.object({
@@ -78,10 +83,63 @@ interface Chunk {
   text: string;
   tokenCount: number;
   blockRefs: string[];
+  fields?: string[];
 }
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+export function extractFieldsFromBlocks(
+  blocks: DocumentBlock[],
+  metadata: readonly { key: string; value: string }[] | undefined,
+): Map<string, string[]> {
+  const blockFields = new Map<string, string[]>();
+
+  for (const block of blocks) {
+    if (block.type === "table" && block.cells.length > 0) {
+      const headerCells = block.cells
+        .filter((c) => c.row === 0)
+        .sort((a, b) => a.col - b.col);
+      if (headerCells.length > 0) {
+        const fields = headerCells
+          .map((c) => c.content.trim())
+          .filter((s) => s.length > 0 && s.length <= 100);
+        if (fields.length > 0) {
+          blockFields.set(block.blockId, fields);
+        }
+      }
+    }
+  }
+
+  if (metadata && metadata.length > 0) {
+    const metaFields = metadata
+      .map((m) => m.key.trim())
+      .filter((k) => k.length > 0 && k.length <= 100);
+    if (metaFields.length > 0) {
+      blockFields.set("__metadata__", metaFields);
+    }
+  }
+
+  return blockFields;
+}
+
+export function attachFieldsToChunks(
+  chunks: Chunk[],
+  blockFields: Map<string, string[]>,
+): void {
+  for (const chunk of chunks) {
+    const fields = new Set<string>();
+    for (const ref of chunk.blockRefs) {
+      const bf = blockFields.get(ref);
+      if (bf) for (const f of bf) fields.add(f);
+    }
+    const metaFields = blockFields.get("__metadata__");
+    if (metaFields) for (const f of metaFields) fields.add(f);
+    if (fields.size > 0) {
+      chunk.fields = [...fields];
+    }
+  }
 }
 
 function blockText(block: DocumentBlock): string {
@@ -259,6 +317,16 @@ export function createDocumentChunkModule(
 
                       allChunks.push(...childChunks);
                       parentChunks = childChunks;
+                    }
+
+                    if (input.fieldAware) {
+                      const blockFields = extractFieldsFromBlocks(
+                        parsed.blocks as DocumentBlock[],
+                        parsed.metadata,
+                      );
+                      if (blockFields.size > 0) {
+                        attachFieldsToChunks(allChunks, blockFields);
+                      }
                     }
 
                     // Trim output if it exceeds maxOutputChars

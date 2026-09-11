@@ -80,6 +80,12 @@ const scanDetectionSchema = z.object({
   verdict: z.enum(["text", "scanned", "mixed"]),
 }).optional();
 
+const confidenceSchema = z.object({
+  score: z.number().min(0).max(1),
+  suggestedEffort: z.enum(["fast", "standard", "deep"]),
+  reason: z.string(),
+}).optional();
+
 const smartParseDataSchema = z.object({
   routedTo: z.string(),
   routeReason: z.string(),
@@ -88,6 +94,7 @@ const smartParseDataSchema = z.object({
   inputBytes: z.number().int().nonnegative(),
   mimeType: z.string(),
   scanDetection: scanDetectionSchema,
+  confidence: confidenceSchema,
   hint: z.string().optional(),
 });
 
@@ -140,6 +147,10 @@ export function createDocumentSmartParseModule(
                     const result = await executeRoute(route, bytes, baseMime, input.filename, input.projection, signal, options);
                     if (route.scanDetection !== undefined) result.scanDetection = route.scanDetection;
                     if (route.hint !== undefined) result.hint = route.hint;
+
+                    const confidence = computeConfidence(result, bytes.byteLength, route, options);
+                    if (confidence !== undefined) result.confidence = confidence;
+
                     return result;
                   },
                   deadline,
@@ -162,6 +173,7 @@ export function createDocumentSmartParseModule(
                 inputBytes: bytes.byteLength,
                 mimeType: baseMime,
                 ...(result.scanDetection !== undefined ? { scanDetection: result.scanDetection } : {}),
+                ...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
                 ...(result.hint !== undefined ? { hint: result.hint } : {}),
               },
             });
@@ -181,10 +193,17 @@ interface ScanDetection {
   verdict: "text" | "scanned" | "mixed";
 }
 
+interface Confidence {
+  score: number;
+  suggestedEffort: "fast" | "standard" | "deep";
+  reason: string;
+}
+
 interface RouteDecision {
   routedTo: RoutedTo;
   routeReason: string;
   scanDetection?: ScanDetection;
+  confidence?: Confidence;
   hint?: string;
 }
 
@@ -194,6 +213,7 @@ interface RouteResult {
   content: string;
   engine: string;
   scanDetection?: ScanDetection;
+  confidence?: Confidence;
   hint?: string;
 }
 
@@ -429,6 +449,53 @@ function projectParsed(
   });
   const projected = projectCanonicalDocument(envelope, projection);
   return typeof projected === "string" ? projected : JSON.stringify(projected);
+}
+
+function computeConfidence(
+  result: RouteResult,
+  inputBytes: number,
+  route: RouteDecision,
+  options: DocumentSmartParseModuleOptions,
+): Confidence | undefined {
+  const contentLen = result.content.trim().length;
+
+  if (route.scanDetection !== undefined) {
+    const { verdict, scannedPages, totalPages } = route.scanDetection;
+    if (verdict === "scanned") {
+      if (result.routedTo === "document_ocr") {
+        return { score: 0.7, suggestedEffort: "standard", reason: `All ${String(totalPages)} pages are scanned; OCR was used` };
+      }
+      return {
+        score: 0.1,
+        suggestedEffort: options.ocrProvider !== undefined ? "standard" : "deep",
+        reason: `All ${String(totalPages)} pages appear scanned but OCR ${options.ocrProvider !== undefined ? "was not used (try effort=standard)" : "is not configured"}`,
+      };
+    }
+    if (verdict === "mixed") {
+      const scannedRatio = scannedPages.length / Math.max(totalPages, 1);
+      const score = Math.round((1 - scannedRatio * 0.5) * 100) / 100;
+      return {
+        score,
+        suggestedEffort: scannedRatio > 0.3 ? "standard" : "fast",
+        reason: `${String(scannedPages.length)} of ${String(totalPages)} pages appear scanned`,
+      };
+    }
+  }
+
+  if (inputBytes > 1000 && contentLen < 20) {
+    return {
+      score: 0.2,
+      suggestedEffort: "standard",
+      reason: `Input is ${String(inputBytes)} bytes but extracted only ${String(contentLen)} characters`,
+    };
+  }
+
+  const ratio = contentLen / Math.max(inputBytes, 1);
+  if (ratio > 0.01) {
+    return { score: 0.95, suggestedEffort: "fast", reason: "Good text extraction ratio" };
+  }
+
+  return undefined;
 }
 
 function guessMime(filename: string): string {
