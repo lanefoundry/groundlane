@@ -353,6 +353,23 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 | [You.com](https://you.com/docs/administration/billing) | Search、Answer、Research、Content | Search 與 Answer 都是 `$5/1k` calls；Contents `$1/1k` pages；Research 從 `$12/1k` 起，依 effort tier 上升 | Keyless Search 每日 100 queries；有 key 的新帳號另有一次性 `$100` starter credit、免卡。兩者是不同額度；auto top-up 為 opt-in，且目前沒有 monthly spending cap |
 | [TinyFish](https://www.tinyfish.ai/pricing) | Search、Content/Fetch | Search、Fetch 都是 `$0`；廠商 Agent `$0.016/step`、Browser `$0.002/minute`，但 Groundlane 未暴露這兩個付費 surface | Wallet 為 `$0` 時 Search 仍有 30 requests/minute、Fetch 150 URLs/minute 的免費額度；仍需 API key。新帳號 `$8` Wallet 是一次性，只供付費 surface 使用 |
 
+### 文件、瀏覽器與研究 provider 憑證
+
+以下工具使用的外部服務與 search provider router 分開。每個都是 optional，未設定時 fail-closed。Env var 名稱連結到申請頁面。
+
+| Provider | Groundlane 工具 | Env var | 免費額度 | 需信用卡？ |
+| --- | --- | --- | --- | --- |
+| [OCR.space](https://ocr.space/OCRAPI) | `document_ocr` | `OCR_SPACE_API_KEY` | 25,000 次/月（永久） | 否 |
+| [Cloudflare Workers AI](https://dash.cloudflare.com/) | `document_transcribe` | `CF_BROWSER_ACCOUNT_ID` + `CF_BROWSER_API_TOKEN` | 10,000 Neurons/天（永久） | 否 |
+| [CloudConvert](https://cloudconvert.com/api/v2) | `document_convert`（modern-office 輸出） | `CLOUDCONVERT_API_KEY` | 25 次/天（永久） | 否 |
+| [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) | `paper_search` / `paper_lookup` | `SEMANTIC_SCHOLAR_API_KEY` | 有 key 100 req/s；無 key ~1 req/min | 否 |
+| [Hyperbrowser](https://app.hyperbrowser.ai/) | `web_fetch`（browser render） | `HYPERBROWSER_API_KEY` | 1,000 credits（一次性） | 否 |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | 開源自架 | 不適用 |
+| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | 開源自架，無限量 | 不適用 |
+| anydoc（內建） | `document_convert`（markdown 輸出） | — | 內建 WASM，零成本 | 不適用 |
+
+`document_parse`、`document_table_extract`、`document_archive_extract`、`document_email_extract`、`document_chunk`、`document_toc`、`document_compare` 與 `document_smart_parse` 完全內建，不需要外部憑證。
+
 Provider-backed routing 可套用保守的 per-instance 每月與每日嘗試次數 budget。這只是應用層護欄，不是 provider 帳務真相；provider dashboard 與 spend limit 仍是權威。`provider_quota` 會整合帳戶餘額、Groundlane 本機 provider-dispatch budget 與 capabilities；`provider_balance` 只會回報已實作官方 balance API 的 provider，目前是 Linkup、You.com、Firecrawl 與 SerpApi。Exa、Browserbase 與 Cloudflare 比較適合做 usage/cost diagnostics。Credentials、routing、limits 與 budget 語意請看[設定文件](docs/configuration.md)，目前 production provider 狀態、功能矩陣與 balance API 查證請看 [Provider inventory](docs/operations/provider-inventory.md)。
 
 ### Provider selection

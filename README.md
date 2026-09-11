@@ -385,6 +385,23 @@ Verified against public official pricing and billing pages on **2026-08-30**. Pr
 | [You.com](https://you.com/docs/administration/billing) | Search, Answer, Research, Content | Search and Answer are `$5/1k` calls; Contents `$1/1k` pages; Research starts at `$12/1k` and rises by effort tier | Keyless Search: 100 queries/day. Keyed new account: `$100` one-time starter credit, no card. These are separate pools; auto top-up is opt-in and currently has no monthly spending cap |
 | [TinyFish](https://www.tinyfish.ai/pricing) | Search, Content/Fetch | Search and Fetch are `$0`; vendor Agent is `$0.016/step` and Browser `$0.002/minute`, but Groundlane does not expose those paid surfaces | Search 30 requests/minute and Fetch 150 URLs/minute remain free at `$0` Wallet balance; API key still required. New-account `$8` Wallet is one-time and applies to paid surfaces |
 
+### Document, browser, and research provider credentials
+
+The tools below use external services that are separate from the search provider router. Each is optional and fail-closed when not configured. Env var names link to signup pages.
+
+| Provider | Groundlane tool | Env var | Free allowance | Card required? |
+| --- | --- | --- | --- | --- |
+| [OCR.space](https://ocr.space/OCRAPI) | `document_ocr` | `OCR_SPACE_API_KEY` | 25,000 requests/month (permanent) | No |
+| [Cloudflare Workers AI](https://dash.cloudflare.com/) | `document_transcribe` | `CF_BROWSER_ACCOUNT_ID` + `CF_BROWSER_API_TOKEN` | 10,000 Neurons/day (permanent) | No |
+| [CloudConvert](https://cloudconvert.com/api/v2) | `document_convert` (modern-office output only) | `CLOUDCONVERT_API_KEY` | 25 conversions/day (permanent) | No |
+| [Semantic Scholar](https://www.semanticscholar.org/product/api#api-key-form) | `paper_search` / `paper_lookup` | `SEMANTIC_SCHOLAR_API_KEY` | 100 req/s with key; ~1 req/min without | No |
+| [Hyperbrowser](https://app.hyperbrowser.ai/) | `web_fetch` (browser render) | `HYPERBROWSER_API_KEY` | 1,000 credits once (not renewable) | No |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | `web_content` | `CRAWL4AI_BASE_URL` | Open source, self-hosted | N/A |
+| [SearXNG](https://docs.searxng.org/) | `web_search` | `SEARXNG_BASE_URL` | Open source, self-hosted, unlimited | N/A |
+| anydoc (built-in) | `document_convert` (markdown output) | — | Built-in WASM, zero cost | N/A |
+
+`document_parse`, `document_table_extract`, `document_archive_extract`, `document_email_extract`, `document_chunk`, `document_toc`, `document_compare`, and `document_smart_parse` are fully built-in and require no external credentials.
+
 Provider-backed routing can apply conservative per-instance monthly and daily attempt budgets. These are safeguards, not provider billing truth; provider dashboards and spend limits remain authoritative. `provider_balance` reports account balances only for providers with implemented official balance APIs, currently Linkup, You.com, Firecrawl, and SerpApi. Exa, Browserbase, and Cloudflare are better modeled as usage/cost diagnostics. See [Configuration](docs/configuration.md) for credentials, routing, limits, and budget semantics, and [Provider inventory](docs/operations/provider-inventory.md) for the current production provider status, capability matrix, and balance API verification.
 
 ### Provider selection
