@@ -306,6 +306,7 @@ void test("PRD 615: composition createSearchProviders still produces correct pro
     TINYFISH_API_KEY: "tinyfish",
     SERPER_API_KEY: "serper",
     YOU_API_KEY: "you",
+    SEARXNG_BASE_URL: "http://localhost:8888",
   });
   const providers = createSearchProviders(config);
   assert.deepEqual(
@@ -560,7 +561,10 @@ void test("all built-in providers have envKeyName", () => {
   for (const id of SEARCH_PROVIDER_IDS) {
     const reg = registry.get(id);
     assert.ok(reg?.envKeyName, `${id} should have envKeyName`);
-    assert.ok(reg.envKeyName.endsWith("_API_KEY"), `${id} envKeyName should end with _API_KEY`);
+    assert.ok(
+      reg.envKeyName.endsWith("_API_KEY") || reg.envKeyName.endsWith("_BASE_URL"),
+      `${id} envKeyName should end with _API_KEY or _BASE_URL`,
+    );
   }
 });
 

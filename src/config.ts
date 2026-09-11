@@ -55,6 +55,7 @@ const environmentSchema = z.object({
   TINYFISH_API_KEY: optionalSecret,
   SERPER_API_KEY: optionalSecret,
   YOU_API_KEY: optionalSecret,
+  SEARXNG_BASE_URL: optionalSecret,
   READER_BACKEND: z.enum(["disabled", "jina"]).default("disabled"),
   BROWSER_BACKEND: z.enum(["disabled", "local", "browserless", "cf-rendering"]).default("disabled"),
   CF_BROWSER_ACCOUNT_ID: optionalSecret,
@@ -210,6 +211,7 @@ export function parseConfig(
   if (parsed.TINYFISH_API_KEY !== undefined) providerKeys.tinyfish = parsed.TINYFISH_API_KEY;
   if (parsed.SERPER_API_KEY !== undefined) providerKeys.serper = parsed.SERPER_API_KEY;
   if (parsed.YOU_API_KEY !== undefined) providerKeys.you = parsed.YOU_API_KEY;
+  if (parsed.SEARXNG_BASE_URL !== undefined) providerKeys.searxng = parsed.SEARXNG_BASE_URL;
   if (parsed.BROWSER_BACKEND === "browserless" && parsed.BROWSERLESS_TOKEN === undefined) {
     throw new Error("BROWSERLESS_TOKEN is required when BROWSER_BACKEND=browserless");
   }

@@ -61,6 +61,8 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `web_extract_schema` | 用 provider model 對單一 URL 依 caller-provided bounded schema 抽取結構化欄位 | 明確 opt-in 的 provider-backed extraction；拒絕 remote `$ref` 與 unbounded nesting |
 | `parse` | 將 URL 或 raw HTML 解析成可重用結構 | 本地 document、metadata、link、media 與 table parser；URL input 會先走 bounded fetch pipeline |
 | `document_archive_extract` | 解壓 ZIP 並逐檔解析 | Deterministic，不需 LLM 或外部 API；每個支援的檔案走 `document_parse` 同一引擎 |
+| `document_chunk` | 將解析後的 blocks 切成多層階層式 chunk 供 RAG 使用 | Deterministic，不需 LLM；可設定 token 層級（預設 2048→512→128）；每個 chunk 帶 parent-child 關係與 block 來源 |
+| `document_toc` | 從文件中抽取結構化目錄樹 | Deterministic 標題偵測：Markdown `#`、HTML `<h1>`–`<h6>`、全大寫、Title Case 啟發式 |
 | `document_email_extract` | 解析 EML 並遞迴抽取附件 | Deterministic；回傳 headers、body、每個附件走 `document_parse` 同一引擎解析 |
 | `document_ocr` | 用 OCR 從掃描 PDF 與圖片中抽取文字 | OCR.space API（免費 25,000 次/月）；支援 PDF、PNG、JPEG、GIF、TIFF、BMP、WebP；未設定 `OCR_SPACE_API_KEY` 時 fail-closed |
 | `document_transcribe` | 將音訊轉錄為帶字級時間戳的文字 | Cloudflare Workers AI Whisper（免費 10,000 Neurons/天）；支援 MP3、WAV、WebM、OGG、FLAC、M4A；共用 `CF_BROWSER_ACCOUNT_ID` 與 `CF_BROWSER_API_TOKEN` |
@@ -316,7 +318,7 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 | Groundlane 能力 | 已實作 adapters |
 | --- | --- |
-| Search | Linkup、Keenable、TinyFish、Parallel、Browserbase、Brave、SerpApi、SearchAPI.io、Tavily、Exa、Firecrawl、Serper、You.com |
+| Search | Linkup、Keenable、TinyFish、Parallel、Browserbase、Brave、SerpApi、SearchAPI.io、Tavily、Exa、Firecrawl、Serper、You.com、SearXNG（自架） |
 | Grounded answer | Linkup、You.com |
 | Research report | Linkup、You.com、Parallel |
 | URL content API | Linkup、You.com、Exa、Tavily、Firecrawl、TinyFish、Keenable |

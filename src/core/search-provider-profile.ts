@@ -22,6 +22,7 @@ const PROVIDER_FAMILIES: Readonly<Partial<Record<SearchProviderId, SearchProvide
   keenable: "independent-index",
   serper: "serp",
   you: "general-web",
+  searxng: "general-web",
 };
 
 export function searchProviderFamily(provider: SearchProviderId): SearchProviderFamily {
@@ -41,6 +42,7 @@ const PROVIDER_WEIGHTS: Readonly<Partial<Record<SearchProviderId, number>>> = {
   searchapi: 0.7,
   serper: 0.7,
   you: 0.7,
+  searxng: 0.8,
 };
 
 export function searchProviderWeight(provider: SearchProviderId): number {

@@ -27,6 +27,7 @@ void test("catalog, public schema, config, and composition expose the same provi
     TINYFISH_API_KEY: "tinyfish",
     SERPER_API_KEY: "serper",
     YOU_API_KEY: "you",
+    SEARXNG_BASE_URL: "http://localhost:8888",
   });
 
   assert.deepEqual(config.searchProviderOrder, SEARCH_PROVIDER_IDS);

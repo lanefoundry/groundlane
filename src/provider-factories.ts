@@ -32,6 +32,7 @@ import { SerpApiSearchProvider } from "./adapters/search/serpapi.js";
 import { SearchApiSearchProvider } from "./adapters/search/searchapi.js";
 import { TavilySearchProvider } from "./adapters/search/tavily.js";
 import { TinyFishSearchProvider } from "./adapters/search/tinyfish.js";
+import { SearXNGSearchProvider } from "./adapters/search/searxng.js";
 import { YouSearchProvider } from "./adapters/search/you.js";
 import type { GroundlaneConfig } from "./config.js";
 import type {
@@ -100,6 +101,7 @@ const SEARCH_ADAPTERS: readonly AdapterEntry<SearchProvider>[] = [
   { providerId: "keenable", create: (key) => new KeenableSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
   { providerId: "serper", create: (key) => new SerperSearchProvider({ apiKey: key! }), requiresKey: true },
   { providerId: "you", create: (key) => new YouSearchProvider(key !== undefined ? { apiKey: key } : {}), requiresKey: false },
+  { providerId: "searxng", create: (key) => new SearXNGSearchProvider({ baseUrl: key! }), requiresKey: true },
 ];
 
 const ANSWER_ADAPTERS: readonly AdapterEntry<AnswerProvider>[] = [

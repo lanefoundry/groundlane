@@ -334,6 +334,25 @@ export function createBuiltInRegistry(): ProviderRegistry {
     notes: ["Search and Fetch are free at any wallet balance but require a configured API key.", "Groundlane does not expose TinyFish Agent or Browser paid surfaces."],
   }));
 
+  registry.register({
+    id: "searxng",
+    protocol: "built-in",
+    enabled: true,
+    backend: "http-compatible",
+    ownership: "operator-hosted",
+    capabilities: { search: true },
+    family: "general-web",
+    weight: 0.8,
+    filterSpec: { mode: "none", timeRange: true },
+    defaultMonthlyBudget: 10000,
+    envKeyName: "SEARXNG_BASE_URL",
+    vendorFeatures: ["Meta-search", "JSON API", "Self-hosted"],
+    groundlaneTools: ["web_search", ...diagnosticsTools],
+    filterSupport: "time range only; no domain filters",
+    balanceSupport: "not_implemented",
+    notes: ["Operator-hosted SearXNG instance. No API key required, no rate limits beyond what the operator configures.", "Set SEARXNG_BASE_URL to the instance origin (e.g. http://localhost:8888)."],
+  });
+
   return registry;
 }
 

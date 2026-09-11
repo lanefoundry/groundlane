@@ -103,9 +103,11 @@ import { createWebNewsModule } from "./tools/web-news.js";
 import { createWebResearchModule } from "./tools/web-research.js";
 import { createWebSearchModule } from "./tools/web-search.js";
 import { createDocumentArchiveExtractModule } from "./tools/document-archive-extract.js";
+import { createDocumentChunkModule } from "./tools/document-chunk.js";
 import { createDocumentConvertModule } from "./tools/document-convert.js";
 import { createDocumentEmailExtractModule } from "./tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "./tools/document-table-extract.js";
+import { createDocumentTocModule } from "./tools/document-toc.js";
 import { createDocumentOcrModule } from "./tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "./tools/document-transcribe.js";
 import { createErrorLogModule } from "./tools/error-log.js";
@@ -466,6 +468,16 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       maxOutputChars: config.maxOutputChars,
     }),
     createDocumentTableExtractModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentTocModule({
+      limiter,
+      requestTimeoutMs: config.requestTimeoutMs,
+      maxOutputChars: config.maxOutputChars,
+    }),
+    createDocumentChunkModule({
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
       maxOutputChars: config.maxOutputChars,

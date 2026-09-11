@@ -61,6 +61,8 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `web_extract_schema` | Extracts structured fields from a URL against a caller-provided bounded schema using a provider model | Explicit opt-in provider-backed extraction; remote `$ref` and unbounded nesting are rejected |
 | `parse` | Parses a URL or raw HTML into reusable structures | Local document, metadata, link, media, and table parsers; URL inputs use the bounded fetch pipeline |
 | `document_archive_extract` | Extracts and parses files from a ZIP archive | Deterministic, no LLM or external API; each supported file inside parsed through the same engine as `document_parse` |
+| `document_chunk` | Splits parsed document blocks into hierarchical multi-level chunks for RAG | Deterministic, no LLM; configurable token levels (default 2048→512→128); each chunk has parent-child references and block provenance |
+| `document_toc` | Extracts a structured table-of-contents tree from a document | Deterministic heading detection via Markdown `#`, HTML `<h1>`–`<h6>`, ALL-CAPS, and Title Case heuristics |
 | `document_email_extract` | Parses EML with recursive attachment extraction | Deterministic; returns headers, body text, and each attachment parsed through the same engine as `document_parse` |
 | `document_ocr` | Extracts text from scanned PDFs and images using OCR | OCR.space API (free 25k requests/month); supports PDF, PNG, JPEG, GIF, TIFF, BMP, WebP; fail-closed when `OCR_SPACE_API_KEY` is not configured |
 | `document_transcribe` | Transcribes audio to text with word-level timestamps | Cloudflare Workers AI Whisper (free 10k Neurons/day); supports MP3, WAV, WebM, OGG, FLAC, M4A; reuses `CF_BROWSER_ACCOUNT_ID` and `CF_BROWSER_API_TOKEN` |
@@ -333,7 +335,7 @@ Groundlane supports two Cloudflare deployment modes:
 | Data layer | D1 + R2 | node:sqlite (in-container) |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` with DNS filtering |
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
-| MCP tools | All 50 tools | All 50 tools |
+| MCP tools | All 52 tools | All 52 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
 
 Deploy lite mode:
@@ -348,7 +350,7 @@ wrangler deploy -c wrangler.lite.jsonc
 
 | Groundlane capability | Implemented adapters |
 | --- | --- |
-| Search | Linkup, Keenable, TinyFish, Parallel, Browserbase, Brave, SerpApi, SearchAPI.io, Tavily, Exa, Firecrawl, Serper, You.com |
+| Search | Linkup, Keenable, TinyFish, Parallel, Browserbase, Brave, SerpApi, SearchAPI.io, Tavily, Exa, Firecrawl, Serper, You.com, SearXNG (self-hosted) |
 | Grounded answer | Linkup, You.com |
 | Research report | Linkup, You.com, Parallel |
 | URL content API | Linkup, You.com, Exa, Tavily, Firecrawl, TinyFish, Keenable |

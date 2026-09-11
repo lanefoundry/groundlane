@@ -44,9 +44,11 @@ import { MCP_SERVER_INSTRUCTIONS } from "../../src/mcp/server.js";
 import { createCorpusToolsModule } from "../../src/tools/corpus-tools.js";
 import { createCrawlJobsModule } from "../../src/tools/crawl-jobs.js";
 import { createDocumentArchiveExtractModule } from "../../src/tools/document-archive-extract.js";
+import { createDocumentChunkModule } from "../../src/tools/document-chunk.js";
 import { createDocumentConvertModule } from "../../src/tools/document-convert.js";
 import { createDocumentEmailExtractModule } from "../../src/tools/document-email-extract.js";
 import { createDocumentTableExtractModule } from "../../src/tools/document-table-extract.js";
+import { createDocumentTocModule } from "../../src/tools/document-toc.js";
 import { createDocumentOcrModule } from "../../src/tools/document-ocr.js";
 import { createDocumentTranscribeModule } from "../../src/tools/document-transcribe.js";
 import { createDocumentPolicyModule } from "../../src/tools/document-policy.js";
@@ -412,6 +414,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
     }),
+    createDocumentChunkModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
     createDocumentConvertModule({
       limiter,
       requestTimeoutMs: 5_000,
@@ -428,6 +435,11 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       maxOutputChars: 10_000,
     }),
     createDocumentTableExtractModule({
+      limiter,
+      requestTimeoutMs: 5_000,
+      maxOutputChars: 10_000,
+    }),
+    createDocumentTocModule({
       limiter,
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
@@ -492,12 +504,14 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
         "crawl_status",
         "document_archive_extract",
         "document_artifact_delete",
+        "document_chunk",
         "document_convert",
         "document_email_extract",
         "document_ocr",
         "document_parse",
         "document_policy",
         "document_table_extract",
+        "document_toc",
         "document_transcribe",
         "document_upload_complete",
         "document_upload_create",

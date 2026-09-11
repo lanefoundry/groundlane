@@ -108,6 +108,14 @@ const CAPABILITIES: Readonly<Record<string, ProviderCapability>> = {
     balanceSupport: "api",
     notes: ["web_content uses Firecrawl /scrape. Latest search production smoke was rejected by upstream.", "Balance uses Firecrawl /v2/team/credit-usage and reports remaining credits."],
   },
+  searxng: {
+    provider: "searxng",
+    vendorFeatures: ["Meta-search", "JSON API", "Self-hosted"],
+    groundlaneTools: ["web_search", ...diagnosticsTools],
+    filterSupport: "time range only; no domain filters",
+    balanceSupport: "not_implemented",
+    notes: ["Operator-hosted SearXNG instance. No API key required, no rate limits beyond what the operator configures.", "Set SEARXNG_BASE_URL to the instance origin (e.g. http://localhost:8888)."],
+  },
   serper: {
     provider: "serper",
     vendorFeatures: ["Google Search", "Images", "News", "Maps", "Places", "Videos", "Shopping"],
