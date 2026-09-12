@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "groundlane-arena",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "arena-db",
+      "database_id": "TODO_CREATE_D1_DATABASE"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FIXTURES",
+      "bucket_name": "arena-fixtures"
+    }
+  ]
+}

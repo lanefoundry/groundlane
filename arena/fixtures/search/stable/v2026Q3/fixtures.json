@@ -1,0 +1,242 @@
+[
+  {
+    "id": "s01",
+    "query": "Cloudflare Workers WASM size limit 2026",
+    "stratum": "factual",
+    "groundTruth": {
+      "answer": "64 MiB for Worker bundle size",
+      "sourceUrls": ["https://developers.cloudflare.com/workers/platform/limits/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s02",
+    "query": "PostgreSQL 17 new features",
+    "stratum": "factual",
+    "groundTruth": {
+      "answer": "Incremental backup, SQL/JSON improvements, MERGE enhancements, logical replication improvements",
+      "sourceUrls": ["https://www.postgresql.org/about/news/postgresql-17-released-2936/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s03",
+    "query": "What is the context window of Claude Opus 4.6",
+    "stratum": "factual",
+    "groundTruth": {
+      "answer": "200K tokens standard, 1M tokens extended",
+      "sourceUrls": ["https://docs.anthropic.com/en/docs/about-claude/models"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s04",
+    "query": "maximum D1 database size Cloudflare",
+    "stratum": "factual",
+    "groundTruth": {
+      "answer": "10 GB per database on paid plans, 500 MB on free",
+      "sourceUrls": ["https://developers.cloudflare.com/d1/platform/limits/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s05",
+    "query": "TanStack Start Cloudflare Workers deployment",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "Use @cloudflare/vite-plugin with TanStack Start, deploy via wrangler",
+      "sourceUrls": ["https://tanstack.com/start/latest/docs/framework/react/hosting/cloudflare"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s06",
+    "query": "how to use D1 with Drizzle ORM",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "Use drizzle-orm with D1 adapter, define schema in TypeScript, use drizzle-kit for migrations",
+      "sourceUrls": ["https://orm.drizzle.team/docs/get-started/d1-new"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s07",
+    "query": "Vite 8 breaking changes migration guide",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "Environment API stable, new plugin hooks, Node 20+ required",
+      "sourceUrls": ["https://vite.dev/guide/migration"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s08",
+    "query": "Tailwind CSS v4 @theme directive syntax",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "@theme defines design tokens as CSS custom properties, replaces tailwind.config.js",
+      "sourceUrls": ["https://tailwindcss.com/docs/v4-beta"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s09",
+    "query": "React 19 use() hook for promises",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "use() reads resources like Promises and Context during render, works with Suspense",
+      "sourceUrls": ["https://react.dev/reference/react/use"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s10",
+    "query": "Bradley-Terry model vs Elo rating system differences",
+    "stratum": "technical_docs",
+    "groundTruth": {
+      "answer": "Bradley-Terry is maximum likelihood estimation of the same pairwise model; Elo is an online approximation that is order-dependent",
+      "sourceUrls": ["https://en.wikipedia.org/wiki/Bradley%E2%80%93Terry_model"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s11",
+    "query": "what happened at Apple WWDC 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Apple Intelligence expansion, visionOS 3, iOS 20 announced",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s12",
+    "query": "latest Node.js LTS version September 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Node.js 22 is current LTS (Jod)",
+      "sourceUrls": ["https://nodejs.org/en/about/previous-releases"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s13",
+    "query": "how does Retrieval Augmented Generation work step by step",
+    "stratum": "multi_hop",
+    "groundTruth": {
+      "answer": "1. User query 2. Embed query 3. Search vector store 4. Retrieve relevant chunks 5. Augment prompt with context 6. LLM generates answer with citations",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s14",
+    "query": "compare Cloudflare Workers vs AWS Lambda for AI inference",
+    "stratum": "multi_hop",
+    "groundTruth": {
+      "answer": "Workers: edge-first, 30s CPU limit, Workers AI for inference. Lambda: up to 15min, GPU via Bedrock/SageMaker, cold starts. Workers cheaper for short tasks, Lambda for heavy compute.",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s15",
+    "query": "why did LMSYS switch from Elo to Bradley-Terry for Chatbot Arena",
+    "stratum": "multi_hop",
+    "groundTruth": {
+      "answer": "Elo is order-dependent (different match orderings produce different ratings); BT-MLE gives the same result regardless of order and naturally produces confidence intervals via bootstrap",
+      "sourceUrls": ["https://www.lmsys.org/blog/2023-12-07-leaderboard/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s16",
+    "query": "trace the journey of a DNS query from browser to authoritative server",
+    "stratum": "multi_hop",
+    "groundTruth": {
+      "answer": "Browser cache → OS resolver cache → Recursive resolver → Root server → TLD server → Authoritative server → Response cached at each layer",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s17",
+    "query": "is it better to use SSR or SSG for a leaderboard page",
+    "stratum": "ambiguous",
+    "groundTruth": {
+      "answer": "SSR for frequently updated leaderboards (shows latest data), SSG with revalidation for less dynamic ones. ISR is a middle ground.",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s18",
+    "query": "should I use Tailwind CSS or CSS Modules for a component library",
+    "stratum": "ambiguous",
+    "groundTruth": {
+      "answer": "Tailwind for rapid development and utility-first consistency; CSS Modules for encapsulation and framework-agnostic distribution. Both are valid.",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s19",
+    "query": "what is the best search API for AI agents in 2026",
+    "stratum": "ambiguous",
+    "groundTruth": {
+      "answer": "No single best — depends on use case. Tavily for agent-optimized search, Exa for neural/semantic, Brave for privacy and free tier, SerpApi for SERP accuracy.",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "s20",
+    "query": "monorepo vs polyrepo for a startup with 5 engineers",
+    "stratum": "ambiguous",
+    "groundTruth": {
+      "answer": "Monorepo for shared tooling, atomic changes, easier refactoring. Polyrepo for independent deployment, clearer ownership. At 5 engineers, monorepo usually wins on velocity.",
+      "sourceUrls": []
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  }
+]
