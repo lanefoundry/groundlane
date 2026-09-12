@@ -32,6 +32,7 @@ import { SearchRouter } from "./core/search-router.js";
 import { CompositeSearchBudget, DailySearchBudget, MinuteRateLimiter, MonthlySearchBudget } from "./core/search-budget.js";
 import { SourceAwareDocsResolver } from "./core/source-aware-docs.js";
 import { InMemoryAuditLog } from "./core/audit-log.js";
+import { RateAnomalyDetector } from "./core/rate-anomaly.js";
 import { createMcpRegistry } from "./mcp/registry.js";
 import { createAuditLogModule } from "./tools/audit-log.js";
 import { CrawlJobManager } from "./core/crawl-jobs.js";
@@ -128,6 +129,11 @@ export {
 
 export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneServices {
   const auditLog = new InMemoryAuditLog();
+  const anomalyDetector = new RateAnomalyDetector({
+    windowMs: config.rateAnomalyWindowMs,
+    maxCallsPerWindow: config.rateAnomalyMaxCalls,
+    maxCallsPerToolPerWindow: config.rateAnomalyMaxCallsPerTool,
+  });
   const artifactRetention = createArtifactRetentionPolicy({
     uploadMaxTtlSeconds: config.documentUploadMaxTtlSeconds,
     artifactMaxTtlSeconds: config.documentArtifactMaxTtlSeconds,
@@ -327,16 +333,9 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
     ? undefined
     : new CloudConvertProvider({ apiKey: config.cloudConvertApiKey });
   const modules = [
-    createProviderCapabilitiesModule(),
     createToolPolicyModule(),
     createProviderBalanceModule({
       registry: providerBalanceRegistry,
-      limiter,
-      requestTimeoutMs: config.requestTimeoutMs,
-    }),
-    createProviderQuotaModule({
-      balanceRegistry: providerBalanceRegistry,
-      budget: searchBudget,
       limiter,
       requestTimeoutMs: config.requestTimeoutMs,
     }),
@@ -535,8 +534,20 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
       const requestCorpus = corpusForContext(context);
       const requestDocumentCache = documentCacheForContext(context);
       const requestDocumentOutput = documentOutputForContext(context);
+      const credentialScope = config.credentialProviderScopes?.[context.credentialBinding];
+      const providerScopeOpts = credentialScope
+        ? { allowedProviders: [...credentialScope] }
+        : {};
       return createMcpRegistry([
         ...modules,
+        createProviderCapabilitiesModule(providerScopeOpts),
+        createProviderQuotaModule({
+          balanceRegistry: providerBalanceRegistry,
+          budget: searchBudget,
+          limiter,
+          requestTimeoutMs: config.requestTimeoutMs,
+          ...providerScopeOpts,
+        }),
         createAuditLogModule({ auditLog }),
         createDocumentPolicyModule({
           limiter,
@@ -627,7 +638,11 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
             credentialBinding: context.credentialBinding,
           },
         }),
-      ], auditLog);
+      ], {
+        auditLog,
+        anomalyDetector,
+        credentialBinding: context.credentialBinding,
+      });
     },
     async close(): Promise<void> {
       if (documentOutputSweep !== undefined) clearInterval(documentOutputSweep);

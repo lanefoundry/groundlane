@@ -24,7 +24,15 @@ const providerCapabilitiesDataSchema = z.object({
   providers: z.array(providerCapabilitySchema),
 });
 
-export function createProviderCapabilitiesModule(): McpModule {
+export interface ProviderCapabilitiesModuleOptions {
+  allowedProviders?: readonly string[];
+}
+
+export function createProviderCapabilitiesModule(options?: ProviderCapabilitiesModuleOptions): McpModule {
+  const allowed = options?.allowedProviders
+    ? new Set(options.allowedProviders)
+    : undefined;
+
   return {
     name: "provider_capabilities",
     register(server: McpServer): void {
@@ -39,7 +47,10 @@ export function createProviderCapabilitiesModule(): McpModule {
         },
         (input) => {
           try {
-            const providers = input.provider === "all" ? SEARCH_PROVIDER_IDS : [input.provider];
+            let providers = input.provider === "all" ? SEARCH_PROVIDER_IDS : [input.provider];
+            if (allowed !== undefined) {
+              providers = providers.filter((p) => allowed.has(p));
+            }
             return structuredToolResult({
               ok: true,
               data: { providers: providerCapabilities(providers) },

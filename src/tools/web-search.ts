@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { SearchResult } from "../core/contracts.js";
 import { GroundlaneError } from "../core/errors.js";
+import { rewriteQuery } from "../core/query-rewrite.js";
 import { SEARCH_PROVIDER_IDS } from "../core/search-provider-catalog.js";
 import type { SearchRouter } from "../core/search-router.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
@@ -20,6 +21,7 @@ export const webSearchInputSchema = z.object({
   provider: z.enum(["auto", ...SEARCH_PROVIDER_IDS]).default("auto"),
   providers: z.array(z.enum(SEARCH_PROVIDER_IDS)).min(1).max(SEARCH_PROVIDER_IDS.length).optional(),
   strategy: z.enum(["fallback", "balanced", "deep"]).default("balanced"),
+  rewrite: z.boolean().default(false).describe("When true, analyze the query and suggest a rewritten version with proper-noun quoting, filler removal, and site: prefixes. The rewrite is advisory — the original query is still used for the search."),
   timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
 }).superRefine((value, context) => {
   if (value.provider !== "auto" && value.providers !== undefined) {
@@ -62,6 +64,11 @@ const searchDataSchema = z.object({
     ownership: z.enum(["built-in", "operator-hosted"]),
     protocolVersion: z.string(),
   })).optional(),
+  queryRewrite: z.object({
+    rewritten: z.string(),
+    strategies: z.array(z.string()),
+    applied: z.boolean(),
+  }).optional(),
 });
 
 export interface WebSearchModuleOptions {
@@ -121,6 +128,12 @@ export function createWebSearchModule(options: WebSearchModuleOptions): McpModul
                 ),
             );
             assertSearchOutputWithinLimit(result, options.maxOutputChars);
+            if (input.rewrite) {
+              const rw = rewriteQuery(input.query);
+              if (rw.applied) {
+                return structuredToolResult({ ok: true, data: { ...result, queryRewrite: rw } });
+              }
+            }
             return structuredToolResult({ ok: true, data: result });
           } catch (error) {
             return toolError(error, { tool: "search" });

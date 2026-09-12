@@ -84,6 +84,13 @@ const environmentSchema = z.object({
   CLOUDCONVERT_API_KEY: optionalSecret,
   SEMANTIC_SCHOLAR_API_KEY: optionalSecret,
   MINERU_API_KEY: optionalSecret,
+  CREDENTIAL_PROVIDER_SCOPES: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().optional(),
+  ),
+  RATE_ANOMALY_WINDOW_MS: positiveInt(1_000, 600_000).default(60_000),
+  RATE_ANOMALY_MAX_CALLS: positiveInt(1, 10_000).default(100),
+  RATE_ANOMALY_MAX_CALLS_PER_TOOL: positiveInt(1, 10_000).default(30),
   DOCUMENT_CACHE_EDGE_ENABLED: booleanFlag,
   DOCUMENT_OUTPUT_EDGE_ENABLED: booleanFlag,
   GROUNDLANE_INTERNAL_SIGNING_SECRET: optionalSecret,
@@ -138,11 +145,15 @@ export interface GroundlaneConfig {
   documentArtifactMaxTtlSeconds: number;
   documentCacheDefaultTtlSeconds: number;
   documentCacheMaxTtlSeconds: number;
+  credentialProviderScopes?: Readonly<Record<string, readonly SearchProviderId[]>>;
   ocrSpaceApiKey?: string;
   cloudConvertApiKey?: string;
   semanticScholarApiKey?: string;
   mineruApiKey?: string;
   crawl4aiBaseUrl?: string;
+  rateAnomalyWindowMs: number;
+  rateAnomalyMaxCalls: number;
+  rateAnomalyMaxCallsPerTool: number;
 }
 
 const providerIds = new Set<SearchProviderId>(SEARCH_PROVIDER_IDS);
@@ -183,6 +194,27 @@ export function parseSearchDailyRequestBudgets(
   value: string,
 ): Partial<Record<SearchProviderId, number>> {
   return parseBudgetString(value, "SEARCH_DAILY_REQUEST_BUDGETS");
+}
+
+function parseCredentialProviderScopes(
+  value: string | undefined,
+): Record<string, readonly KnownSearchProviderId[]> | undefined {
+  if (value === undefined) return undefined;
+  let raw: unknown;
+  try { raw = JSON.parse(value); } catch {
+    throw new Error("CREDENTIAL_PROVIDER_SCOPES must be valid JSON");
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("CREDENTIAL_PROVIDER_SCOPES must be a JSON object");
+  }
+  const scopes: Record<string, readonly KnownSearchProviderId[]> = {};
+  for (const [key, ids] of Object.entries(raw)) {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !providerIds.has(id as KnownSearchProviderId))) {
+      throw new Error(`CREDENTIAL_PROVIDER_SCOPES["${key}"] must be an array of valid provider IDs`);
+    }
+    scopes[key] = ids as KnownSearchProviderId[];
+  }
+  return Object.keys(scopes).length === 0 ? undefined : scopes;
 }
 
 export function parseConfig(
@@ -320,5 +352,12 @@ export function parseConfig(
     ...(parsed.CRAWL4AI_BASE_URL === undefined
       ? {}
       : { crawl4aiBaseUrl: parsed.CRAWL4AI_BASE_URL }),
+    ...(() => {
+      const scopes = parseCredentialProviderScopes(parsed.CREDENTIAL_PROVIDER_SCOPES);
+      return scopes === undefined ? {} : { credentialProviderScopes: scopes };
+    })(),
+    rateAnomalyWindowMs: parsed.RATE_ANOMALY_WINDOW_MS,
+    rateAnomalyMaxCalls: parsed.RATE_ANOMALY_MAX_CALLS,
+    rateAnomalyMaxCallsPerTool: parsed.RATE_ANOMALY_MAX_CALLS_PER_TOOL,
   };
 }

@@ -71,6 +71,7 @@ export interface ProviderQuotaModuleOptions {
   budget: SearchBudgetTracker;
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
+  allowedProviders?: readonly string[];
 }
 
 function unknownBalance(provider: SearchProviderId, error: unknown): ProviderBalanceResult {
@@ -147,6 +148,10 @@ function searchRoutingDiagnostics(
 }
 
 export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): McpModule {
+  const allowed = options.allowedProviders
+    ? new Set(options.allowedProviders)
+    : undefined;
+
   return {
     name: "provider_quota",
     register(server: McpServer): void {
@@ -162,7 +167,10 @@ export function createProviderQuotaModule(options: ProviderQuotaModuleOptions): 
         async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
-            const providers = input.provider === "all" ? SEARCH_PROVIDER_IDS : [input.provider];
+            let providers = input.provider === "all" ? SEARCH_PROVIDER_IDS : [input.provider];
+            if (allowed !== undefined) {
+              providers = providers.filter((p) => allowed.has(p));
+            }
             const balances = await withConcurrency(
               options.limiter,
               deadline,

@@ -1,6 +1,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import type { AuditLogSink } from "../core/audit-log.js";
 import { hashInput } from "../core/audit-log.js";
+import type { RateAnomalyDetector } from "../core/rate-anomaly.js";
 import type { AuthenticatedPrincipal } from "../worker/auth.js";
 import { enforceStandardSchemaPolicy } from "./schema-policy.js";
 
@@ -23,12 +24,32 @@ export interface McpModule {
   >>;
 }
 
+export interface McpRegistryOptions {
+  auditLog?: AuditLogSink;
+  anomalyDetector?: RateAnomalyDetector;
+  credentialBinding?: string;
+}
+
 export class McpRegistry {
   readonly #modules = new Map<string, McpModule>();
   readonly #auditLog: AuditLogSink | undefined;
+  readonly #anomalyDetector: RateAnomalyDetector | undefined;
+  readonly #credentialBinding: string | undefined;
 
-  constructor(auditLog?: AuditLogSink) {
-    this.#auditLog = auditLog;
+  constructor(options?: AuditLogSink | McpRegistryOptions) {
+    if (options === undefined) {
+      this.#auditLog = undefined;
+      this.#anomalyDetector = undefined;
+      this.#credentialBinding = undefined;
+    } else if ("append" in options) {
+      this.#auditLog = options;
+      this.#anomalyDetector = undefined;
+      this.#credentialBinding = undefined;
+    } else {
+      this.#auditLog = options.auditLog;
+      this.#anomalyDetector = options.anomalyDetector;
+      this.#credentialBinding = options.credentialBinding;
+    }
   }
 
   add(module: McpModule): this {
@@ -87,14 +108,36 @@ export class McpRegistry {
           enforceStandardSchemaPolicy(config.outputSchema, "output");
         }
         const auditSink = this.#auditLog;
-        const wrappedCallback = auditSink !== undefined && name !== "audit_log"
+        const anomaly = this.#anomalyDetector;
+        const cred = this.#credentialBinding;
+        const shouldWrap = (auditSink !== undefined || anomaly !== undefined) && name !== "audit_log";
+        const wrappedCallback = shouldWrap
           ? (async (...args: Parameters<typeof callback>) => {
+              if (anomaly !== undefined && cred !== undefined) {
+                const check = anomaly.record(cred, name);
+                if (!check.allowed) {
+                  const result = await (callback as Function).apply(undefined, args);
+                  const sc = result as { structuredContent?: { ok?: boolean; data?: { warnings?: string[] } } } | undefined;
+                  if (sc?.structuredContent?.data !== undefined && Array.isArray(sc.structuredContent.data.warnings)) {
+                    sc.structuredContent.data.warnings.push(`Rate anomaly: ${check.reason ?? "limit exceeded"}`);
+                  }
+                  auditSink?.append({
+                    timestamp: new Date().toISOString(),
+                    tool: name,
+                    inputHash: hashInput(args[0]),
+                    durationMs: 0,
+                    status: "ok",
+                    errorCode: "rate_anomaly",
+                  });
+                  return result;
+                }
+              }
               const start = Date.now();
               try {
                 const result = await (callback as Function).apply(undefined, args);
                 const sc = result as { structuredContent?: { ok?: boolean } } | undefined;
                 const status: "ok" | "error" = sc?.structuredContent?.ok === false ? "error" : "ok";
-                auditSink.append({
+                auditSink?.append({
                   timestamp: new Date(start).toISOString(),
                   tool: name,
                   inputHash: hashInput(args[0]),
@@ -103,7 +146,7 @@ export class McpRegistry {
                 });
                 return result;
               } catch (error) {
-                auditSink.append({
+                auditSink?.append({
                   timestamp: new Date(start).toISOString(),
                   tool: name,
                   inputHash: hashInput(args[0]),
@@ -132,9 +175,9 @@ export type McpRegistryFactory = (
 
 export function createMcpRegistry(
   modules: readonly McpModule[] = [],
-  auditLog?: AuditLogSink,
+  options?: AuditLogSink | McpRegistryOptions,
 ): McpRegistry {
-  const registry = new McpRegistry(auditLog);
+  const registry = new McpRegistry(options);
   for (const module of modules) {
     registry.add(module);
   }
