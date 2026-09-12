@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as BenchmarkRouteImport } from './routes/benchmark'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as MatchRouteImport } from './routes/match'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BenchmarkRoute = BenchmarkRouteImport.update({
+  id: '/benchmark',
+  path: '/benchmark',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeaderboardRoute = LeaderboardRouteImport.update({
@@ -38,12 +44,14 @@ const MatchRoute = MatchRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/benchmark': typeof BenchmarkRoute
   '/leaderboard': typeof LeaderboardRoute
   '/match': typeof MatchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/benchmark': typeof BenchmarkRoute
   '/leaderboard': typeof LeaderboardRoute
   '/match': typeof MatchRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/benchmark': typeof BenchmarkRoute
   '/leaderboard': typeof LeaderboardRoute
   '/match': typeof MatchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/leaderboard' | '/match'
+  fullPaths: '/' | '/about' | '/benchmark' | '/leaderboard' | '/match'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/leaderboard' | '/match'
-  id: '__root__' | '/' | '/about' | '/leaderboard' | '/match'
+  to: '/' | '/about' | '/benchmark' | '/leaderboard' | '/match'
+  id: '__root__' | '/' | '/about' | '/benchmark' | '/leaderboard' | '/match'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  BenchmarkRoute: typeof BenchmarkRoute
   LeaderboardRoute: typeof LeaderboardRoute
   MatchRoute: typeof MatchRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/benchmark': {
+      id: '/benchmark'
+      path: '/benchmark'
+      fullPath: '/benchmark'
+      preLoaderRoute: typeof BenchmarkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leaderboard': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  BenchmarkRoute: BenchmarkRoute,
   LeaderboardRoute: LeaderboardRoute,
   MatchRoute: MatchRoute,
 }

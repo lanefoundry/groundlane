@@ -1,0 +1,122 @@
+[
+  {
+    "id": "t01",
+    "query": "Claude 4.6 Opus release date",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Claude Opus 4.6 released in 2026",
+      "sourceUrls": ["https://docs.anthropic.com/en/docs/about-claude/models"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t02",
+    "query": "Node.js 22 LTS release date",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Node.js 22 entered LTS on October 29, 2024",
+      "sourceUrls": ["https://nodejs.org/en/about/previous-releases"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t03",
+    "query": "React 19 stable release",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "React 19 released stable in December 2024",
+      "sourceUrls": ["https://react.dev/blog"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t04",
+    "query": "Cloudflare Workers AI models available September 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Workers AI supports Llama, Mistral, Stable Diffusion, Whisper and more",
+      "sourceUrls": ["https://developers.cloudflare.com/workers-ai/models/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t05",
+    "query": "TypeScript 6.0 new features",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "TypeScript 6.0 released in 2026 with performance improvements",
+      "sourceUrls": ["https://devblogs.microsoft.com/typescript/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t06",
+    "query": "Vite 8 release changelog",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Vite 8 released with stable Environment API and Node 20+ requirement",
+      "sourceUrls": ["https://vite.dev/blog/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t07",
+    "query": "latest Tailwind CSS version September 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Tailwind CSS v4 is the latest major version",
+      "sourceUrls": ["https://tailwindcss.com/blog"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t08",
+    "query": "Deno 2 latest features 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Deno 2 released with npm compatibility, Node.js interop improvements",
+      "sourceUrls": ["https://deno.com/blog"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t09",
+    "query": "LMSYS Chatbot Arena top model September 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "Top models on LMSYS Arena leaderboard include Claude, GPT, and Gemini variants",
+      "sourceUrls": ["https://lmarena.ai/"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  },
+  {
+    "id": "t10",
+    "query": "OpenAI GPT-5 announcement 2026",
+    "stratum": "current_events",
+    "groundTruth": {
+      "answer": "GPT-5 details from OpenAI in 2026",
+      "sourceUrls": ["https://openai.com/blog"]
+    },
+    "version": "1.0.0",
+    "createdAt": "2026-09-01",
+    "verifiedAt": "2026-09-10"
+  }
+]

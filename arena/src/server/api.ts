@@ -11,9 +11,15 @@ import type {
   VoteChoice,
   VoteResponse,
 } from '#/lib/types'
+import { runBenchmark as runBenchmarkFn, getBenchmarkHistory as getBenchmarkHistoryFromDb } from './benchmark'
 import { generateId, voterHash } from './crypto'
-import { normalizeSearchResults } from './normalize'
+import { dispatchSearch } from './dispatch'
 import { selectPair } from './pairing'
+
+import fixturesJson from '../../fixtures/search/stable/v2026Q3/fixtures.json'
+
+type SearchFixture = { id: string; query: string }
+const FIXTURES: SearchFixture[] = fixturesJson as SearchFixture[]
 
 interface D1Like {
   prepare: (sql: string) => {
@@ -29,12 +35,33 @@ interface D1Like {
   batch: (stmts: unknown[]) => Promise<unknown>
 }
 
-async function getDb(): Promise<D1Like> {
+interface WorkerEnv {
+  DB: D1Like
+  TAVILY_API_KEY?: string
+  EXA_API_KEY?: string
+  BRAVE_API_KEY?: string
+  SERPER_API_KEY?: string
+  SERPAPI_API_KEY?: string
+  LINKUP_API_KEY?: string
+  YOU_API_KEY?: string
+  FIRECRAWL_API_KEY?: string
+  TINYFISH_API_KEY?: string
+  PARALLEL_API_KEY?: string
+  SEARCHAPI_API_KEY?: string
+  BROWSERBASE_API_KEY?: string
+  KEENABLE_API_KEY?: string
+}
+
+async function getEnv(): Promise<WorkerEnv> {
   // @ts-expect-error cloudflare:workers module available at runtime
   const mod: Record<string, unknown> = await import('cloudflare:workers')
-  const env = mod.env as { DB?: D1Like } | undefined
+  const env = mod.env as WorkerEnv | undefined
   if (!env?.DB) throw new Error('D1 database not configured')
-  return env.DB
+  return env
+}
+
+async function getDb(): Promise<D1Like> {
+  return (await getEnv()).DB
 }
 
 // --- POST /api/match/new ---
@@ -56,41 +83,61 @@ export const createMatch = createServerFn()
     const pair = selectPair(providers, track)
     if (!pair) throw new Error('Not enough eligible providers')
 
+    const fixture = FIXTURES[Math.floor(Math.random() * FIXTURES.length)]!
     const matchId = generateId()
-    const queryId = 'fixture-placeholder'
-    const queryText = 'What is the Cloudflare Workers size limit?'
     const fixtureVersion = 'v2026Q3'
 
-    const mockResultsA = [
-      { title: 'Workers Limits', snippet: 'Worker size limit is 10 MB for bundled scripts.', url: 'https://developers.cloudflare.com/workers/platform/limits/' },
-    ]
-    const mockResultsB = [
-      { title: 'Cloudflare Workers', snippet: 'Maximum worker size: 10MB compressed.', url: 'https://docs.cloudflare.com/workers/limits' },
-    ]
+    const env = await getEnv()
+    const realProviderA = pair.positionSwap ? pair.providerB : pair.providerA
+    const realProviderB = pair.positionSwap ? pair.providerA : pair.providerB
 
-    const resultA = normalizeSearchResults(mockResultsA)
-    const resultB = normalizeSearchResults(mockResultsB)
+    const [outcomeA, outcomeB] = await Promise.all([
+      dispatchSearch(realProviderA.id, fixture.query, env),
+      dispatchSearch(realProviderB.id, fixture.query, env),
+    ])
 
-    const displayA = pair.positionSwap ? resultB : resultA
-    const displayB = pair.positionSwap ? resultA : resultB
-    const dbProviderA = pair.positionSwap ? pair.providerB.id : pair.providerA.id
-    const dbProviderB = pair.positionSwap ? pair.providerA.id : pair.providerB.id
+    if (!outcomeA.ok || !outcomeB.ok) {
+      const now = Date.now()
+      await db
+        .prepare(
+          `INSERT INTO matches (id, track, query_id, fixture_version, provider_a, provider_b, position_swap, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'invalid', ?)`,
+        )
+        .bind(matchId, track, fixture.id, fixtureVersion, realProviderA.id, realProviderB.id, pair.positionSwap ? 1 : 0, now)
+        .run()
+
+      const failedProvider = !outcomeA.ok ? realProviderA : realProviderB
+      const failedOutcome = !outcomeA.ok ? outcomeA : outcomeB
+      if (!failedOutcome.ok) {
+        await db
+          .prepare('INSERT INTO match_failures (id, match_id, provider_id, error_code, error_message, failed_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(generateId(), matchId, failedProvider.id, failedOutcome.error.errorCode, failedOutcome.error.errorMessage, now)
+          .run()
+      }
+
+      throw new Error('One provider failed to respond. Try another match.')
+    }
+
+    const displayA = outcomeA.data.results
+    const displayB = outcomeB.data.results
 
     await db
       .prepare(
-        `INSERT INTO matches (id, track, query_id, fixture_version, provider_a, provider_b, position_swap, result_a, result_b, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        `INSERT INTO matches (id, track, query_id, fixture_version, provider_a, provider_b, position_swap, result_a, result_b, status, latency_a_ms, latency_b_ms, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
       .bind(
         matchId,
         track,
-        queryId,
+        fixture.id,
         fixtureVersion,
-        dbProviderA,
-        dbProviderB,
+        realProviderA.id,
+        realProviderB.id,
         pair.positionSwap ? 1 : 0,
         JSON.stringify(displayA),
         JSON.stringify(displayB),
+        outcomeA.data.latencyMs,
+        outcomeB.data.latencyMs,
         Date.now(),
       )
       .run()
@@ -98,8 +145,8 @@ export const createMatch = createServerFn()
     return {
       matchId,
       track,
-      queryId,
-      queryText,
+      queryId: fixture.id,
+      queryText: fixture.query,
       resultA: displayA,
       resultB: displayB,
       createdAt: Date.now(),
@@ -235,6 +282,24 @@ export const getLeaderboard = createServerFn()
       }
     }
 
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const { results: recentRuns } = await db
+      .prepare(
+        `SELECT provider_id, score_f1, run_at FROM benchmark_runs
+         WHERE track = ? AND run_at > ?
+         ORDER BY run_at ASC`,
+      )
+      .bind(track, sevenDaysAgo)
+      .all<{ provider_id: string; score_f1: number | null; run_at: number }>()
+
+    const sparklinesByProvider = new Map<string, number[]>()
+    for (const run of recentRuns) {
+      if (run.score_f1 == null) continue
+      const arr = sparklinesByProvider.get(run.provider_id) ?? []
+      arr.push(run.score_f1)
+      sparklinesByProvider.set(run.provider_id, arr)
+    }
+
     return {
       track,
       fixtureVersion: 'v2026Q3',
@@ -255,11 +320,45 @@ export const getLeaderboard = createServerFn()
           latencyP95_ms: null,
           costPerCall_usd: p.estimated_cost_per_call_usd,
           pricingModel: p.pricing_model,
-          sparkline7d: [],
+          sparkline7d: sparklinesByProvider.get(p.id) ?? [],
         }
       }),
       updatedAt: Date.now(),
     }
+  })
+
+// --- POST /api/benchmark/trigger ---
+
+export const triggerBenchmark = createServerFn()
+  .validator((data: { track: string; providers?: string[] }) => {
+    if (!['search', 'extraction', 'document'].includes(data.track)) throw new Error('Invalid track')
+    return { track: data.track as Track, providers: data.providers }
+  })
+  .handler(async ({ data }) => {
+    const env = await getEnv()
+    const result = await runBenchmarkFn(data.track, data.providers, env.DB, env)
+    return {
+      runId: result.results[0]?.runId ?? generateId(),
+      track: result.track,
+      fixtureVersion: result.fixtureVersion,
+      providerCount: result.providerCount,
+      status: 'completed' as const,
+      results: result.results,
+      staleFixtures: result.staleFixtures,
+    }
+  })
+
+// --- GET /api/benchmark/history ---
+
+export const getBenchmarkHistoryFn = createServerFn()
+  .validator((data: { track?: string }) => {
+    const track = data.track ?? 'search'
+    if (!['search', 'extraction', 'document'].includes(track)) throw new Error('Invalid track')
+    return { track: track as Track }
+  })
+  .handler(async ({ data }) => {
+    const db = (await getEnv()).DB
+    return getBenchmarkHistoryFromDb(db, data.track)
   })
 
 // --- GET /api/providers ---

@@ -16,5 +16,8 @@
       "binding": "FIXTURES",
       "bucket_name": "arena-fixtures"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 6 * * *"]
+  }
 }

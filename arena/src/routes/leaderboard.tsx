@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '#/lib/utils'
+import { Sparkline } from '#/components/Sparkline'
 import type { LeaderboardProvider, Track } from '#/lib/types'
 import { getLeaderboard } from '#/server/api'
 import { useState } from 'react'
@@ -122,6 +123,7 @@ function LeaderboardTable({
             {hasBT && <th className="w-40 px-4 py-3">CI</th>}
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">Votes</th>
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">F1</th>
+            <th className="px-4 py-3">Trend</th>
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">p50</th>
             <th className="px-4 py-3 text-right">Cost</th>
           </tr>
@@ -163,6 +165,9 @@ function LeaderboardTable({
                 </td>
                 <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
                   {p.scoreF1 != null ? p.scoreF1.toFixed(3) : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  <Sparkline data={p.sparkline7d} />
                 </td>
                 <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
                   {p.latencyP50_ms != null ? `${p.latencyP50_ms}ms` : '—'}
