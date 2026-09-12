@@ -3,6 +3,7 @@
 export interface ProviderRow {
   id: string
   display_name: string
+  tracks: string | null
   elo_search: number
   elo_extraction: number
   elo_document: number
@@ -113,6 +114,10 @@ export interface LeaderboardProvider {
   id: string
   displayName: string
   elo: number
+  btElo: number | null
+  ciLow: number | null
+  ciHigh: number | null
+  statisticallyTiedWith: string[]
   votes: number
   provisional: boolean
   scoreF1: number | null

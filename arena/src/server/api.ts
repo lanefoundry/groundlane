@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { areStatisticallyTied, bootstrapCI, type PairwiseMatch } from '#/lib/bradley-terry'
 import { calculateEloChange } from '#/lib/elo'
 import type {
   LeaderboardResponse,
@@ -14,26 +15,24 @@ import { generateId, voterHash } from './crypto'
 import { normalizeSearchResults } from './normalize'
 import { selectPair } from './pairing'
 
-interface D1Env {
-  DB: {
-    prepare: (sql: string) => {
-      bind: (...values: unknown[]) => {
-        all: <T>() => Promise<{ results: T[] }>
-        first: <T>() => Promise<T | null>
-        run: () => Promise<unknown>
-      }
+interface D1Like {
+  prepare: (sql: string) => {
+    bind: (...values: unknown[]) => {
       all: <T>() => Promise<{ results: T[] }>
       first: <T>() => Promise<T | null>
       run: () => Promise<unknown>
     }
-    batch: (stmts: unknown[]) => Promise<unknown>
+    all: <T>() => Promise<{ results: T[] }>
+    first: <T>() => Promise<T | null>
+    run: () => Promise<unknown>
   }
+  batch: (stmts: unknown[]) => Promise<unknown>
 }
 
-async function getDb(): Promise<D1Env['DB']> {
+async function getDb(): Promise<D1Like> {
   // @ts-expect-error cloudflare:workers module available at runtime
   const mod: Record<string, unknown> = await import('cloudflare:workers')
-  const env = mod.env as D1Env | undefined
+  const env = mod.env as { DB?: D1Like } | undefined
   if (!env?.DB) throw new Error('D1 database not configured')
   return env.DB
 }
@@ -49,10 +48,11 @@ export const createMatch = createServerFn()
     const db = await getDb()
     const { track } = data
 
-    const { results: providers } = await db
+    const { results: allProviders } = await db
       .prepare('SELECT * FROM providers WHERE opted_out = 0')
       .all<ProviderRow>()
 
+    const providers = allProviders.filter((p) => hasTrack(p, track))
     const pair = selectPair(providers, track)
     if (!pair) throw new Error('Not enough eligible providers')
 
@@ -174,6 +174,12 @@ export const submitVote = createServerFn()
 
 // --- GET /api/leaderboard ---
 
+interface VotedMatchRow {
+  provider_a: string
+  provider_b: string
+  winner: string
+}
+
 export const getLeaderboard = createServerFn()
   .validator((data: { track?: string }) => {
     const track = data.track ?? 'search'
@@ -184,28 +190,74 @@ export const getLeaderboard = createServerFn()
     const db = await getDb()
     const { track } = data
 
-    const { results: providers } = await db
+    const { results: allProviders } = await db
       .prepare('SELECT * FROM providers WHERE opted_out = 0')
       .all<ProviderRow>()
 
-    const sorted = [...providers].sort((a, b) => eloForTrack(b, track) - eloForTrack(a, track))
+    const providers = allProviders.filter((p) => hasTrack(p, track))
+
+    const { results: votedMatches } = await db
+      .prepare(
+        `SELECT m.provider_a, m.provider_b, v.winner
+         FROM matches m JOIN votes v ON v.match_id = m.id
+         WHERE m.track = ? AND m.status = 'voted' AND v.winner IN ('a', 'b', 'tie')`,
+      )
+      .bind(track)
+      .all<VotedMatchRow>()
+
+    const pairwiseMatches: PairwiseMatch[] = votedMatches.map((m: VotedMatchRow) => ({
+      providerA: m.provider_a,
+      providerB: m.provider_b,
+      winner: m.winner as 'a' | 'b' | 'tie',
+    }))
+
+    const btResults = pairwiseMatches.length >= 10
+      ? bootstrapCI(pairwiseMatches, 500)
+      : null
+
+    const sorted = [...providers].sort((a, b) => {
+      const btA = btResults?.get(a.id)
+      const btB = btResults?.get(b.id)
+      if (btA && btB) return btB.elo - btA.elo
+      return eloForTrack(b, track) - eloForTrack(a, track)
+    })
+
+    const tiedPairs = new Map<string, string[]>()
+    if (btResults) {
+      for (const [idA, ciA] of btResults) {
+        const tied: string[] = []
+        for (const [idB, ciB] of btResults) {
+          if (idA !== idB && areStatisticallyTied(ciA, ciB)) {
+            tied.push(idB)
+          }
+        }
+        tiedPairs.set(idA, tied)
+      }
+    }
 
     return {
       track,
       fixtureVersion: 'v2026Q3',
-      providers: sorted.map((p) => ({
-        id: p.id,
-        displayName: p.display_name,
-        elo: eloForTrack(p, track),
-        votes: votesForTrack(p, track),
-        provisional: votesForTrack(p, track) < 300,
-        scoreF1: null,
-        latencyP50_ms: null,
-        latencyP95_ms: null,
-        costPerCall_usd: p.estimated_cost_per_call_usd,
-        pricingModel: p.pricing_model,
-        sparkline7d: [],
-      })),
+      providers: sorted.map((p) => {
+        const bt = btResults?.get(p.id)
+        return {
+          id: p.id,
+          displayName: p.display_name,
+          elo: eloForTrack(p, track),
+          btElo: bt?.elo ?? null,
+          ciLow: bt?.ciLow ?? null,
+          ciHigh: bt?.ciHigh ?? null,
+          statisticallyTiedWith: tiedPairs.get(p.id) ?? [],
+          votes: votesForTrack(p, track),
+          provisional: votesForTrack(p, track) < 300,
+          scoreF1: null,
+          latencyP50_ms: null,
+          latencyP95_ms: null,
+          costPerCall_usd: p.estimated_cost_per_call_usd,
+          pricingModel: p.pricing_model,
+          sparkline7d: [],
+        }
+      }),
       updatedAt: Date.now(),
     }
   })
@@ -217,10 +269,10 @@ export const getProviders = createServerFn().handler(async (): Promise<{ provide
   const { results: providers } = await db.prepare('SELECT * FROM providers').all<ProviderRow>()
 
   return {
-    providers: providers.map((p): ProviderInfo => ({
+    providers: providers.map((p: ProviderRow): ProviderInfo => ({
       id: p.id,
       displayName: p.display_name,
-      tracks: ['search'] as Track[],
+      tracks: parseTracksCsv(p.tracks),
       eligible: !p.opted_out,
       optedOut: p.opted_out === 1,
       pricingModel: p.pricing_model,
@@ -237,4 +289,15 @@ function eloForTrack(p: ProviderRow, track: Track): number {
 
 function votesForTrack(p: ProviderRow, track: Track): number {
   return p[`votes_${track}` as keyof ProviderRow] as number
+}
+
+function parseTracksCsv(tracks: string | null): Track[] {
+  if (!tracks) return ['search']
+  return tracks.split(',').filter((t): t is Track =>
+    ['search', 'extraction', 'document'].includes(t),
+  )
+}
+
+function hasTrack(p: ProviderRow, track: Track): boolean {
+  return parseTracksCsv(p.tracks).includes(track)
 }

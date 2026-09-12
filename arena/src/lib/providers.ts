@@ -14,7 +14,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'tavily',
     displayName: 'Tavily',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.008,
     pricingModel: 'per_credit',
     pricingNote: '1 credit = $0.008, 1,000 free credits/month',
@@ -23,7 +23,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'exa',
     displayName: 'Exa',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.005,
     pricingModel: 'per_request',
     pricingNote: '1,000 free requests/month',
@@ -59,7 +59,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'linkup',
     displayName: 'Linkup',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.005,
     pricingModel: 'per_credit',
     pricingNote: 'Free tier available',
@@ -68,7 +68,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'you',
     displayName: 'You.com',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: null,
     pricingModel: 'free',
     pricingNote: 'Keyless daily MCP profile available',
@@ -77,7 +77,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'firecrawl',
     displayName: 'Firecrawl',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.01,
     pricingModel: 'per_credit',
     pricingNote: '500 free credits',
@@ -86,7 +86,7 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'tinyfish',
     displayName: 'TinyFish',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.005,
     pricingModel: 'per_request',
     pricingNote: 'Free tier available',
@@ -122,13 +122,62 @@ export const PROVIDER_ROSTER: ProviderDefinition[] = [
   {
     id: 'keenable',
     displayName: 'Keenable',
-    tracks: ['search'],
+    tracks: ['search', 'extraction'],
     estimatedCostPerCall_usd: 0.005,
     pricingModel: 'per_request',
     pricingNote: 'Free tier available',
     mvp: true,
   },
+  {
+    id: 'anydoc',
+    displayName: 'Anydoc (local)',
+    tracks: ['document'],
+    estimatedCostPerCall_usd: null,
+    pricingModel: 'free',
+    pricingNote: 'Local WASM parser, zero cost',
+    mvp: true,
+  },
+  {
+    id: 'docling',
+    displayName: 'Docling-serve',
+    tracks: ['document'],
+    estimatedCostPerCall_usd: null,
+    pricingModel: 'free',
+    pricingNote: 'Self-hosted VLM pipeline (MIT)',
+    mvp: true,
+  },
+  {
+    id: 'mineru',
+    displayName: 'MinerU Cloud',
+    tracks: ['document'],
+    estimatedCostPerCall_usd: 0.02,
+    pricingModel: 'per_request',
+    pricingNote: 'Cloud VLM document parsing',
+    mvp: true,
+  },
+  {
+    id: 'ocr-space',
+    displayName: 'OCR.space',
+    tracks: ['document'],
+    estimatedCostPerCall_usd: null,
+    pricingModel: 'free',
+    pricingNote: '25k free requests/month',
+    mvp: true,
+  },
+  {
+    id: 'reducto',
+    displayName: 'Reducto',
+    tracks: ['document'],
+    estimatedCostPerCall_usd: 0.05,
+    pricingModel: 'per_request',
+    pricingNote: 'Async document processing',
+    mvp: true,
+  },
 ]
+
+export function getProvidersForTrack(track: Track): ProviderDefinition[] {
+  return PROVIDER_ROSTER.filter((p) => p.mvp && p.tracks.includes(track))
+}
 
 export function getMvpProviders(): ProviderDefinition[] {
   return PROVIDER_ROSTER.filter((p) => p.mvp)

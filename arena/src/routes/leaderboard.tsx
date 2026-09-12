@@ -19,6 +19,7 @@ function LeaderboardPage() {
 
   const established = data?.providers.filter((p) => !p.provisional) ?? []
   const evaluating = data?.providers.filter((p) => p.provisional) ?? []
+  const hasBT = data?.providers.some((p) => p.btElo != null) ?? false
 
   return (
     <div className="flex flex-col gap-6">
@@ -34,7 +35,7 @@ function LeaderboardPage() {
           {established.length > 0 && (
             <section>
               <h2 className="mb-3 text-lg font-semibold text-[var(--text-heading)]">Ranked</h2>
-              <LeaderboardTable providers={established} />
+              <LeaderboardTable providers={established} hasBT={hasBT} allProviders={data?.providers ?? []} />
             </section>
           )}
 
@@ -46,7 +47,7 @@ function LeaderboardPage() {
                   Provisional
                 </span>
               </h2>
-              <LeaderboardTable providers={evaluating} provisional />
+              <LeaderboardTable providers={evaluating} provisional hasBT={hasBT} allProviders={data?.providers ?? []} />
             </section>
           )}
 
@@ -100,10 +101,16 @@ function TrackSelector({ value, onChange }: { value: Track; onChange: (t: Track)
 function LeaderboardTable({
   providers,
   provisional = false,
+  hasBT,
+  allProviders,
 }: {
   providers: LeaderboardProvider[]
   provisional?: boolean
+  hasBT: boolean
+  allProviders: LeaderboardProvider[]
 }) {
+  const eloRange = hasBT ? computeEloRange(allProviders) : null
+
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow)]">
       <table className="w-full text-sm">
@@ -112,6 +119,7 @@ function LeaderboardTable({
             <th className="px-4 py-3">{provisional ? '' : '#'}</th>
             <th className="px-4 py-3">Provider</th>
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">Elo</th>
+            {hasBT && <th className="w-40 px-4 py-3">CI</th>}
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">Votes</th>
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">F1</th>
             <th className="px-4 py-3 text-right font-[var(--font-mono)]">p50</th>
@@ -119,35 +127,93 @@ function LeaderboardTable({
           </tr>
         </thead>
         <tbody>
-          {providers.map((p, i) => (
-            <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
-              <td className="px-4 py-3 font-[var(--font-mono)] text-[var(--text-muted)]">
-                {provisional ? '–' : i + 1}
-              </td>
-              <td className="px-4 py-3 font-medium text-[var(--text-heading)]">{p.displayName}</td>
-              <td className="px-4 py-3 text-right font-[var(--font-mono)] font-semibold tabular-nums text-[var(--text-heading)]">
-                {p.elo}
-              </td>
-              <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
-                {p.votes}
-              </td>
-              <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
-                {p.scoreF1 != null ? p.scoreF1.toFixed(3) : '—'}
-              </td>
-              <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
-                {p.latencyP50_ms != null ? `${p.latencyP50_ms}ms` : '—'}
-              </td>
-              <td className="px-4 py-3 text-right text-[var(--text-muted)]">
-                {p.pricingModel === 'free'
-                  ? 'Free'
-                  : p.costPerCall_usd != null
-                    ? `$${p.costPerCall_usd.toFixed(3)}`
-                    : '—'}
-              </td>
-            </tr>
-          ))}
+          {providers.map((p, i) => {
+            const nextP = providers[i + 1]
+            const tiedWithNext = nextP != null && p.statisticallyTiedWith.includes(nextP.id)
+
+            return (
+              <tr key={p.id} className={cn('border-b border-[var(--border)] last:border-0', tiedWithNext && 'border-b-0')}>
+                <td className="px-4 py-3 font-[var(--font-mono)] text-[var(--text-muted)]">
+                  {provisional ? '–' : i + 1}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-[var(--text-heading)]">{p.displayName}</span>
+                    {tiedWithNext && (
+                      <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 font-[var(--font-mono)] text-xs font-medium text-[var(--accent)]" title="Statistically tied with next provider">
+                        ≈
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right font-[var(--font-mono)] font-semibold tabular-nums text-[var(--text-heading)]">
+                  {p.btElo ?? p.elo}
+                </td>
+                {hasBT && (
+                  <td className="px-4 py-3">
+                    {p.ciLow != null && p.ciHigh != null && eloRange ? (
+                      <CIBar ciLow={p.ciLow} ciHigh={p.ciHigh} elo={p.btElo ?? p.elo} min={eloRange.min} max={eloRange.max} />
+                    ) : (
+                      <span className="text-xs text-[var(--text-muted)]">—</span>
+                    )}
+                  </td>
+                )}
+                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                  {p.votes}
+                </td>
+                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                  {p.scoreF1 != null ? p.scoreF1.toFixed(3) : '—'}
+                </td>
+                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                  {p.latencyP50_ms != null ? `${p.latencyP50_ms}ms` : '—'}
+                </td>
+                <td className="px-4 py-3 text-right text-[var(--text-muted)]">
+                  {p.pricingModel === 'free'
+                    ? 'Free'
+                    : p.costPerCall_usd != null
+                      ? `$${p.costPerCall_usd.toFixed(3)}`
+                      : '—'}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
   )
+}
+
+function CIBar({ ciLow, ciHigh, elo, min, max }: { ciLow: number; ciHigh: number; elo: number; min: number; max: number }) {
+  const range = max - min || 1
+  const leftPct = ((ciLow - min) / range) * 100
+  const widthPct = ((ciHigh - ciLow) / range) * 100
+  const dotPct = ((elo - min) / range) * 100
+
+  return (
+    <div className="relative h-4 w-full rounded bg-[var(--bg-elevated)]" title={`${ciLow} – ${ciHigh}`}>
+      <div
+        className="absolute top-1 h-2 rounded bg-[var(--accent)]"
+        style={{
+          left: `${Math.max(0, leftPct)}%`,
+          width: `${Math.min(100, widthPct)}%`,
+          opacity: 0.3,
+        }}
+      />
+      <div
+        className="absolute top-0.5 h-3 w-1 rounded-full bg-[var(--accent)]"
+        style={{ left: `${Math.max(0, Math.min(100, dotPct))}%` }}
+      />
+    </div>
+  )
+}
+
+function computeEloRange(providers: LeaderboardProvider[]): { min: number; max: number } {
+  let min = 1500
+  let max = 1500
+  for (const p of providers) {
+    if (p.ciLow != null) min = Math.min(min, p.ciLow)
+    if (p.ciHigh != null) max = Math.max(max, p.ciHigh)
+  }
+  const padding = (max - min) * 0.1 || 50
+  return { min: min - padding, max: max + padding }
 }
