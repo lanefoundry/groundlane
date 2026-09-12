@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { CrawlJobManager } from "../core/crawl-jobs.js";
+import { GroundlaneError } from "../core/errors.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
 import { structuredToolResult } from "../mcp/results.js";
@@ -80,12 +81,32 @@ export interface CrawlJobsModuleOptions {
   limiter: ConcurrencyLimiter;
   requestTimeoutMs: number;
   maxOutputChars: number;
+  /**
+   * Whether `manager`'s store actually survives between calls to these
+   * tools. A stateless per-request deployment (e.g. a Worker isolate with
+   * no cross-isolate affinity) recreates or discards the in-memory store,
+   * so a job created by one call can vanish before the next lookup; callers
+   * must not be told "created" in that case. Set `true` only where the
+   * manager instance is guaranteed to live for as long as jobs may be
+   * queried against it (e.g. a single long-running container process).
+   */
+  available: boolean;
 }
 
 function assertWithinOutputLimit(value: unknown, maxOutputChars: number, tool: string): void {
   if (Array.from(JSON.stringify(value)).length > maxOutputChars) {
     throw new Error(
       `${tool} output exceeds the configured limit; narrow budgets or page size`,
+    );
+  }
+}
+
+function assertAvailable(options: CrawlJobsModuleOptions): void {
+  if (!options.available) {
+    throw new GroundlaneError(
+      "PROVIDER_UNAVAILABLE",
+      "crawl-jobs",
+      "Durable crawl jobs are not configured in this deployment",
     );
   }
 }
@@ -120,6 +141,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
         async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
+            assertAvailable(options);
             const data = await withConcurrency(
               options.limiter,
               deadline,
@@ -166,6 +188,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
         async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
+            assertAvailable(options);
             const job = await withConcurrency(
               options.limiter,
               deadline,
@@ -206,6 +229,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
         async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
+            assertAvailable(options);
             const data = await withConcurrency(
               options.limiter,
               deadline,
@@ -249,6 +273,7 @@ export function createCrawlJobsModule(options: CrawlJobsModuleOptions): McpModul
         async (input, ctx) => {
           const deadline = new Deadline(input.timeoutMs ?? options.requestTimeoutMs);
           try {
+            assertAvailable(options);
             const data = await withConcurrency(
               options.limiter,
               deadline,

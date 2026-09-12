@@ -420,6 +420,11 @@ export function createLiteGroundlaneServices(
           limiter,
           requestTimeoutMs: config.requestTimeoutMs,
           maxOutputChars: config.maxOutputChars,
+          // Lite mode runs on stateless Worker isolates with no cross-isolate
+          // affinity and no durable (D1/DO) backing store for crawl jobs:
+          // a job created by one call can be gone by the next, so the tool
+          // must refuse rather than claim "created" and then 404 on lookup.
+          available: false,
         }),
         createAsyncResearchModule({
           ...(asyncTaskRuntime === undefined ? {} : { runtime: asyncTaskRuntime }),

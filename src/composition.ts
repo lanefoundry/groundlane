@@ -618,6 +618,10 @@ export function createGroundlaneServices(config: GroundlaneConfig): GroundlaneSe
           limiter,
           requestTimeoutMs: config.requestTimeoutMs,
           maxOutputChars: config.maxOutputChars,
+          // `crawlJobManager` is a single instance for the lifetime of this
+          // long-running container process, so its in-memory store actually
+          // survives between create/status/result/cancel calls.
+          available: true,
         }),
         createAsyncResearchModule({
           ...(asyncTaskRuntime === undefined ? {} : { runtime: asyncTaskRuntime }),

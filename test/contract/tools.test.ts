@@ -404,6 +404,7 @@ void test("remote MCP lists and executes all Groundlane MVP tools", async () => 
       limiter,
       requestTimeoutMs: 5_000,
       maxOutputChars: 10_000,
+      available: true,
     }),
     createWebExtractSchemaModule({
       providers: [],

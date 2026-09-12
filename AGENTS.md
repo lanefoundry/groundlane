@@ -22,8 +22,8 @@ routing, quota policy, validation, and shared contracts provider-neutral in
 
 ## Dogfood Groundlane for web access
 
-- Use Groundlane's `web_fetch`, `web_search`, and `web_extract` for public-web
-  research, documentation checks, and representative smoke tests.
+- Use Groundlane's `web_fetch`, `web_search`, and `web_extract` first for
+  public-web research, documentation checks, and representative smoke tests.
 - This rule applies to the primary agent and every subagent.
 - When changing Groundlane itself, prefer running the current checkout locally
   with a temporary development auth token so research exercises the code being
@@ -31,17 +31,29 @@ routing, quota policy, validation, and shared contracts provider-neutral in
   deployed version.
 - `web_fetch` and `web_extract` do not require a third-party search key.
   `web_search` must fail closed when no configured search provider is available.
-- If Groundlane cannot retrieve a required source, record the exact bounded
-  failure and treat it as product evidence. Do not claim that an untested
-  provider path works.
+- Follow an explicit user choice of tool or no-fallback requirement. Otherwise,
+  before declaring Groundlane unavailable, inspect the complete callable tool
+  inventory because its MCP tools may be deferred.
+- If Groundlane is not mounted or one bounded Groundlane request fails as a
+  whole, choose the best task-matching MCP from the callable inventory. Use the
+  current platform web search/fetch/open tools only when no suitable MCP is
+  callable.
+- Keep fallback research evidence separate from Groundlane product evidence. A
+  successful fallback does not prove that the corresponding Groundlane path
+  works or replace a required Groundlane smoke. Briefly disclose the fallback
+  tool and Groundlane failure. Never send secrets, authenticated content, or
+  private data through a fallback service.
+- Do not use retired `stealth_fetch`, `WebFetch`, `web-fetch`, `fetch_page`, or
+  Playwright paths for web retrieval.
 - Browser rendering proves JavaScript execution, not reliable CAPTCHA or
   managed-challenge bypass. State the observed boundary accurately.
 
 ## Provider and quota rules
 
 - Treat provider pricing, quota, API contracts, reset cadence, and product
-  availability as time-sensitive. Verify them with Groundlane against official
-  provider sources before implementation.
+  availability as time-sensitive. Verify them against official provider sources
+  with Groundlane first, or with the disclosed fallback policy above when
+  Groundlane is unavailable.
 - Keep requests, successful requests, credits, currency balances, browser time,
   concurrency, RPM, daily pools, monthly pools, balance top-ups, and one-time
   trials as distinct concepts. Never convert between them without a verified

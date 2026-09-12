@@ -78,6 +78,12 @@ credentials.
 
 OAuth and managed-token state remain Worker-only. The Worker validates static, managed, or OAuth credentials, then signs a bounded principal context for the Container. `GroundlaneContainer.envVars` forwards only the derived Container auth mode and the internal signing secret; it never forwards caller credentials. A direct local Node server uses `local_static` mode instead. See [OAuth for interactive cloud connectors](deployment/cloudflare.md#oauth-for-interactive-cloud-connectors) for setup.
 
+Worker-only Lite deployments expose the same MCP tool inventory for client
+discovery, but `crawl_create`, `crawl_status`, `crawl_result`, and
+`crawl_cancel` fail closed with `PROVIDER_UNAVAILABLE`. Their in-memory job
+manager cannot preserve state across stateless Worker calls; use the
+Worker-plus-Container deployment for this crawl-job surface.
+
 | Variable | Purpose | Default/example |
 | --- | --- | --- |
 | `OAUTH_KV` | Workers KV binding storing OAuth clients, grants, and tokens | Required; created with `wrangler kv namespace create OAUTH_KV` |

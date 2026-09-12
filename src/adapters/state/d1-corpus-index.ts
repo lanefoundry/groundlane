@@ -5,6 +5,8 @@ import type {
   CorpusIndexHit,
 } from "./sqlite-corpus-index.js";
 
+const FIRST_PRIMARY = "first-primary";
+
 const MAX_CORPUS_ID_CHARS = 160;
 const MAX_SOURCE_ID_CHARS = 160;
 const MAX_CONTENT_HASH_CHARS = 160;
@@ -54,6 +56,16 @@ export class D1CorpusDerivedIndex implements CorpusDerivedIndexPort {
     if (!/^[A-Za-z0-9._:-]+$/u.test(namespace)) throw new Error("corpus index namespace is invalid");
   }
 
+  /**
+   * D1's read replicas can lag the primary by a beat after a write, so a
+   * `search` issued right after `upsert`/`replaceFromManifest` can miss it.
+   * Pin reads to the primary session to get read-your-writes consistency,
+   * matching the pattern in `d1-durable-store.ts`.
+   */
+  private readDb(): D1DatabaseLike {
+    return typeof this.db.withSession === "function" ? this.db.withSession(FIRST_PRIMARY) : this.db;
+  }
+
   async replaceFromManifest(corpusId: string, documents: readonly CorpusIndexDocument[]): Promise<void> {
     validateCorpusId(corpusId);
     if (documents.length > 500) throw new Error("corpus index document count exceeds the supported bound");
@@ -98,7 +110,7 @@ export class D1CorpusDerivedIndex implements CorpusDerivedIndexPort {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("corpus search limit is invalid");
     const terms = queryTerms(query);
 
-    const result = await this.db.prepare(
+    const result = await this.readDb().prepare(
       "SELECT source_id, content_hash, normalized_text FROM corpus_index_documents WHERE namespace = ? AND corpus_id = ? ORDER BY source_id LIMIT 501",
     ).bind(this.namespace, corpusId).all<Record<string, unknown>>();
 

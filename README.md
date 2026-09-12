@@ -83,7 +83,7 @@ Document execution keeps an explicit dual-track contract. The current determinis
 | `corpus_retrieval_test` | Tests retrieval quality for a corpus query against expected source IDs | Wraps `corpus_search`; reports recall, rank, and missed sources — no LLM, read-only |
 | `corpus_source_inspect` | Inspects a corpus source by parsing it into document blocks with previews and field labels | Requires durable corpus storage; read-only, no LLM — useful for QA before RAG indexing |
 | `corpus_chunk_inspect` | Inspects how a corpus source will be chunked for RAG ingestion with hierarchical previews and field labels | Requires durable corpus storage; read-only, no LLM — useful for verifying chunk quality before indexing |
-| `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | Creates, reads, pages, or cancels a durable provider-neutral crawl job | Durable job with page/byte/output budgets, expiry, and Groundlane-owned job ID; provider IDs are never exposed |
+| `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | Creates, reads, pages, or cancels a durable provider-neutral crawl job | Full/Container mode only; Lite advertises the tools but fails closed with `PROVIDER_UNAVAILABLE` because it has no durable crawl-job store |
 | `provider_balance` | Checks provider account-balance APIs when available | Linkup credits, You.com keyed credits, Firecrawl remaining credits, and SerpApi searches left; unsupported providers return explicit diagnostic status |
 | `provider_capabilities` | Lists provider features and Groundlane-exposed surfaces | Static capability matrix that separates vendor features from currently implemented Groundlane tools |
 | `provider_quota` | Combines account balance, local tool budgets, capabilities, and routing hints | One provider-scoped diagnostic view for billing status, Groundlane provider-dispatch guardrails, exposed tools, keyless availability, and next checks |
@@ -343,6 +343,10 @@ Groundlane supports two Cloudflare deployment modes:
 | Browser | Disabled (CF Browser Rendering ready) | Playwright + Chromium |
 | MCP tools | All 57 tools | All 57 tools |
 | Cost | **$0** (Workers free tier) | ~$1.5–3/mo (container memory + disk) |
+
+Lite keeps the same discoverable tool surface, but `crawl_create`,
+`crawl_status`, `crawl_result`, and `crawl_cancel` return
+`PROVIDER_UNAVAILABLE`; durable crawl-job state currently requires Full mode.
 
 Deploy lite mode:
 

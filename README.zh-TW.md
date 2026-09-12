@@ -80,7 +80,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `corpus_enroll` / `corpus_update` / `corpus_remove` | 在 corpus 中 enroll、更新或移除 source，含 ACL、retention 與 provenance | Self-hosted durable SQLite runtime；removal 立即撤銷存取與 cache binding |
 | `corpus_status` | 讀取 corpus manifest 真相、enrollment 統計、backend 健康與刪除狀態 | Self-hosted durable SQLite runtime |
 | `corpus_search` | 搜尋 operator-owned corpus，結果帶 boundary 與 freshness provenance | Self-hosted durable SQLite runtime；結果不會被標為公開 web search |
-| `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | 建立、讀取、分頁取得或取消 durable provider-neutral crawl job | Durable job 含 page/byte/output budget、expiry、Groundlane-owned job ID；不外露 provider job ID |
+| `crawl_create` / `crawl_status` / `crawl_result` / `crawl_cancel` | 建立、讀取、分頁取得或取消 durable provider-neutral crawl job | 僅限 Full／Container 模式；Lite 仍會列出工具，但因沒有 durable crawl-job store 而 fail-closed 回傳 `PROVIDER_UNAVAILABLE` |
 | `provider_balance` | 查詢 provider 帳號餘額 API | Linkup credits、You.com keyed credits、Firecrawl remaining credits、SerpApi searches left；未支援的 provider 會回明確診斷狀態 |
 | `provider_capabilities` | 列出各 provider 功能與 Groundlane surface | 靜態 capability matrix，區分 vendor 自家功能與 Groundlane 目前實作工具 |
 | `provider_quota` | 整合帳號餘額、本機工具 budget、capabilities 與 routing hints | provider-scoped 診斷視圖，同時看 billing status、Groundlane provider-dispatch guardrail、已 expose 工具、keyless 可用性與下一步檢查 |
@@ -328,8 +328,12 @@ Groundlane 支援兩種 Cloudflare 部署模式：
 | 資料層 | D1 + R2 | node:sqlite（Container 內） |
 | HTTP fetcher | Workers `fetch()` | SSRF-safe `node:http` + DNS filtering |
 | Browser | 停用（CF Browser Rendering ready） | Playwright + Chromium |
-| MCP 工具 | 全部 54 個 | 全部 54 個 |
+| MCP 工具 | 全部 57 個 | 全部 57 個 |
 | 成本 | **$0**（Workers 免費額度） | ~$1.5–3/月（container memory + disk） |
+
+Lite 保留相同的可探索工具介面，但 `crawl_create`、`crawl_status`、
+`crawl_result`、`crawl_cancel` 會回傳 `PROVIDER_UNAVAILABLE`；durable
+crawl-job state 目前需要 Full 模式。
 
 部署 lite 模式：
 
