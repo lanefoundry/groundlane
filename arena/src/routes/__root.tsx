@@ -2,8 +2,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
   HeadContent,
+  Link,
   Scripts,
 } from '@tanstack/react-router'
+import { Button } from '#/components/ui/button'
+import { Separator } from '#/components/ui/separator'
 import appCss from '../styles.css?url'
 
 interface RouterContext {
@@ -33,9 +36,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen bg-[var(--bg)] font-[var(--font-body)] text-[var(--text-body)] antialiased">
+      <body className="flex min-h-screen flex-col bg-[var(--bg)] font-sans text-[var(--foreground)] antialiased">
         <Header />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
           {children}
         </main>
         <Footer />
@@ -47,27 +50,38 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
 function Header() {
   return (
-    <header className="border-b border-[var(--border)] bg-[var(--bg-surface)]">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <a href="/" className="flex items-center gap-2 font-[var(--font-display)] text-lg font-bold text-[var(--text-heading)]">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-sm font-bold text-white">
+    <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--card)]/90 backdrop-blur-md">
+      <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 font-[var(--font-display)] text-lg font-bold text-[var(--text-heading)] transition-opacity hover:opacity-80"
+        >
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] font-mono text-sm font-bold text-white">
             A
           </span>
-          Groundlane Arena
-        </a>
-        <div className="flex items-center gap-6 text-sm font-medium">
-          <a href="/leaderboard" className="text-[var(--text-muted)] transition-colors hover:text-[var(--text-heading)]">
-            Leaderboard
-          </a>
-          <a href="/about" className="text-[var(--text-muted)] transition-colors hover:text-[var(--text-heading)]">
-            About
-          </a>
-          <a
-            href="/match"
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]"
-          >
-            Vote Now
-          </a>
+          Arena
+        </Link>
+
+        <div className="flex items-center gap-1">
+          <Link to="/leaderboard">
+            <Button variant="ghost" size="sm">
+              Leaderboard
+            </Button>
+          </Link>
+          <Link to="/benchmark">
+            <Button variant="ghost" size="sm">
+              Benchmark
+            </Button>
+          </Link>
+          <Link to="/about">
+            <Button variant="ghost" size="sm">
+              About
+            </Button>
+          </Link>
+          <Separator orientation="vertical" className="mx-2 h-5" />
+          <Link to="/match">
+            <Button size="sm">Vote Now</Button>
+          </Link>
         </div>
       </nav>
     </header>
@@ -76,10 +90,13 @@ function Header() {
 
 function Footer() {
   return (
-    <footer className="border-t border-[var(--border)] bg-[var(--bg-surface)] py-6 text-center text-sm text-[var(--text-muted)]">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        Groundlane Arena — neutral, open-source provider evaluation.{' '}
-        <a href="https://github.com/lanefoundry/groundlane" className="underline hover:text-[var(--text-heading)]">
+    <footer className="border-t border-[var(--border)] bg-[var(--card)]">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 text-sm text-[var(--text-muted)] sm:px-6 lg:px-8">
+        <span>Groundlane Arena — neutral, open-source provider evaluation</span>
+        <a
+          href="https://github.com/lanefoundry/groundlane"
+          className="font-medium text-[var(--accent)] transition-colors hover:text-[var(--accent-hover)]"
+        >
           GitHub
         </a>
       </div>

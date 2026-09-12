@@ -1,10 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { cn } from '#/lib/utils'
+import { useState } from 'react'
+import { Badge } from '#/components/ui/badge'
+import { Card } from '#/components/ui/card'
+import { Tabs, TabsList, TabsTrigger } from '#/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { Sparkline } from '#/components/Sparkline'
 import type { LeaderboardProvider, Track } from '#/lib/types'
 import { getLeaderboard } from '#/server/api'
-import { useState } from 'react'
 
 export const Route = createFileRoute('/leaderboard')({
   component: LeaderboardPage,
@@ -23,37 +33,61 @@ function LeaderboardPage() {
   const hasBT = data?.providers.some((p) => p.btElo != null) ?? false
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Leaderboard</h1>
-        <TrackSelector value={track} onChange={setTrack} />
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="font-[var(--font-display)] text-3xl font-bold text-[var(--text-heading)]">
+          Leaderboard
+        </h1>
+        <Tabs
+          value={track}
+          onValueChange={(v) => setTrack(v as Track)}
+        >
+          <TabsList>
+            <TabsTrigger value="search">Search</TabsTrigger>
+            <TabsTrigger value="extraction">Extraction</TabsTrigger>
+            <TabsTrigger value="document">Document</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {isLoading ? (
-        <div className="py-16 text-center text-[var(--text-muted)]">Loading…</div>
+        <div className="py-20 text-center text-[var(--text-muted)]">
+          Loading…
+        </div>
       ) : (
         <>
           {established.length > 0 && (
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-[var(--text-heading)]">Ranked</h2>
-              <LeaderboardTable providers={established} hasBT={hasBT} allProviders={data?.providers ?? []} />
+              <h2 className="mb-3 font-[var(--font-display)] text-lg font-semibold text-[var(--text-heading)]">
+                Ranked
+              </h2>
+              <LeaderboardTable
+                providers={established}
+                hasBT={hasBT}
+                allProviders={data?.providers ?? []}
+              />
             </section>
           )}
 
           {evaluating.length > 0 && (
             <section>
-              <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-[var(--text-heading)]">
-                Evaluating
-                <span className="rounded-full bg-[var(--warning-soft)] px-2 py-0.5 text-xs font-medium text-[var(--warning)]">
-                  Provisional
-                </span>
-              </h2>
-              <LeaderboardTable providers={evaluating} provisional hasBT={hasBT} allProviders={data?.providers ?? []} />
+              <div className="mb-3 flex items-center gap-2">
+                <h2 className="font-[var(--font-display)] text-lg font-semibold text-[var(--text-heading)]">
+                  Evaluating
+                </h2>
+                <Badge variant="warning">Provisional</Badge>
+              </div>
+              <LeaderboardTable
+                providers={evaluating}
+                provisional
+                hasBT={hasBT}
+                allProviders={data?.providers ?? []}
+              />
             </section>
           )}
 
           {established.length === 0 && evaluating.length === 0 && (
-            <div className="py-16 text-center text-[var(--text-muted)]">
+            <div className="py-20 text-center text-[var(--text-muted)]">
               No providers registered yet.
             </div>
           )}
@@ -61,40 +95,11 @@ function LeaderboardPage() {
       )}
 
       {data && (
-        <div className="text-right text-xs text-[var(--text-muted)]">
-          Fixture version: {data.fixtureVersion} · Updated: {new Date(data.updatedAt).toLocaleString()}
-        </div>
+        <p className="text-right text-xs text-[var(--text-muted)]">
+          Fixture version: {data.fixtureVersion} · Updated:{' '}
+          {new Date(data.updatedAt).toLocaleString()}
+        </p>
       )}
-    </div>
-  )
-}
-
-function TrackSelector({ value, onChange }: { value: Track; onChange: (t: Track) => void }) {
-  const tracks: { id: Track; label: string }[] = [
-    { id: 'search', label: 'Search' },
-    { id: 'extraction', label: 'Extraction' },
-    { id: 'document', label: 'Document' },
-  ]
-
-  return (
-    <div className="flex rounded-lg border border-[var(--border)] bg-[var(--bg-surface)]">
-      {tracks.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => onChange(t.id)}
-          className={cn(
-            'px-4 py-2 text-sm font-medium transition-colors',
-            value === t.id
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-heading)]',
-            t.id === 'search' && 'rounded-l-lg',
-            t.id === 'document' && 'rounded-r-lg',
-          )}
-        >
-          {t.label}
-        </button>
-      ))}
     </div>
   )
 }
@@ -113,106 +118,135 @@ function LeaderboardTable({
   const eloRange = hasBT ? computeEloRange(allProviders) : null
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow)]">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[var(--border)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
-            <th className="px-4 py-3">{provisional ? '' : '#'}</th>
-            <th className="px-4 py-3">Provider</th>
-            <th className="px-4 py-3 text-right font-[var(--font-mono)]">Elo</th>
-            {hasBT && <th className="w-40 px-4 py-3">CI</th>}
-            <th className="px-4 py-3 text-right font-[var(--font-mono)]">Votes</th>
-            <th className="px-4 py-3 text-right font-[var(--font-mono)]">F1</th>
-            <th className="px-4 py-3">Trend</th>
-            <th className="px-4 py-3 text-right font-[var(--font-mono)]">p50</th>
-            <th className="px-4 py-3 text-right">Cost</th>
-          </tr>
-        </thead>
-        <tbody>
+    <Card className="overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12">{provisional ? '' : '#'}</TableHead>
+            <TableHead>Provider</TableHead>
+            <TableHead className="text-right font-mono">Elo</TableHead>
+            {hasBT && <TableHead className="w-40">CI</TableHead>}
+            <TableHead className="text-right font-mono">Votes</TableHead>
+            <TableHead className="text-right font-mono">F1</TableHead>
+            <TableHead className="w-24">Trend</TableHead>
+            <TableHead className="text-right font-mono">p50</TableHead>
+            <TableHead className="text-right">Cost</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {providers.map((p, i) => {
             const nextP = providers[i + 1]
-            const tiedWithNext = nextP != null && p.statisticallyTiedWith.includes(nextP.id)
+            const tiedWithNext =
+              nextP != null && p.statisticallyTiedWith.includes(nextP.id)
 
             return (
-              <tr key={p.id} className={cn('border-b border-[var(--border)] last:border-0', tiedWithNext && 'border-b-0')}>
-                <td className="px-4 py-3 font-[var(--font-mono)] text-[var(--text-muted)]">
+              <TableRow key={p.id}>
+                <TableCell className="font-mono text-[var(--text-muted)]">
                   {provisional ? '–' : i + 1}
-                </td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-[var(--text-heading)]">{p.displayName}</span>
+                    <span className="font-medium text-[var(--text-heading)]">
+                      {p.displayName}
+                    </span>
                     {tiedWithNext && (
-                      <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 font-[var(--font-mono)] text-xs font-medium text-[var(--accent)]" title="Statistically tied with next provider">
+                      <Badge variant="accent" className="font-mono text-[10px]">
                         ≈
-                      </span>
+                      </Badge>
                     )}
                   </div>
-                </td>
-                <td className="px-4 py-3 text-right font-[var(--font-mono)] font-semibold tabular-nums text-[var(--text-heading)]">
+                </TableCell>
+                <TableCell className="text-right font-mono font-semibold tabular-nums text-[var(--text-heading)]">
                   {p.btElo ?? p.elo}
-                </td>
+                </TableCell>
                 {hasBT && (
-                  <td className="px-4 py-3">
+                  <TableCell>
                     {p.ciLow != null && p.ciHigh != null && eloRange ? (
-                      <CIBar ciLow={p.ciLow} ciHigh={p.ciHigh} elo={p.btElo ?? p.elo} min={eloRange.min} max={eloRange.max} />
+                      <CIBar
+                        ciLow={p.ciLow}
+                        ciHigh={p.ciHigh}
+                        elo={p.btElo ?? p.elo}
+                        min={eloRange.min}
+                        max={eloRange.max}
+                      />
                     ) : (
-                      <span className="text-xs text-[var(--text-muted)]">—</span>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        —
+                      </span>
                     )}
-                  </td>
+                  </TableCell>
                 )}
-                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                <TableCell className="text-right font-mono tabular-nums text-[var(--text-muted)]">
                   {p.votes}
-                </td>
-                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums text-[var(--text-muted)]">
                   {p.scoreF1 != null ? p.scoreF1.toFixed(3) : '—'}
-                </td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell>
                   <Sparkline data={p.sparkline7d} />
-                </td>
-                <td className="px-4 py-3 text-right font-[var(--font-mono)] tabular-nums text-[var(--text-muted)]">
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums text-[var(--text-muted)]">
                   {p.latencyP50_ms != null ? `${p.latencyP50_ms}ms` : '—'}
-                </td>
-                <td className="px-4 py-3 text-right text-[var(--text-muted)]">
+                </TableCell>
+                <TableCell className="text-right text-[var(--text-muted)]">
                   {p.pricingModel === 'free'
                     ? 'Free'
                     : p.costPerCall_usd != null
                       ? `$${p.costPerCall_usd.toFixed(3)}`
                       : '—'}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )
           })}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Card>
   )
 }
 
-function CIBar({ ciLow, ciHigh, elo, min, max }: { ciLow: number; ciHigh: number; elo: number; min: number; max: number }) {
+function CIBar({
+  ciLow,
+  ciHigh,
+  elo,
+  min,
+  max,
+}: {
+  ciLow: number
+  ciHigh: number
+  elo: number
+  min: number
+  max: number
+}) {
   const range = max - min || 1
   const leftPct = ((ciLow - min) / range) * 100
   const widthPct = ((ciHigh - ciLow) / range) * 100
   const dotPct = ((elo - min) / range) * 100
 
   return (
-    <div className="relative h-4 w-full rounded bg-[var(--bg-elevated)]" title={`${ciLow} – ${ciHigh}`}>
+    <div
+      className="relative h-4 w-full rounded-full bg-[var(--secondary)]"
+      title={`${ciLow} – ${ciHigh}`}
+    >
       <div
-        className="absolute top-1 h-2 rounded bg-[var(--accent)]"
+        className="absolute top-1 h-2 rounded-full bg-[var(--accent)]"
         style={{
           left: `${Math.max(0, leftPct)}%`,
           width: `${Math.min(100, widthPct)}%`,
-          opacity: 0.3,
+          opacity: 0.25,
         }}
       />
       <div
-        className="absolute top-0.5 h-3 w-1 rounded-full bg-[var(--accent)]"
-        style={{ left: `${Math.max(0, Math.min(100, dotPct))}%` }}
+        className="absolute top-0.5 h-3 w-1.5 rounded-full bg-[var(--accent)]"
+        style={{ left: `${Math.max(0, Math.min(98, dotPct))}%` }}
       />
     </div>
   )
 }
 
-function computeEloRange(providers: LeaderboardProvider[]): { min: number; max: number } {
+function computeEloRange(providers: LeaderboardProvider[]): {
+  min: number
+  max: number
+} {
   let min = 1500
   let max = 1500
   for (const p of providers) {

@@ -1,32 +1,52 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import 'tailwindcss';
 
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/*
+ * Groundlane Arena — Slate-teal palette
+ * Neutral evaluator aesthetic with cool-tinted grays and a restrained teal accent.
+ * win-a (blue) and win-b (purple) provide clear A/B distinction.
+ */
+
 :root {
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-body: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  --bg: #f5f6f8;
+  --bg: #f4f6f7;
   --bg-surface: #ffffff;
-  --bg-elevated: #ebedf2;
-  --text-heading: #1a1d23;
-  --text-body: #3d424d;
-  --text-muted: #6b7280;
-  --accent: #3b5ccc;
-  --accent-hover: #2d4ab3;
-  --accent-soft: rgba(59, 92, 204, 0.1);
-  --win-a: #2563eb;
-  --win-b: #7c3aed;
-  --tie-color: #6b7280;
-  --both-bad: #dc2626;
-  --positive: #059669;
-  --positive-soft: rgba(5, 150, 105, 0.1);
-  --warning: #d97706;
-  --warning-soft: rgba(217, 119, 6, 0.1);
-  --border: #e2e5ea;
-  --shadow: 0 1px 3px rgba(26, 29, 35, 0.06), 0 1px 2px rgba(26, 29, 35, 0.04);
-  --shadow-lg: 0 4px 12px rgba(26, 29, 35, 0.08), 0 2px 4px rgba(26, 29, 35, 0.04);
+  --bg-elevated: #e9ecef;
+  --text-heading: #0f172a;
+  --text-body: #334155;
+  --text-muted: #64748b;
 
+  --accent: #0d9488;
+  --accent-hover: #0a7c72;
+  --accent-soft: rgba(13, 148, 136, 0.08);
+
+  --win-a: #2563eb;
+  --win-a-soft: rgba(37, 99, 235, 0.08);
+  --win-b: #7c3aed;
+  --win-b-soft: rgba(124, 58, 237, 0.08);
+
+  --positive: #059669;
+  --positive-soft: rgba(5, 150, 105, 0.08);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.08);
+  --destructive: #dc2626;
+  --destructive-soft: rgba(220, 38, 38, 0.08);
+
+  --border: #e2e8f0;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-lg: 0 4px 12px rgba(15, 23, 42, 0.06), 0 2px 4px rgba(15, 23, 42, 0.03);
+
+  /* shadcn token mapping */
   --background: var(--bg);
   --foreground: var(--text-body);
   --card: var(--bg-surface);
@@ -39,63 +59,39 @@
   --secondary-foreground: var(--text-heading);
   --muted: var(--bg-elevated);
   --muted-foreground: var(--text-muted);
-  --destructive: var(--both-bad);
   --destructive-foreground: #ffffff;
-  --border: #e2e5ea;
-  --input: #e2e5ea;
+  --input: var(--border);
   --ring: var(--accent);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #111318;
-    --bg-surface: #1a1d24;
-    --bg-elevated: #252830;
-    --text-heading: #e8eaef;
-    --text-body: #b0b5c0;
-    --text-muted: #6b7280;
-    --accent: #6b8cff;
-    --accent-hover: #8ba3ff;
-    --accent-soft: rgba(107, 140, 255, 0.12);
-    --win-a: #60a5fa;
-    --win-b: #a78bfa;
-    --border: #2d3140;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+.dark {
+  --bg: #0c1017;
+  --bg-surface: #141922;
+  --bg-elevated: #1e2533;
+  --text-heading: #e2e8f0;
+  --text-body: #94a3b8;
+  --text-muted: #64748b;
 
-    --background: var(--bg);
-    --foreground: var(--text-body);
-    --card: var(--bg-surface);
-    --card-foreground: var(--text-body);
-    --popover: var(--bg-surface);
-    --popover-foreground: var(--text-body);
-    --primary: var(--accent);
-    --primary-foreground: #111318;
-    --secondary: var(--bg-elevated);
-    --secondary-foreground: var(--text-heading);
-    --muted: var(--bg-elevated);
-    --muted-foreground: var(--text-muted);
-    --border: #2d3140;
-    --input: #2d3140;
-  }
-}
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-soft: rgba(45, 212, 191, 0.1);
 
-:root[data-theme='dark'] {
-  --bg: #111318;
-  --bg-surface: #1a1d24;
-  --bg-elevated: #252830;
-  --text-heading: #e8eaef;
-  --text-body: #b0b5c0;
-  --text-muted: #6b7280;
-  --accent: #6b8cff;
-  --accent-hover: #8ba3ff;
-  --accent-soft: rgba(107, 140, 255, 0.12);
   --win-a: #60a5fa;
+  --win-a-soft: rgba(96, 165, 250, 0.1);
   --win-b: #a78bfa;
-  --border: #2d3140;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --win-b-soft: rgba(167, 139, 250, 0.1);
+
+  --positive: #34d399;
+  --positive-soft: rgba(52, 211, 153, 0.1);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.1);
+  --destructive: #f87171;
+  --destructive-soft: rgba(248, 113, 113, 0.1);
+
+  --border: #1e293b;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
 
   --background: var(--bg);
   --foreground: var(--text-body);
@@ -104,13 +100,13 @@
   --popover: var(--bg-surface);
   --popover-foreground: var(--text-body);
   --primary: var(--accent);
-  --primary-foreground: #111318;
+  --primary-foreground: #0c1017;
   --secondary: var(--bg-elevated);
   --secondary-foreground: var(--text-heading);
   --muted: var(--bg-elevated);
   --muted-foreground: var(--text-muted);
-  --border: #2d3140;
-  --input: #2d3140;
+  --destructive-foreground: #0c1017;
+  --input: var(--border);
 }
 
 body {
