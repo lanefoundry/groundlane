@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { ContentResult } from "../core/contracts.js";
 import { ContentRouter, CONTENT_PROVIDER_IDS } from "../core/content-router.js";
+import { paginateContentResult } from "../core/content-pagination.js";
 import { GroundlaneError } from "../core/errors.js";
 import { Deadline, type ConcurrencyLimiter, withinDeadline } from "../core/limits.js";
 import type { McpModule } from "../mcp/registry.js";
@@ -29,6 +30,9 @@ function detectBinarySuffix(url: string): string | undefined {
 export const webContentInputSchema = z.object({
   url: z.string().trim().url().max(2_048),
   maxContentChars: z.number().int().min(1).max(200_000).default(20_000),
+  paginate: z.boolean().default(false),
+  contentOffset: z.number().int().min(0).max(200_000).default(0),
+  expectedContentHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   provider: z.enum(["auto", ...CONTENT_PROVIDER_IDS]).default("auto"),
   providers: z.array(z.enum(CONTENT_PROVIDER_IDS)).min(1).max(CONTENT_PROVIDER_IDS.length).optional(),
   strategy: z.enum(["fallback", "parallel"]).default("parallel"),
@@ -37,6 +41,15 @@ export const webContentInputSchema = z.object({
 }).superRefine((value, context) => {
   if (value.provider !== "auto" && value.providers !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Specify either provider or providers, not both" });
+  }
+  if (value.paginate && value.provider === "auto") {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Pagination requires an explicit provider" });
+  }
+  if (!value.paginate && (value.contentOffset !== 0 || value.expectedContentHash !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Continuation fields require paginate=true" });
+  }
+  if (value.paginate && value.contentOffset > 0 && value.expectedContentHash === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Continuation requires expectedContentHash from the previous page" });
   }
 });
 
@@ -54,6 +67,11 @@ const contentDataSchema = z.object({
     content: z.string(),
     format: z.enum(["markdown", "text"]),
     truncated: z.boolean(),
+    contentOffset: z.number().int().nonnegative().optional(),
+    totalContentChars: z.number().int().nonnegative().optional(),
+    nextContentOffset: z.number().int().nonnegative().nullable().optional(),
+    contentHash: z.string().optional(),
+    sourceTruncated: z.boolean().optional(),
     durationMs: z.number().int().nonnegative(),
     warnings: z.array(z.string()),
   })),
@@ -78,7 +96,7 @@ export function assertContentOutputWithinLimit(result: ContentResult, maxOutputC
       undefined,
       {
         code: "web_content.output_too_large",
-        text: "Lower maxContentChars, drop to a single provider, or switch strategy to 'fallback'. The current call aggregated output from multiple providers which exceeded the bound.",
+        text: "Lower maxContentChars, use paginate=true with an explicit provider, or reduce the selected providers. Serialized content exceeded the deployment output bound.",
       },
     );
   }
@@ -92,7 +110,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
         "web_content",
         {
           description:
-            "Fetch URL content through content-capable providers. Parallel mode fans out across configured provider Contents/Extract/Scrape/Fetch APIs and returns attributed provider content.",
+            "Fetch URL content through content-capable providers. Parallel mode returns attributed provider content. With an explicit provider, paginate=true returns bounded pages; continue with nextContentOffset and expectedContentHash. Each page re-fetches the source (provider costs apply); sourceTruncated reports retrieval truncation separately from paging.",
           inputSchema: webContentInputSchema,
           outputSchema: resultEnvelopeSchema(contentDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
@@ -124,7 +142,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
                     options.router.fetchContent(
                       {
                         url: input.url,
-                        maxContentChars: input.maxContentChars,
+                        maxContentChars: input.paginate ? 200_000 : input.maxContentChars,
                         provider: input.provider,
                         strategy: input.strategy,
                         live: input.live,
@@ -137,8 +155,19 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
                   "web_content",
                 ),
             );
-            assertContentOutputWithinLimit(result, options.maxOutputChars);
-            return structuredToolResult({ ok: true, data: result });
+            const data = input.paginate
+              ? paginateContentResult(result, {
+                  offset: input.contentOffset,
+                  maxContentChars: input.maxContentChars,
+                  maxOutputChars: options.maxOutputChars,
+                  ...(input.expectedContentHash === undefined ? {} : { expectedContentHash: input.expectedContentHash }),
+                })
+              : result;
+            assertContentOutputWithinLimit(data, options.maxOutputChars);
+            const response = structuredToolResult({ ok: true, data });
+            deadline.remainingMs("web_content.output");
+            if (ctx.mcpReq.signal?.aborted) throw new GroundlaneError("CANCELLED", "web_content", "Content request was cancelled");
+            return response;
           } catch (error) {
             return toolError(error, { tool: "content" });
           }

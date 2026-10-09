@@ -139,6 +139,31 @@ In the Cloudflare topology, the Worker derives `ASYNC_TASK_EDGE_ENABLED` for Con
 
 `web_content` defaults to `strategy=parallel`: it selects configured content providers and returns each provider's extracted content separately. Use `strategy=fallback` to spend at most one successful content call, or pin `provider`. Implemented provider paths are Linkup `/v1/fetch`, You.com `/v1/contents`, Exa `/contents`, Tavily `/extract`, Firecrawl `/v2/scrape`, TinyFish Fetch, and Keenable `/v1/fetch` or `/v1/fetch/public`. Provider-returned final URLs are validated again before they leave Groundlane.
 
+### `web_content` pagination
+
+Pagination is opt-in and requires an explicit `provider`; `provider=auto` is rejected. `paginate` defaults to `false`. `contentOffset` defaults to `0` and accepts integers from `0` to `200000`; a nonzero offset requires pagination. For a continuation (`contentOffset > 0`), supply `expectedContentHash`, a 64-character lowercase hexadecimal SHA-256 hash from the first response.
+
+First page:
+
+```json
+{
+  "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "provider": "tavily",
+  "paginate": true,
+  "maxContentChars": 20000
+}
+```
+
+The first `contents` item adds `contentOffset`, `totalContentChars`, `nextContentOffset` (a number or `null`), `contentHash`, and `sourceTruncated`. To continue, repeat the same URL and provider, set `contentOffset` to the returned `nextContentOffset`, and set `expectedContentHash` to the returned `contentHash`. Append each page's `content` in order; stop when `nextContentOffset` is `null`.
+
+Pagination retrieves at most 200,000 characters from the provider per call. `maxContentChars` limits the page; Groundlane may shrink it further so serialized response data fits deployment `MAX_OUTPUT_CHARS`. Use the returned offset rather than calculating the next offset from the requested page size.
+
+`truncated` means this page omits some retrieved source content or the retrieved source itself was capped. `sourceTruncated` specifically reports truncation at the provider retrieval cap. `totalContentChars` and `contentHash` describe the retrieved source, not the full upstream document. A `false` `sourceTruncated` does not certify that the provider extracted every subtitle or the complete video. Pagination does not parse subtitle XML or provide a dedicated transcript tool.
+
+There is no saved artifact: every continuation retrieves the source again and consumes another provider request and local dispatch attempt. If the source hash differs, Groundlane fails closed with an input error; restart at offset `0` rather than joining pages from different versions. Pagination does not change provider billing, credentials, URL protections, or request deadlines.
+
+### Other provider-backed tools
+
 `web_map` defaults to `strategy=parallel`: it selects configured map providers and returns attributed discovered URLs from each provider plus a deduplicated top-level link list. Use `strategy=fallback` to spend at most one successful map call, or pin `provider=firecrawl` / `provider=tavily`. Implemented provider paths are Firecrawl `/v2/map` and Tavily `/map`. Groundlane validates the root URL before calling providers and validates every provider-returned URL before returning it.
 
 `web_crawl` defaults to `strategy=parallel`: it selects configured crawl providers and returns bounded, provider-attributed pages plus job status metadata. Use `strategy=fallback` to spend at most one successful crawl call, or pin `provider=firecrawl` / `provider=tavily`. Implemented provider paths are Firecrawl `/v2/crawl` with bounded status polling and Tavily `/crawl`. Groundlane validates the root URL before calling providers and validates every provider-returned page URL before returning it.

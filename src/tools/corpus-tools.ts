@@ -613,7 +613,7 @@ export function createCorpusToolsModule(options: CorpusToolsModuleOptions): McpM
             });
 
             const segments = parsed.blocks
-              .map((block) => ({ text: blockText(block as DocumentBlock), blockId: block.blockId }))
+              .map((block) => ({ text: blockText(block), blockId: block.blockId }))
               .filter((s) => s.text.trim().length > 0);
 
             const sizes = [...input.chunkSizes].sort((a, b) => b - a);

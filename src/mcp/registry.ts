@@ -91,7 +91,7 @@ export class McpRegistry {
           ? (async (...args: Parameters<typeof callback>) => {
               const start = Date.now();
               try {
-                const result = await (callback as Function).apply(undefined, args);
+                const result = await callback(...args);
                 const sc = result as { structuredContent?: { ok?: boolean } } | undefined;
                 const status: "ok" | "error" = sc?.structuredContent?.ok === false ? "error" : "ok";
                 auditSink.append({
