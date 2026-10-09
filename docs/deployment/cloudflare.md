@@ -474,6 +474,10 @@ Treat deployment as incomplete until the public route and Container binding are 
 
 ## Continuous deployment from GitHub
 
+Both workflow jobs use `pnpm/action-setup` without a separate version override;
+`package.json`'s `packageManager` field is the pnpm version source of truth.
+Update that field when upgrading pnpm, rather than pinning a different workflow version.
+
 The checked-in [CI workflow](../../.github/workflows/ci.yml) runs the existing
 quality job for pull requests and pushes. On `main` pushes (or a manual run on
 `main`), its `deploy` job starts only after quality succeeds, installs the locked

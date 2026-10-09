@@ -191,8 +191,10 @@ values. Delete the populated file after setup if you do not need it locally.
 Then follow the [Cloudflare deployment guide](docs/deployment/cloudflare.md)
 to verify health, readiness, authentication, and MCP behavior.
 
-Pushes to `main` automatically deploy after the CI quality job succeeds. The
-repository must have `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` GitHub
+Pushes to `main` automatically deploy after the CI quality job succeeds.
+CI and deploy jobs install the pnpm version declared by `package.json`'s
+`packageManager` field so the workflow and project cannot select different versions.
+The repository must have `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` GitHub
 Actions secrets, plus `GROUNDLANE_AUTH_TOKEN` for post-deploy smoke; see
 [Continuous deployment](docs/deployment/cloudflare.md#continuous-deployment-from-github).
 
