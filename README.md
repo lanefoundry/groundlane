@@ -321,6 +321,7 @@ Use `pnpm smoke` while the server is running to verify the MCP handshake plus `w
 
 - **One MCP contract:** clients do not need provider-specific tool schemas.
 - **HTTP first:** ordinary reads avoid browser cost; Chromium is reserved for rendering and wait conditions.
+- **Article vs. full page:** Markdown/text default to article extraction (`extract: "article"`), which can drop navigation, cards, and link lists on landing pages. Pass `extract: "full"` (or `format: "html"`) to keep the whole page; a `content extraction removed most of the page` warning flags when this happened.
 - **Deterministic extraction:** CSS selectors produce structured output without an unrequested model inference step.
 - **Bounded by default:** URL policy, DNS/redirect checks, one deadline, byte/output caps, and concurrency limits remain in the Groundlane boundary.
 - **Explicit hosted fallbacks:** Jina Reader and Browserless receive a preflight-validated public final URL only when the operator enables them.

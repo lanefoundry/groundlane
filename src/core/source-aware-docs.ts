@@ -309,6 +309,7 @@ export function canUseSourceAwareDocs(request: FetchPipelineRequest): boolean {
     request.render !== "always" &&
     request.selector === undefined &&
     request.waitFor === undefined &&
+    request.extract !== "full" &&
     (request.format === "markdown" || request.format === "text")
   );
 }

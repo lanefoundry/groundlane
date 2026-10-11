@@ -208,7 +208,7 @@ Providers that return errors (429, 5xx) accumulate a dynamic penalty that tempor
 | `JINA_READER_RPM` | Proactive Jina Reader rate limit (requests per minute) | `20` |
 | `BROWSERLESS_MONTHLY_UNITS` | Proactive Browserless monthly unit cap | `1000` |
 
-The built-in Groundlane Reader is local normalization and needs no credential. Enabling Jina or Browserless sends eligible public target URLs to that hosted provider. HTML, explicit CSS selectors, wait conditions, and `render=always` do not use Jina Reader.
+The built-in Groundlane Reader is local normalization and needs no credential. Enabling Jina or Browserless sends eligible public target URLs to that hosted provider. HTML, explicit CSS selectors, wait conditions, `extract=full`, and `render=always` do not use Jina Reader.
 
 The fetch pipeline proactively tracks Jina Reader RPM and Browserless monthly units in-memory. When a backend's budget is exhausted, the pipeline skips it and falls back to the next option instead of wasting latency on a 429 response.
 

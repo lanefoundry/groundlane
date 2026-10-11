@@ -91,7 +91,7 @@ Concrete adapters are wired in one composition layer. Dependencies point inward:
 2. Normalize the URL and enforce network policy.
 3. Perform a bounded HTTP fetch through a DNS-safe connection path.
 4. Follow only validated redirects within the original budget.
-5. Normalize the document to the requested format; Markdown/text use the built-in Groundlane Reader unless an explicit selector is supplied.
+5. Normalize the document to the requested format; Markdown/text use the built-in Groundlane Reader (article extraction) unless an explicit selector is supplied or `extract=full` is requested. `extract=full` keeps the whole `<body>` (navigation, cards, link lists) and skips Jina Reader and source-aware docs. When article extraction keeps under half of a page's visible text (pages of 400+ characters), the response carries a `content extraction removed most of the page` warning; the output itself is unchanged.
 6. For an eligible Markdown request, optionally try Jina Reader after a retryable HTTP failure or supported fallback signal.
 7. If Reader is ineligible, unavailable, or rate-limited—or if `render=always`—call the configured Groundlane Browser with the remaining budget.
 8. Return content plus final URL, status, engine, backend provenance, truncation, timing, and warnings metadata. The current compatibility field `cached` is always `false`; response caching is deferred.
