@@ -3,6 +3,7 @@ import type { KnownSearchProviderId } from "./search-provider-catalog.js";
 
 export type FetchFormat = "html" | "text" | "markdown";
 export type RenderMode = "auto" | "never" | "always";
+export type ExtractMode = "article" | "full";
 export type Engine = "http" | "reader" | "browser";
 
 export interface RawDocument {

@@ -16,6 +16,7 @@ const inputSchema = z.object({
   selector: z.string().trim().min(1).max(500).optional(),
   waitFor: z.string().trim().min(1).max(500).optional(),
   render: z.enum(["auto", "never", "always"]).default("auto"),
+  extract: z.enum(["article", "full"]).default("article"),
   timeoutMs: z.number().int().min(1_000).max(120_000).optional(),
   maxBytes: z.number().int().min(1_024).max(20_000_000).optional(),
   maxOutputChars: z.number().int().min(1_000).max(500_000).optional(),
@@ -78,6 +79,7 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
                     url: input.url,
                     format: input.format,
                     render: input.render,
+                    extract: input.extract,
                     maxBytes: Math.min(input.maxBytes ?? options.maxResponseBytes, options.maxResponseBytes),
                     maxOutputChars: Math.min(
                       input.maxOutputChars ?? options.maxOutputChars,

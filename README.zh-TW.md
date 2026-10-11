@@ -307,6 +307,7 @@ Server 執行時可用 `pnpm smoke` 驗證 MCP handshake，並對 `example.com` 
 
 - **一套 MCP 契約：**client 不需要理解每個 provider 的專屬 tool schema。
 - **HTTP 優先：**普通內容不付 browser 成本；只有 rendering 與 wait condition 才動用 Chromium。
+- **文章 vs. 整頁：**Markdown/text 預設用文章抽取（`extract: "article"`），落地頁的導覽、卡片與連結清單可能被丟掉。需要整頁時傳 `extract: "full"`（或 `format: "html"`）；若抽取丟掉大部分內容，回應會帶 `content extraction removed most of the page` 警告。
 - **確定性抽取：**CSS selector 直接產生 structured output，不加入未要求的模型推論。
 - **預設有界：**URL policy、DNS／redirect checks、單一 deadline、bytes／output caps 與 concurrency limits 都留在 Groundlane boundary。
 - **Hosted fallback 必須明確啟用：**只有 operator 主動設定時才會把 preflight 驗證後的 public final URL 傳給 Jina Reader 或 Browserless。

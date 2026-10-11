@@ -178,6 +178,36 @@ void test("FetchPipeline skips Reader when the caller needs HTML", async () => {
   assert.equal(browserCalls, 1);
 });
 
+void test("FetchPipeline skips Reader and keeps the full page when extract is full", async () => {
+  let readerCalls = 0;
+  const http: HttpFetcher = { fetch: () => Promise.resolve(raw("<html><script>render()</script></html>")) };
+  const browser: BrowserBackend = {
+    ready: () => Promise.resolve(true),
+    fetch: () => Promise.resolve(raw("<html><body><nav>Docs</nav><main><h3>Card title</h3></main></body></html>", "browser")),
+  };
+  const reader: ReaderBackend = {
+    ready: () => Promise.resolve(true),
+    fetch: () => {
+      readerCalls += 1;
+      return Promise.resolve(raw("# Reader result", "reader"));
+    },
+  };
+  const result = await new FetchPipeline(http, browser, reader).fetch({
+    url: "https://example.com",
+    format: "markdown",
+    render: "auto",
+    extract: "full",
+    maxBytes: 10_000,
+    maxOutputChars: 10_000,
+    maxRedirects: 3,
+    deadline: new Deadline(1_000),
+  });
+  assert.equal(readerCalls, 0);
+  assert.equal(result.raw.engine, "browser");
+  assert.ok(result.content.includes("Card title"));
+  assert.ok(result.content.includes("Docs"));
+});
+
 void test("FetchPipeline falls through from a retryable Reader failure to browser", async () => {
   let browserCalls = 0;
   const http: HttpFetcher = {

@@ -1,4 +1,4 @@
-import type { BrowserBackend, FetchFormat, HttpFetcher, NormalizedDocument, RawDocument, ReaderBackend, RenderMode } from "./contracts.js";
+import type { BrowserBackend, ExtractMode, FetchFormat, HttpFetcher, NormalizedDocument, RawDocument, ReaderBackend, RenderMode } from "./contracts.js";
 import { detectChallenge } from "./browser-policy.js";
 import { GroundlaneError } from "./errors.js";
 import { normalizeDocument } from "./normalize-document.js";
@@ -6,7 +6,7 @@ import type { Deadline } from "./limits.js";
 import type { SearchBudgetTracker } from "./search-budget.js";
 import { canUseSourceAwareDocs, isLikelyDocumentationUrl, type SourceResolver } from "./source-aware-docs.js";
 
-export interface FetchPipelineRequest { url: string; format: FetchFormat; render: RenderMode; selector?: string; waitFor?: string; maxBytes: number; maxOutputChars: number; maxRedirects: number; deadline: Deadline }
+export interface FetchPipelineRequest { url: string; format: FetchFormat; render: RenderMode; extract?: ExtractMode; selector?: string; waitFor?: string; maxBytes: number; maxOutputChars: number; maxRedirects: number; deadline: Deadline }
 export interface FetchPipelineResult extends NormalizedDocument { raw: RawDocument; fallbackReason?: string }
 
 export function validateFetchPipelineRequest(request: FetchPipelineRequest): void {
@@ -49,7 +49,7 @@ export class FetchPipeline {
     const proactiveSource = await this.sourceResolver?.resolveProactively?.(request, signal);
     if (proactiveSource !== undefined) {
       return {
-        ...normalizeDocument(proactiveSource.raw, request.format, request.maxOutputChars),
+        ...normalizeDocument(proactiveSource.raw, request.format, request.maxOutputChars, undefined, request.extract),
         raw: proactiveSource.raw,
         fallbackReason: proactiveSource.reason,
       };
@@ -64,7 +64,7 @@ export class FetchPipeline {
           : await this.sourceResolver?.resolve(request, signal);
         if (sourceAware !== undefined) {
           return {
-            ...normalizeDocument(sourceAware.raw, request.format, request.maxOutputChars),
+            ...normalizeDocument(sourceAware.raw, request.format, request.maxOutputChars, undefined, request.extract),
             raw: sourceAware.raw,
             fallbackReason: sourceAware.reason,
           };
@@ -81,7 +81,7 @@ export class FetchPipeline {
       return this.browserFetch(request, signal, "http_upstream_failure");
     }
     let normalized: NormalizedDocument;
-    try { normalized = normalizeDocument(raw, request.format, request.maxOutputChars, request.selector); }
+    try { normalized = normalizeDocument(raw, request.format, request.maxOutputChars, request.selector, request.extract); }
     catch (error) {
       if (request.render === "auto" && error instanceof GroundlaneError && error.stage === "selector") return this.browserFetch(request, signal, "selector_unmet");
       throw error;
@@ -107,6 +107,7 @@ export class FetchPipeline {
       request.format === "markdown" &&
       request.selector === undefined &&
       request.waitFor === undefined &&
+      request.extract !== "full" &&
       this.backendBudget?.remaining("jina") !== 0
     );
   }
@@ -140,7 +141,7 @@ export class FetchPipeline {
     );
     this.backendBudget?.tryConsume("jina");
     return {
-      ...normalizeDocument(raw, request.format, request.maxOutputChars),
+      ...normalizeDocument(raw, request.format, request.maxOutputChars, undefined, request.extract),
       raw,
       fallbackReason: reason,
     };
@@ -156,6 +157,6 @@ export class FetchPipeline {
     }
     const raw = await this.browser.fetch({ url: request.url, maxBytes: request.maxBytes, deadline: request.deadline, ...(request.selector ? { selector: request.selector } : {}), ...(request.waitFor ? { waitFor: request.waitFor } : {}) }, signal);
     this.backendBudget?.tryConsume("browserless");
-    return { ...normalizeDocument(raw, request.format, request.maxOutputChars), raw, ...(reason ? { fallbackReason: reason } : {}) };
+    return { ...normalizeDocument(raw, request.format, request.maxOutputChars, undefined, request.extract), raw, ...(reason ? { fallbackReason: reason } : {}) };
   }
 }
