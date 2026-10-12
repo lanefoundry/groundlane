@@ -97,6 +97,11 @@ const documentDataSchema = z.object({
     expiresAt: z.number().int().positive(),
     encoding: z.literal("json"),
   }).strict().optional(),
+  nextAction: z.object({
+    tool: z.literal("document_result_read_text"),
+    arguments: z.object({ refId: z.string(), contentOffset: z.literal(0) }).strict(),
+  }).strict().optional(),
+  instruction: z.string().optional(),
   effortUsed: z.enum(["fast", "standard", "deep"]).optional(),
   mediaType: z.string(),
   bytes: z.number().int(),
@@ -453,11 +458,13 @@ export async function parseResolvedDocument(
           refId: artifact.refId, artifactKind: "canonical", contentHash: artifact.contentHash,
           byteSize: artifact.byteSize, expiresAt: artifact.expiresAt, encoding: "json",
         },
+        nextAction: { tool: "document_result_read_text", arguments: { refId: artifact.refId, contentOffset: 0 } },
+        instruction: "Read the saved projection with nextAction; follow nextContentOffset until null. Check lossy, omissions, and warnings before claiming completeness.",
         mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata,
         ...(effortUsed !== "fast" ? { effortUsed } : {}),
       };
     }
-    throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document projection exceeds the configured output limit", false, undefined, hint("document.output_limit", "Request a narrower projection or use artifact output after configuring durable storage."));
+    throw new GroundlaneError("OUTPUT_LIMIT", "document_parse", "Document projection exceeds the configured output limit", false, undefined, hint("document.output_limit", "Request output=text or a smaller document. Effective maxOutputChars is the smaller of the request and deployment limits; unchanged retries will not help. Durable result storage is not configured."));
   }
   return { envelope, projection, mediaType: parsed.mediaType, bytes: bytes.byteLength, cached, cache: cacheMetadata, ...(effortUsed !== "fast" ? { effortUsed } : {}) };
 }
@@ -491,7 +498,11 @@ export function createDocumentParseModule(options: DocumentParseModuleOptions): 
       server.registerTool(
         "document_parse",
         {
-          description: "Parse a bounded inline, public-URL, verified source artifact, or caller-owned corpus source into Groundlane's versioned canonical document envelope and a deterministic projection. Corpus reads enforce current credential, ACL, and retention. Stable deterministic profiles reject encrypted, malformed, over-limit, and known active or external package content.",
+          description: "Parse PDF and other documents from bounded inline, public-URL, verified source artifact, or caller-owned corpus sources into a canonical envelope and projection. Effective byte and output limits are the smaller of requested and deployment limits; increasing request limits cannot override deployment limits. Check envelope status, projection lossy, omissions, and warnings before claiming completeness. " +
+            (options.outputRuntime === undefined
+              ? "Oversized projections fail with OUTPUT_LIMIT: request output=text or a smaller document; durable result storage is unavailable. "
+              : "Oversized results are saved as outputArtifact. Execute nextAction using document_result_read_text and follow nextContentOffset until null to read the saved projection. ") +
+            "Corpus reads enforce current credential, ACL, and retention. Deterministic profiles reject encrypted, malformed, over-limit, and known active or external package content.",
           inputSchema: documentParseInputSchema,
           outputSchema: resultEnvelopeSchema(documentDataSchema),
           annotations: { readOnlyHint: options.outputRuntime === undefined, openWorldHint: true },

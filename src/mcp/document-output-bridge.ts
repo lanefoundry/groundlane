@@ -12,6 +12,7 @@ const base = z.object({ version: z.literal(1), deadlineAt: z.number().int().posi
 export const documentOutputRequestSchema = z.discriminatedUnion("operation", [
   base.extend({ operation: z.literal("save"), sourceBase64: z.string().min(4), mimeType: z.string().min(1).max(200), filename: z.string().min(1).max(255), payload: z.unknown(), sourceExpiresAt: z.number().int().positive().optional(), externalSourceRef: refId.optional() }).strict(),
   base.extend({ operation: z.literal("read"), refId, offset: z.number().int().nonnegative(), maxBytes: z.number().int().min(1).max(49_152) }).strict(),
+  base.extend({ operation: z.literal("read_text"), refId, contentOffset: z.number().int().nonnegative(), maxContentChars: z.number().int().min(1).max(50_000), maxOutputChars: z.number().int().min(1).max(500_000) }).strict(),
   base.extend({ operation: z.literal("delete"), refId }).strict(),
 ]);
 
@@ -52,7 +53,7 @@ async function digest(body: Uint8Array, subtle: TimingSafeSubtleCrypto): Promise
 }
 
 export async function buildDocumentOutputRequest(options: {
-  body: Uint8Array; operation: "save" | "read" | "delete"; signingSecret: string;
+  body: Uint8Array; operation: "save" | "read" | "read_text" | "delete"; signingSecret: string;
   principal: AuthenticatedPrincipal; credentialBinding: string;
   subtle: TimingSafeSubtleCrypto; clock: ManagedClock; signal: AbortSignal;
 }): Promise<Request> {
@@ -73,7 +74,7 @@ export async function buildDocumentOutputRequest(options: {
 export async function verifyDocumentOutputRequest(request: Request, secret: string, subtle: TimingSafeSubtleCrypto, clock: ManagedClock) {
   const url = new URL(request.url);
   if (request.method !== "POST" || url.hostname !== DOCUMENT_OUTPUT_HOST || url.search ||
-      !["/v1/save", "/v1/read", "/v1/delete"].includes(url.pathname) ||
+      !["/v1/save", "/v1/read", "/v1/read_text", "/v1/delete"].includes(url.pathname) ||
       request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json") throw new Error("invalid output route");
   const bytes = await readOutputBridgeBody(request, AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]));
   const requestId = request.headers.get(INTERNAL_REQUEST_ID_HEADER);

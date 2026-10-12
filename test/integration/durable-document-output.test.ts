@@ -18,6 +18,33 @@ const sourceBytes = Buffer.from("a source document");
 const input = { caller, sourceBytes, mimeType: "text/plain", filename: "document.txt", payload: { envelope: { version: "1" }, projection: "result" } };
 const signal = (): AbortSignal => new AbortController().signal;
 
+void test("direct text reads preserve projection and parser warnings and gate malformed/cancelled/revoked reads", async (t) => {
+  const state = await fixture(t);
+  const projection = { kind: "markdown", content: "漢😀\\\"\n".repeat(300), lossy: true,
+    omissions: ["layout flattened"], warnings: ["projection warning"] };
+  const saved = await state.runtime.save({ ...input, payload: { projection,
+    envelope: { status: "partial", warnings: ["parser warning"] },
+  } }, signal());
+  const page = await state.runtime.readText(saved.refId, caller, 0, 100, 1000, signal());
+  assert.equal(page.content, Array.from(projection.content).slice(0, 100).join(""));
+  assert.equal(page.extractionStatus, "partial");
+  assert.deepEqual(page.warnings, ["parser warning", "projection warning"]);
+  assert.equal(page.contentHash, saved.contentHash);
+  const malformed = await state.runtime.save(input, signal());
+  await assert.rejects(state.runtime.readText(malformed.refId, caller, 0, 100, 1000, signal()), /unavailable/u);
+  for (const [offset, size] of [[-1, 100], [10000, 100], [0, 0], [0, 50001]]) {
+    await assert.rejects(state.runtime.readText(saved.refId, caller, offset ?? -1, size ?? -1, 1000, signal()));
+  }
+  const controller = new AbortController();
+  state.blobs.afterRead = () => controller.abort();
+  await assert.rejects(state.runtime.readText(saved.refId, caller, 0, 100, 1000, controller.signal), /cancelled/u);
+  state.blobs.afterRead = undefined;
+  const restarted = new DurableDocumentOutputRuntime(state.repository, 86400, () => 1000);
+  assert.equal((await restarted.readText(saved.refId, caller, page.nextContentOffset ?? 0, 100, 1000, signal())).contentOffset, page.nextContentOffset);
+  await restarted.delete(saved.refId, caller, signal());
+  await assert.rejects(restarted.readText(saved.refId, caller, 0, 100, 1000, signal()), /unavailable/u);
+});
+
 void test("job-bound output reservation recovers after acknowledgment loss and rejects content aliasing", async (t) => {
   const state = await fixture(t);
   const runtime = new DurableDocumentOutputRuntime(state.repository, 86_400, () => 1_000, undefined, state.records);
@@ -259,7 +286,8 @@ void test("tenant, owner, and credential mismatches receive identical read/delet
   for (const stranger of [
     { ...caller, tenantId: "other" }, { ...caller, ownerId: "other" }, { ...caller, credentialBinding: "other" },
   ]) {
-    for (const operation of [() => runtime.read(saved.refId, stranger, 0, 100, signal()), () => runtime.delete(saved.refId, stranger, signal())]) {
+    for (const operation of [() => runtime.read(saved.refId, stranger, 0, 100, signal()),
+      () => runtime.readText(saved.refId, stranger, 0, 100, 1000, signal()), () => runtime.delete(saved.refId, stranger, signal())]) {
       await assert.rejects(operation, (error: unknown) => error instanceof GroundlaneError && error.code === "INVALID_INPUT" && error.message === "Document output is unavailable");
     }
   }
@@ -272,12 +300,14 @@ void test("expiry and source parent revocation immediately deny output reads", a
   const expiring = await state.runtime.save({ ...input, sourceExpiresAt: 2_000 }, signal());
   state.setNow(2_000);
   await assert.rejects(state.runtime.read(expiring.refId, caller, 0, 100, signal()), /unavailable/u);
+  await assert.rejects(state.runtime.readText(expiring.refId, caller, 0, 100, 1000, signal()), /unavailable/u);
   const saved = await state.runtime.save(input, signal());
   if (saved.details.kind !== "canonical") throw new Error("Expected canonical");
   const source = await state.repository.getForCaller(saved.details.sourceRefId, caller);
   assert.ok(source);
   await state.repository.deleteExplicit(source.metadata.refId, caller, source.revision, 2_000);
   await assert.rejects(state.runtime.read(saved.refId, caller, 0, 100, signal()), /unavailable/u);
+  await assert.rejects(state.runtime.readText(saved.refId, caller, 0, 100, 1000, signal()), /unavailable/u);
 });
 
 void test("delete revokes first and retries pending source cleanup without losing its reference", async (t) => {

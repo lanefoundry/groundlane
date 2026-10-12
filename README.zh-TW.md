@@ -26,7 +26,7 @@ Opt-in edge output profile 也會保存上傳來源與衍生結果的關聯。�
 
 `DOCUMENT_OUTPUT_EDGE_ENABLED=true` 可啟用簽章保護的 D1/R2 bridge，保存超限的 inline／URL／corpus 結果。需要 D1、R2 與 internal signing secret。Bridge 限制 encoded request 為 16 MiB，由 Worker 掌握 TTL，並支援有界分段讀取與清理。Reference flag 仍關閉，等待 controlled deployment 與 client 驗收。
 
-Self-hosted 文件結果：設定 `DOCUMENT_ARTIFACT_STATE_PATH` 後，超限的 inline／URL `document_parse` 結果會以 JSON 保存 24 小時。用 `document_result_read` 分段讀取 `outputArtifact.refId` 的 base64 bytes；用 `document_result_delete` 撤銷結果並清理保留的來源。存取綁定 tenant 與 credential；每分鐘清理一頁、每頁最多 100 筆，重啟後會繼續清理。MCP inventory 也提供明確 fallback 的 `document_job_create`、`document_job_status`、`document_job_cancel`。Cloudflare execution 採 fail-closed；只有 async/output edge flags、internal signing secret、Reducto credential、primary D1 與 R2 全部就緒時才會啟用。Controlled Cloudflare output／async acceptance 仍未完成。
+Self-hosted 文件結果：設定 `DOCUMENT_ARTIFACT_STATE_PATH` 後，超限的 inline／URL `document_parse` 結果會以 JSON 保存 24 小時。結果附上呼叫 `document_result_read_text` 的 `nextAction`，可直接讀取 projection 文字；持續跟隨回傳的 Unicode `nextContentOffset`，直到 `null`。確認 `extractionStatus`、`lossy`、`omissions`、`warnings` 與 `metadataTruncated`；讀到結尾只代表已讀完保存的 projection，不保證原始 PDF 公式、圖片或頁面都解析完整。`document_result_read` 仍可分段重建完整 JSON 的 base64 bytes；用 `document_result_delete` 撤銷結果並清理保留的來源。存取綁定 tenant 與 credential；每分鐘清理一頁、每頁最多 100 筆，重啟後會繼續清理。MCP inventory 也提供明確 fallback 的 `document_job_create`、`document_job_status`、`document_job_cancel`。Cloudflare execution 採 fail-closed；只有 async/output edge flags、internal signing secret、Reducto credential、primary D1 與 R2 全部就緒時才會啟用。Controlled Cloudflare output／async acceptance 仍未完成。
 
 Client 證據：`pnpm mcp:clients --client Claude`（也可指定 `Codex`／`Cursor`）只探測本機版本與設定隔離 flags，不會執行模型。真正執行的參數請看 `--help`。取得 transcript 後仍需逐項審閱；程序成功退出不會自動把 Tasks、reconnect 或 upload compatibility 標為通過。
 
@@ -73,7 +73,7 @@ Document execution 維持明確雙軌。現在的 deterministic slice 在單一 
 | `document_parse` | 將有界文件解析成 canonical envelope 與 deterministic projection | Inline base64、經 policy 檢查的公開 URL、可選 self-hosted SQLite cache；完整設定的 Cloudflare edge profile 可讀 verified source ArtifactRef |
 | `document_upload_create` / `document_upload_complete` | 建立 credential-bound single-PUT handoff，再驗證並 finalize source ArtifactRef | 只在 D1、R2、R2 S3 presigning credential 與 internal signing 都設定完成的 Cloudflare Worker edge 啟用；其餘情況 fail closed |
 | `document_artifact_delete` | 立即撤銷 caller-owned source ArtifactRef、刪除 immutable bytes，並撤銷該 source 的所有 parser-option cache bindings | Cloudflare Worker edge；delete 與 expiry cleanup 都綁定 owner/credential 且可重試 |
-| `document_result_read` / `document_result_delete` | 讀取或撤銷 durable self-hosted document result 的 `refId` | Self-hosted Node，需設定 `DOCUMENT_ARTIFACT_STATE_PATH`；bounded base64 chunks，綁定 ownership 與 credential |
+| `document_result_read_text` / `document_result_read` / `document_result_delete` | 依 `refId` 直接讀取保存的 projection 文字、重建完整 JSON bytes 或撤銷結果 | 需配置 durable output：self-hosted SQLite 或明確啟用 Cloudflare output bridge；有界分段，綁定 ownership 與 credential |
 | `document_job_create` / `status` / `cancel` | 建立、讀取或取消 async document job | Cloudflare edge，需 async/output edge flags、internal signing、Reducto credential、D1 與 R2 全部就緒；其餘情況 fail-closed |
 | `document_policy` | 讀取 provider-neutral 的 document/artifact policy：cache、upload、artifact、corpus 預設值與 hard cap | 唯讀 policy 查詢；modern protocol 模式可設定 interactive TTL |
 | `corpus_create` / `corpus_delete` | 建立或刪除含 retention cap 的 operator-owned corpus | Self-hosted durable SQLite runtime，需設定 `CORPUS_STATE_PATH` |

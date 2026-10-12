@@ -110,7 +110,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
         "web_content",
         {
           description:
-            "Fetch URL content through content-capable providers. Parallel mode returns attributed provider content. With an explicit provider, paginate=true returns bounded pages; continue with nextContentOffset and expectedContentHash. Each page re-fetches the source (provider costs apply); sourceTruncated reports retrieval truncation separately from paging.",
+            "Fetch URL content through content-capable providers. PDF and other binary-document URLs are rejected; use document_parse with source.kind=url. Parallel mode returns attributed provider content. With an explicit provider, paginate=true returns bounded pages; continue with nextContentOffset and expectedContentHash. Each page re-fetches the source (provider costs apply); sourceTruncated reports retrieval truncation separately from paging. Paging does not recover content omitted by the provider or bypass deployment output limits.",
           inputSchema: webContentInputSchema,
           outputSchema: resultEnvelopeSchema(contentDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
@@ -128,7 +128,7 @@ export function createWebContentModule(options: WebContentModuleOptions): McpMod
                 undefined,
                 {
                   code: "web_content.binary_url",
-                  text: "Use web_fetch for HTML pages, or download the file directly with curl + local OCR / image tooling for PDFs and images.",
+                  text: 'For PDFs call document_parse with {"source":{"kind":"url","url":"<same PDF URL>"}}, replacing the URL placeholder with your original URL. Other document/image formats depend on configured parser capabilities; web_fetch is for HTML pages.',
                 },
               );
             }

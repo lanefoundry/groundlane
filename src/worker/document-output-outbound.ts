@@ -41,6 +41,8 @@ export function createDocumentOutputOutbound(dependencies: {
         }, signal);
       } else if (body.operation === "read") {
         result = await runtime.read(body.refId, caller, body.offset, body.maxBytes, signal);
+      } else if (body.operation === "read_text") {
+        result = await runtime.readText(body.refId, caller, body.contentOffset, body.maxContentChars, body.maxOutputChars, signal);
       } else { result = await runtime.delete(body.refId, caller, signal); }
       if (signal.aborted) return failure(408);
       return Response.json({ ok: true, result }, { headers: { "cache-control": "no-store" } });

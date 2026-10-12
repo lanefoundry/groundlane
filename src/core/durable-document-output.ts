@@ -10,6 +10,7 @@ import {
 import { GroundlaneError } from "./errors.js";
 import { MAX_IMMUTABLE_BLOB_BYTES } from "./immutable-blob.js";
 import type { DurableRecordStorePort } from "./durable-store.js";
+import { paginateDocumentProjection, storedProjectionSchema, type DocumentTextPage } from "./document-result-text.js";
 
 export const MAX_DOCUMENT_OUTPUT_CHUNK_BYTES = 48 * 1024;
 
@@ -201,6 +202,30 @@ export class DurableDocumentOutputRuntime {
       };
     } catch (error) {
       if (error instanceof GroundlaneError && error.code === "CANCELLED") throw error;
+      throw unavailable();
+    }
+  }
+
+  async readText(
+    refId: string, caller: DurableArtifactCaller, contentOffset: number, maxContentChars: number,
+    maxOutputChars: number, signal: AbortSignal,
+  ): Promise<DocumentTextPage> {
+    active(signal);
+    try {
+      const record = await this.activeOutput(refId, caller, signal);
+      const bytes = await this.repository.readVerified(refId, caller, this.clock(), MAX_IMMUTABLE_BLOB_BYTES);
+      active(signal);
+      await this.activeOutput(refId, caller, signal);
+      const payload = z.object({ projection: storedProjectionSchema, envelope: z.object({
+        status: z.enum(["success", "partial", "unsupported", "failed"]), warnings: z.array(z.string()),
+      }) }).parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown);
+      const projection = { ...payload.projection, warnings: [...payload.envelope.warnings, ...payload.projection.warnings] };
+      const page = paginateDocumentProjection(refId, record.metadata.contentHash, projection,
+        contentOffset, maxContentChars, maxOutputChars, payload.envelope.status);
+      active(signal);
+      return page;
+    } catch (error) {
+      if (error instanceof GroundlaneError && ["CANCELLED", "OUTPUT_LIMIT"].includes(error.code)) throw error;
       throw unavailable();
     }
   }

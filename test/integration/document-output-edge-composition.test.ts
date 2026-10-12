@@ -35,7 +35,7 @@ function fixture() {
   const remote = (credentialBinding = caller.credentialBinding) => new RemoteDocumentOutputRuntime({ signingSecret: secret, principal, credentialBinding, subtle, timeoutMs: 5000, fetch: fetcher });
   return { db, bucket, env, outbound, fetcher, remote };
 }
-function signed(fields: Record<string, unknown>, operation: "save" | "read" | "delete" = "save", requestSignal = signal) {
+function signed(fields: Record<string, unknown>, operation: "save" | "read" | "read_text" | "delete" = "save", requestSignal = signal) {
   return buildDocumentOutputRequest({
     body: new TextEncoder().encode(JSON.stringify({ version: 1, operation, deadlineAt: Date.now() + 5000, ...fields })),
     operation, signingSecret: secret, principal, credentialBinding: caller.credentialBinding, subtle,
@@ -43,6 +43,42 @@ function signed(fields: Record<string, unknown>, operation: "save" | "read" | "d
   });
 }
 const saveFields = { sourceBase64: Buffer.from(save.sourceBytes).toString("base64"), mimeType: save.mimeType, filename: save.filename, payload: save.payload };
+
+void test("signed text reader returns Unicode projection pages with ownership and request caps", async () => {
+  const f = fixture();
+  const content = "中文😀text".repeat(200);
+  const ref = await f.remote().save({ ...save, payload: { envelope: { status: "partial", warnings: [] }, projection: {
+    kind: "text", content, lossy: true, omissions: ["images"], warnings: ["OCR unavailable"],
+  } } }, signal);
+  let contentOffset: number | null = 0;
+  let reconstructed = "";
+  while (contentOffset !== null) {
+    const page = await f.remote().readText(ref.refId, caller, contentOffset, 80, 1000, signal);
+    assert.ok(JSON.stringify({ ok: true, data: page }).length <= 1000);
+    assert.equal(page.lossy, true);
+    assert.deepEqual(page.omissions, ["images"]);
+    reconstructed += page.content;
+    contentOffset = page.nextContentOffset;
+  }
+  assert.equal(reconstructed, content);
+  await assert.rejects(f.remote().readText(ref.refId, { ...caller, ownerId: "other" }, 0, 80, 1000, signal));
+  const other = { ...caller, credentialBinding: "managed:two" };
+  await assert.rejects(f.remote(other.credentialBinding).readText(ref.refId, other, 0, 80, 1000, signal));
+  for (const limits of [{ maxContentChars: 0 }, { maxContentChars: 50_001 }, { maxOutputChars: 0 }, { maxOutputChars: 500_001 }]) {
+    const request = await signed({ refId: ref.refId, contentOffset: 0, maxContentChars: 80, maxOutputChars: 1000, ...limits }, "read_text");
+    assert.equal((await f.fetcher(request)).status, 400);
+  }
+  const request = await signed({ refId: ref.refId, contentOffset: 0, maxContentChars: 80, maxOutputChars: 1000 }, "read_text");
+  const body = await request.text();
+  assert.equal((await f.fetcher(new Request(request.url, { method: "POST", headers: request.headers,
+    body: body.replace('"contentOffset":0', '"contentOffset":1') }))).status, 400);
+  assert.equal((await f.fetcher(new Request("http://groundlane-output.internal/v1/read", {
+    method: "POST", headers: request.headers, body,
+  }))).status, 400);
+  assert.equal((await f.fetcher(await signed({ refId: ref.refId, contentOffset: 0, maxContentChars: 80,
+    maxOutputChars: 1000, deadlineAt: Date.now() - 1 }, "read_text"))).status, 408);
+  await assert.rejects(f.remote().readText(ref.refId, caller, 0, 80, 1000, AbortSignal.abort()), { code: "CANCELLED" });
+});
 
 async function uploadedSource(f: ReturnType<typeof fixture>) {
   const service = new DurableUploadArtifactService(

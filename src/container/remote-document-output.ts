@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DurableArtifactCaller, DurableArtifactMetadata } from "../core/durable-artifacts.js";
 import type { SaveDurableDocumentOutputInput, DurableDocumentOutputChunk } from "../core/durable-document-output.js";
 import { GroundlaneError } from "../core/errors.js";
+import { documentTextPageSchema, type DocumentTextPage } from "../core/document-result-text.js";
 import { buildDocumentOutputRequest, readOutputBridgeBody } from "../mcp/document-output-bridge.js";
 import type { AuthenticatedPrincipal, TimingSafeSubtleCrypto } from "../worker/auth.js";
 import { systemUtcClock } from "../worker/managed-tokens.js";
@@ -37,6 +38,10 @@ export class RemoteDocumentOutputRuntime {
     this.assertCaller(caller);
     return chunkSchema.parse(await this.call("read", { refId, offset, maxBytes }, signal));
   }
+  async readText(refId: string, caller: DurableArtifactCaller, contentOffset: number, maxContentChars: number, maxOutputChars: number, signal: AbortSignal): Promise<DocumentTextPage> {
+    this.assertCaller(caller);
+    return documentTextPageSchema.parse(await this.call("read_text", { refId, contentOffset, maxContentChars, maxOutputChars }, signal));
+  }
   async delete(refId: string, caller: DurableArtifactCaller, signal: AbortSignal): Promise<{ deleted: true; cleanupPending: boolean }> {
     this.assertCaller(caller);
     return z.object({ deleted: z.literal(true), cleanupPending: z.boolean() }).strict().parse(await this.call("delete", { refId }, signal));
@@ -46,7 +51,7 @@ export class RemoteDocumentOutputRuntime {
       throw new GroundlaneError("INVALID_INPUT", "document-output", "Document output identity is unavailable");
     }
   }
-  private async call(operation: "save" | "read" | "delete", fields: Record<string, unknown>, callerSignal: AbortSignal): Promise<unknown> {
+  private async call(operation: "save" | "read" | "read_text" | "delete", fields: Record<string, unknown>, callerSignal: AbortSignal): Promise<unknown> {
     const deadlineAt = Date.now() + this.options.timeoutMs;
     const signal = AbortSignal.any([callerSignal, AbortSignal.timeout(this.options.timeoutMs)]);
     try {

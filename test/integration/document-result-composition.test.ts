@@ -44,6 +44,7 @@ void test("configured MCP stores oversized results, reads chunks after restart, 
   t.after(() => service.close());
   const names = (await service.client.listTools()).tools.map((tool) => tool.name);
   assert.ok(names.includes("document_result_read"));
+  assert.ok(names.includes("document_result_read_text"));
   assert.ok(names.includes("document_result_delete"));
   const content = "Result across restart. ".repeat(200);
   const result = await service.client.callTool({ name: "document_parse", arguments: {
@@ -68,8 +69,27 @@ void test("configured MCP stores oversized results, reads chunks after restart, 
   assert.equal(Buffer.concat(chunks).byteLength, parsed.data.outputArtifact.byteSize);
   const payload = z.object({ projection: z.object({ content: z.string() }) }).parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
   assert.ok(payload.projection.content.includes("Result across restart."));
+  const textPages: string[] = [];
+  let contentOffset: number | null = 0;
+  while (contentOffset !== null) {
+    const read = await service.client.callTool({ name: "document_result_read_text", arguments: { refId, contentOffset } });
+    assert.ok(JSON.stringify(read.structuredContent).length <= 1000);
+    const page = z.object({ ok: z.literal(true), data: z.object({ content: z.string(),
+      nextContentOffset: z.number().nullable(), nextAction: z.object({ tool: z.literal("document_result_read_text"),
+        arguments: z.object({ refId: z.string(), contentOffset: z.number() }) }).optional(),
+    }) }).parse(read.structuredContent).data;
+    if (page.nextContentOffset !== null) {
+      assert.equal(page.nextAction?.arguments.refId, refId);
+      assert.equal(page.nextAction?.arguments.contentOffset, page.nextContentOffset);
+    } else assert.equal(page.nextAction, undefined);
+    textPages.push(page.content);
+    contentOffset = page.nextContentOffset;
+  }
+  assert.equal(textPages.join(""), payload.projection.content);
   const deleted = await service.client.callTool({ name: "document_result_delete", arguments: { refId } });
   z.object({ ok: z.literal(true), data: z.object({ deleted: z.literal(true), cleanupPending: z.literal(false) }) }).parse(deleted.structuredContent);
   const unavailable = await service.client.callTool({ name: "document_result_read", arguments: { refId } });
   assert.equal(unavailable.isError, true);
+  const textUnavailable = await service.client.callTool({ name: "document_result_read_text", arguments: { refId } });
+  assert.equal(textUnavailable.isError, true);
 });

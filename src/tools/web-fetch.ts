@@ -60,7 +60,7 @@ export function createWebFetchModule(options: WebFetchModuleOptions): McpModule 
         "web_fetch",
         {
           description:
-            "Fetch a public HTTP(S) page as bounded Markdown, text, or HTML. Markdown and text use the built-in Groundlane Reader to remove page chrome and return article metadata; configured hosted Reader/browser fallbacks are used only when eligible and needed.",
+            "Fetch a public HTTP(S) page as bounded Markdown, text, or HTML. For PDF or other binary documents use document_parse with source.kind=url instead. Effective byte and output limits are bounded by deployment policy; larger request limits cannot override it. Check truncated before claiming complete retrieval. Markdown and text use the built-in Groundlane Reader to remove page chrome and return article metadata; configured hosted Reader/browser fallbacks are used only when eligible and needed.",
           inputSchema,
           outputSchema: resultEnvelopeSchema(fetchDataSchema),
           annotations: { readOnlyHint: true, openWorldHint: true },
