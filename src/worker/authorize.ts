@@ -289,6 +289,8 @@ export function createAuthorizeHandler(subtle: TimingSafeSubtleCrypto): Authoriz
       const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
         request: oauthRequest,
         userId: "owner",
+        // Connector accounts share owner/client IDs; keep their grants independent.
+        revokeExistingGrants: false,
         metadata: { clientName },
         scope: scopes,
         props: {

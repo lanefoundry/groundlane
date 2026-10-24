@@ -423,6 +423,16 @@ This is single-user by design: `/authorize` gates consent with one shared
 passphrase rather than a real identity provider, matching groundlane's
 single-operator deployment model. It is not intended for multi-tenant use.
 
+Multiple accounts or installations of the same connector may hold concurrent
+grants for this shared operator. Groundlane explicitly sets
+`revokeExistingGrants: false` when completing authorization: the provider's
+default would revoke earlier grants for the same owner and client (and, for
+CIMD clients, the same redirect URI), causing account A to lose access when
+account B authorizes. Each grant retains its own access and refresh tokens;
+connections still share operator permissions, provider credentials, and budgets.
+Reauthorization is not a revocation mechanism. Deploying this change does not
+restore grants already revoked; reconnect those accounts after deployment.
+
 ## Browser mode
 
 The Worker itself cannot launch local Chromium. It forwards MCP traffic to the Node service in the Container. The checked-in deployment uses Playwright inside that Container:

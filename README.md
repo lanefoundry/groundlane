@@ -282,6 +282,13 @@ without a separate pre-registration step; the DCR compatibility endpoint
 DCR clients must explicitly send `application_type`: `web` requires HTTPS
 redirects, while `native` is limited to HTTP loopback redirects.
 See [Cloudflare deployment](docs/deployment/cloudflare.md) for the exact flow.
+
+Multiple ChatGPT or Claude accounts can authorize the same deployment concurrently;
+authorizing another connection does not revoke existing grants. All connections
+share the operator identity, provider credentials, and budgets; this is not
+per-account isolation. Previously revoked connections must authorize again after
+deploying this fix.
+
 The connector opens a consent screen after registration. Enter the
 `OAUTH_OWNER_PASSPHRASE` you configured during deployment to approve — this is
 a separate secret from `GROUNDLANE_AUTH_TOKEN`, used only to gate that consent

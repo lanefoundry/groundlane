@@ -331,6 +331,115 @@ void test("DCR register -> authorize (passphrase) -> token -> authenticated /mcp
   assert.notEqual(authorizationSeenByContainer, `Bearer ${token.access_token}`);
 });
 
+for (const registrationMode of ["DCR", "CIMD"] as const) {
+  void test(`${registrationMode} successive authorizations for the same client preserve both accounts' access and refresh tokens`, async (t) => {
+    if (registrationMode === "CIMD") {
+      const previous = Object.getOwnPropertyDescriptor(globalThis, "Cloudflare");
+      Object.defineProperty(globalThis, "Cloudflare", {
+        configurable: true,
+        value: { compatibilityFlags: { global_fetch_strictly_public: true } },
+      });
+      t.after(() => {
+        if (previous === undefined) Reflect.deleteProperty(globalThis, "Cloudflare");
+        else Object.defineProperty(globalThis, "Cloudflare", previous);
+      });
+      t.mock.method(globalThis, "fetch", () => Promise.resolve(Response.json({
+        client_id: "https://client.example/oauth/concurrent-client.json",
+        client_name: "Concurrent CIMD Client",
+        redirect_uris: ["https://client.example/callback"],
+        token_endpoint_auth_method: "none",
+      })));
+    }
+    const { env } = makeEnv(() => Promise.resolve(Response.json({ ok: true })));
+    const provider = buildOAuthProvider(subtle);
+    const redirectUri = "https://client.example/callback";
+    let clientId = "https://client.example/oauth/concurrent-client.json";
+    if (registrationMode === "DCR") {
+      const registration = await provider.fetch(new Request("https://groundlane.test/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          application_type: "web",
+          redirect_uris: [redirectUri],
+          token_endpoint_auth_method: "none",
+        }),
+      }), env, ctx);
+      assert.equal(registration.status, 201);
+      clientId = (await readJson<{ client_id: string }>(registration)).client_id;
+    }
+
+    async function exchange(parameters: Record<string, string>) {
+      const response = await provider.fetch(new Request("https://groundlane.test/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          resource: "https://groundlane.test/mcp",
+          ...parameters,
+        }),
+      }), env, ctx);
+      assert.equal(response.status, 200, "each account must retain a usable token grant");
+      const token = await readJson<{ access_token: string; refresh_token: string }>(response);
+      assert.ok(token.access_token);
+      assert.ok(token.refresh_token);
+      return token;
+    }
+
+    async function authorize(state: string) {
+      const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)));
+      const url = new URL("https://groundlane.test/authorize");
+      url.search = new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        code_challenge: base64UrlEncode(await sha256(verifier)),
+        code_challenge_method: "S256",
+        resource: "https://groundlane.test/mcp",
+        scope: "mcp",
+        state,
+      }).toString();
+      const approved = await provider.fetch(new Request(url, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ passphrase: OWNER_PASSPHRASE }),
+      }), env, ctx);
+      assert.equal(approved.status, 302);
+      const location = new URL(approved.headers.get("location") ?? "");
+      assert.equal(location.searchParams.get("state"), state);
+      const code = location.searchParams.get("code");
+      assert.ok(code);
+      return exchange({
+        grant_type: "authorization_code",
+        code,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+      });
+    }
+
+    async function assertAccess(accessToken: string, message: string) {
+      const response = await provider.fetch(new Request("https://groundlane.test/mcp", {
+        method: "POST",
+        headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+        body: "{}",
+      }), env, ctx);
+      assert.equal(response.status, 200, message);
+      assert.deepEqual(await response.json(), { ok: true });
+    }
+
+    const accountA = await authorize("account-a");
+    await assertAccess(accountA.access_token, "A works before B authorizes");
+    const accountB = await authorize("account-b");
+    assert.notEqual(accountA.access_token, accountB.access_token);
+    assert.notEqual(accountA.refresh_token, accountB.refresh_token);
+    await assertAccess(accountA.access_token, "B authorization must not revoke A");
+    await assertAccess(accountB.access_token, "B works after authorizing");
+    const refreshedA = await exchange({ grant_type: "refresh_token", refresh_token: accountA.refresh_token });
+    const refreshedB = await exchange({ grant_type: "refresh_token", refresh_token: accountB.refresh_token });
+    await assertAccess(refreshedA.access_token, "A can refresh independently");
+    await assertAccess(refreshedB.access_token, "B can refresh independently");
+  });
+}
+
 void test("unauthenticated /mcp is rejected by the provider without reaching the container", async () => {
   const { env } = makeEnv(() => Promise.resolve(new Response("should not be called")));
   const provider = buildOAuthProvider(subtle);

@@ -270,6 +270,11 @@ bearer token：只要在該平台把 `GROUNDLANE_AUTH_TOKEN` 設成一次性 sec
 累積 OAuth state。DCR client 必須明確送出 `application_type`：`web` 只接受
 HTTPS redirect，`native` 只接受 HTTP loopback redirect。細節見
 [Cloudflare 部署文件](docs/deployment/cloudflare.md)。
+
+多個 ChatGPT 或 Claude 帳號可以同時授權同一部署；新增連線不會撤銷既有授權。
+所有連線共用 operator 身分、provider 金鑰與預算，沒有每個帳號的獨立隔離。
+先前已被撤銷的連線，需在部署此修正後重新授權。
+
 註冊完成後會跳出同意畫面。輸入部署時設定的 `OAUTH_OWNER_PASSPHRASE` 完成授權——
 這是獨立於 `GROUNDLANE_AUTH_TOKEN` 的另一組 secret，僅用來把關這個同意畫面。
 
